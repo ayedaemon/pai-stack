@@ -4,12 +4,26 @@ services:
     container_name: omniroute
     restart: unless-stopped
     stop_grace_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
     ports:
       - "20128:20128"
+    environment:
+      - PRICING_SYNC_ENABLED=true
+      - OMNIROUTE_AUTO_FREE_FALLBACK_TO_FULL_POOL=false
+      - LOG_LEVEL=warn
     volumes:
       - ./omniroute-data:/app/data
-    # Seed combos at startup
-    #entrypoint: ["/bin/sh", "-c", "/app/data/seed-combos.sh && exec /app/start.sh"]
+      - ./seed-combos.sh:/app/data/seed-combos.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('net').createConnection(20128,'localhost').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   hermes:
     image: nousresearch/hermes-agent:latest
@@ -19,6 +33,7 @@ services:
       resources:
         limits:
           memory: 1536M
+          cpus: "2.0"
     ports:
       - "9119:9119"   # Hermes internal dashboard
       - "8642:8642"   # Hermes OpenAI-compatible API Server
@@ -32,7 +47,7 @@ services:
       - API_SERVER_HOST=0.0.0.0
       - API_SERVER_KEY=${API_SERVER_KEY}
       # Basic Auth for Dashboard
-      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-admin}
       - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}
       - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET}
     volumes:
@@ -40,5 +55,6 @@ services:
       - ./config.yaml:/opt/hermes/data/config.yaml:ro
       - ~/Personal:/opt/data/Personal
     depends_on:
-      - omniroute
+      omniroute:
+        condition: service_healthy
     command: gateway run

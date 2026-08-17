@@ -7,7 +7,7 @@ database:
 runtime:
   nofile_soft_limit: 4096
 agent:
-  max_turns: 500
+  max_turns: 200
   verbose: false
   reasoning_effort: medium
   personalities: {}
@@ -18,7 +18,7 @@ terminal:
   home_mode: auto
   container_cpu: 1
   container_memory: 1536
-  container_disk: 51200
+  container_disk: 20480
   container_persistent: true
   docker_mount_cwd_to_workspace: false
   lifetime_seconds: 300
@@ -44,7 +44,7 @@ compression:
   min_tail_user_messages: 1
   max_attempts: 3
   proactive_prune_tokens: 0
-  proactive_prune_min_result_chars: 8000
+  proactive_prune_min_result_chars: 4000
   proactive_prune_min_reclaim_tokens: 4096
   protect_first_n: 3
   codex_gpt55_autoraise: true
@@ -85,14 +85,14 @@ memory:
   nudge_interval: 10
   flush_min_turns: 6
 delegation:
-  max_iterations: 50
+  max_iterations: 25
 skills:
   creation_nudge_interval: 15
 kanban:
   review_dispatch: true
 code_execution:
   timeout: 300
-  max_tool_calls: 50
+  max_tool_calls: 25
 streaming:
   enabled: false
 onboarding:

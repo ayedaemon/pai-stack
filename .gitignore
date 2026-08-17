@@ -1,2 +1,4 @@
 hermes-data/
 omniroute-data/
+.env
+*.log
