@@ -12,7 +12,8 @@ services:
     ports:
       - "20128:20128"
     environment:
-      - PRICING_SYNC_ENABLED=true
+      - PRICING_SYNC_ENABLED=false
+      - ARENA_ELO_SYNC_ENABLED=false
       - OMNIROUTE_AUTO_FREE_FALLBACK_TO_FULL_POOL=false
       - LOG_LEVEL=warn
     volumes:
