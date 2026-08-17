@@ -16,7 +16,7 @@ cp .env.example .env
 docker compose up -d
 
 # 4. Seed the model routing combo (after omniroute is healthy)
-docker exec omniroute /app/data/seed-combos.sh
+docker exec omniroute /app/seed-combos.sh
 ```
 
 ## Updating config.yaml
@@ -48,7 +48,7 @@ docker compose restart hermes
 OmniRoute combos are not seeded automatically. After starting the stack:
 
 ```bash
-docker exec omniroute /app/data/seed-combos.sh
+docker exec omniroute /app/seed-combos.sh
 ```
 
 This creates the `personal/gemini-fallback` combo that routes requests through antigravity (paid Gemini) first, falling back to opencode free models on exhaustion.
