@@ -7,7 +7,7 @@ Hermes Agent + OmniRoute on Raspberry Pi 4B (4GB).
 ```bash
 # 1. Create .env from template
 cp .env.example .env
-# Edit .env with your secrets
+# Edit .env with your secrets and IDs (run `id -u` and `id -g` on the Pi)
 
 # 2. Start services
 docker compose up -d

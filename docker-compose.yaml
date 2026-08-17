@@ -4,6 +4,7 @@ services:
     container_name: omniroute
     restart: unless-stopped
     stop_grace_period: 40s
+    user: "${UID:-1000}:${GID:-1000}"
     deploy:
       resources:
         limits:
@@ -40,8 +41,8 @@ services:
       - "8642:8642"   # Hermes OpenAI-compatible API Server
     environment:
       - HERMES_HOME=/opt/hermes/data
-      - HERMES_UID=1000
-      - HERMES_GID=1000
+      - HERMES_UID=${UID:-1000}
+      - HERMES_GID=${GID:-1000}
       # Runtime flags (not config settings)
       - HERMES_DASHBOARD=1
       - HERMES_DASHBOARD_HOST=0.0.0.0
