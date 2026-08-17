@@ -19,7 +19,6 @@ services:
       - LOG_LEVEL=warn
     volumes:
       - ./omniroute-data:/app/data
-      - ./seed-combos.sh:/app/data/seed-combos.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('net').createConnection(20128,'localhost').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
       interval: 30s
