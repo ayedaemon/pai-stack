@@ -8,37 +8,37 @@ services:
       - "20128:20128"
     volumes:
       - ./omniroute-data:/app/data
+    # Seed combos at startup
+    entrypoint: ["/bin/sh", "-c", "/app/data/seed-combos.sh && exec /app/start.sh"]
 
   hermes:
-      image: nousresearch/hermes-agent:latest
-      container_name: hermes
-      restart: unless-stopped
-      ports:
-        - "9119:9119"   # Hermes internal dashboard
-        - "8642:8642"   # Hermes OpenAI-compatible API Server
-      environment:
-        - HERMES_HOME=/opt/hermes/data
-        - HERMES_UID=1000
-        - HERMES_GID=1000
-        - OPENAI_BASE_URL=http://omniroute:20128/v1
-        - OPENAI_API_KEY=omniroute-dummy-key
-
-        # --- NEW: Enable the gateway, API Server, and bind to 0.0.0.0 ---
-        - HERMES_DASHBOARD=1
-        - HERMES_DASHBOARD_HOST=0.0.0.0
-        - API_SERVER_HOST=0.0.0.0
-        - API_SERVER_KEY=hermes-local-key
-
-        # Basic Auth for Dashboard
-        - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin
-        - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=your_secure_password
-        - HERMES_DASHBOARD_BASIC_AUTH_SECRET=change_this_to_a_random_32_character_string_!123
-      volumes:
-        - ./hermes-data:/opt/hermes/data
-        - ~/Personal:/opt/data/Personal
-      depends_on:
-        - omniroute
-
-      # Change the startup command to launch the full gateway suite
-      command: gateway run
-
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    ports:
+      - "9119:9119"   # Hermes internal dashboard
+      - "8642:8642"   # Hermes OpenAI-compatible API Server
+    environment:
+      - HERMES_HOME=/opt/hermes/data
+      - HERMES_UID=1000
+      - HERMES_GID=1000
+      # Runtime flags (not config settings)
+      - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_HOST=0.0.0.0
+      - API_SERVER_HOST=0.0.0.0
+      - API_SERVER_KEY=${API_SERVER_KEY}
+      # Basic Auth for Dashboard
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}
+      - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET}
+    volumes:
+      - ./hermes-data:/opt/hermes/data
+      - ./config.yaml:/opt/hermes/data/config.yaml:ro
+      - ~/Personal:/opt/data/Personal
+    depends_on:
+      - omniroute
+    command: gateway run
