@@ -9,7 +9,7 @@ services:
     volumes:
       - ./omniroute-data:/app/data
     # Seed combos at startup
-    entrypoint: ["/bin/sh", "-c", "/app/data/seed-combos.sh && exec /app/start.sh"]
+    #entrypoint: ["/bin/sh", "-c", "/app/data/seed-combos.sh && exec /app/start.sh"]
 
   hermes:
     image: nousresearch/hermes-agent:latest
