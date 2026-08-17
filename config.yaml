@@ -69,6 +69,9 @@ display:
   background_process_notifications: all
 dashboard:
   theme: cyberpunk
+  basic_auth:
+    username: admin
+    password_hash: scrypt$16384$8$1$uosygqgCy5PIBFlmUhRGQA==$KJ81eMJHF5EIKmMs03KWjrbECEbRiSCVfMRkiteN9BU=
 stt:
   enabled: true
   language: en

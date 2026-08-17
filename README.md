@@ -5,15 +5,26 @@ Hermes Agent + OmniRoute on Raspberry Pi 4B (4GB).
 ## Quick Start
 
 ```bash
-# 1. Create .env from template
-cp .env.example .env
-# Edit .env with your secrets and IDs (run `id -u` and `id -g` on the Pi)
+# 1. Create data directories (must be done before docker compose up)
+mkdir -p hermes-data omniroute-data
 
-# 2. Start services
+# 2. Create .env from template
+cp .env.example .env
+# Edit .env with your secrets
+
+# 3. Start services (config.yaml is synced automatically on startup)
 docker compose up -d
 
-# 3. Seed the model routing combo (after omniroute is healthy)
+# 4. Seed the model routing combo (after omniroute is healthy)
 docker exec omniroute /app/data/seed-combos.sh
+```
+
+## Updating config.yaml
+
+Edit `config.yaml` then restart — it syncs automatically:
+
+```bash
+docker compose restart hermes
 ```
 
 ## Services
@@ -55,10 +66,10 @@ Access at `http://<pi-ip>:9119`
 
 ```
 ├── docker-compose.yaml    # Service definitions
-├── config.yaml            # Hermes configuration
+├── config.yaml            # Hermes configuration (source of truth)
 ├── seed-combos.sh         # Combo seeding script
 ├── .env                   # Secrets (git-ignored)
 ├── .env.example           # Template for .env
-├── hermes-data/           # Hermes persistent data (git-ignored)
+├── hermes-data/           # Hermes persistent data (git-ignored, contains config copy)
 └── omniroute-data/        # OmniRoute persistent data (git-ignored)
 ```

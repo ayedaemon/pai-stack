@@ -53,8 +53,10 @@ services:
       - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET}
     volumes:
       - ./hermes-data:/opt/hermes/data
-      - ./config.yaml:/opt/hermes/data/config.yaml:ro
+      - ./config.yaml:/tmp/config.yaml.host:ro
+      - ./hermes-entrypoint.sh:/hermes-entrypoint.sh:ro
       - ~/Personal:/opt/data/Personal
+    entrypoint: ["/bin/sh", "/hermes-entrypoint.sh"]
     depends_on:
       omniroute:
         condition: service_healthy
