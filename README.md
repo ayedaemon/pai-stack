@@ -1,12 +1,12 @@
 # pai-stack
 
-Hermes Agent + OmniRoute on Raspberry Pi 4B (4GB).
+Hermes Agent + OmniRoute + SilverBullet on Raspberry Pi 4B (4GB).
 
 ## Quick Start
 
 ```bash
 # 1. Create data directories (must be done before docker compose up)
-mkdir -p hermes-data omniroute-data
+mkdir -p hermes-data omniroute-data ~/Personal/silverbullet
 
 # 2. Create .env from template
 cp .env.example .env
@@ -34,6 +34,7 @@ docker compose restart hermes
 | omniroute | 20128 | AI model routing gateway (OpenAI-compatible API) |
 | hermes | 9119 | Hermes dashboard |
 | hermes | 8642 | Hermes API server |
+| silverbullet | 7070 | Knowledge base & note-taking (SilverBullet) |
 
 ## Resources (RPi 4B)
 
@@ -41,7 +42,8 @@ docker compose restart hermes
 |-----------|--------|-----|
 | omniroute | 512MB | 1 core |
 | hermes | 1536MB | 2 cores |
-| OS/headroom | ~1952MB | 1 core |
+| silverbullet | 256MB | 0.5 core |
+| OS/headroom | ~1696MB | 0.5 core |
 
 ## Manual Combo Seeding
 
@@ -54,6 +56,15 @@ OmniRoute combos are not seeded automatically. After starting the stack:
 This creates the `personal/gemini-fallback` combo that routes requests through antigravity (paid Gemini) first, falling back to opencode free models on exhaustion.
 
 To re-seed after a database reset, run the same command again.
+
+## Knowledgebase (SilverBullet)
+
+Access at `http://<pi-ip>:7070`
+
+- Username: from `SB_USER` in `.env`
+- Password: from `SB_PASSWORD` in `.env`
+
+Notes are stored at `~/Personal/silverbullet/` on the host. Hermes has read access to this directory at `/opt/data/Personal/silverbullet/`, so any notes you create in SilverBullet are automatically available as Hermes knowledgebase content.
 
 ## Dashboard
 
@@ -71,5 +82,6 @@ Access at `http://<pi-ip>:9119`
 ├── .env                   # Secrets (git-ignored)
 ├── .env.example           # Template for .env
 ├── hermes-data/           # Hermes persistent data (git-ignored, contains config copy)
-└── omniroute-data/        # OmniRoute persistent data (git-ignored)
+├── omniroute-data/        # OmniRoute persistent data (git-ignored)
+└── ~/Personal/silverbullet/  # SilverBullet notes space (shared with Hermes)
 ```

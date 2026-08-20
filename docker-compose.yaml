@@ -63,3 +63,19 @@ services:
       omniroute:
         condition: service_healthy
     command: gateway run
+
+  silverbullet:
+    image: ghcr.io/silverbulletmd/silverbullet:latest
+    container_name: silverbullet
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    ports:
+      - "7070:3000"
+    environment:
+      - SB_USER=${SB_USER:-admin}:${SB_PASSWORD}
+    volumes:
+      - ~/Personal/silverbullet:/space
