@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # OmniRoute combo seed script — runs after server starts
 # Non-fatal: if seeding fails, the server keeps running
-# Usage: docker exec omniroute /app/data/seed-combos.sh
+# Usage: ./seed-combos.sh
 
 set -uo pipefail
 
