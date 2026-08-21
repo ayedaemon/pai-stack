@@ -21,7 +21,7 @@ services:
       - ./omniroute-data:/app/data
       - ./seed-combos.sh:/app/seed-combos.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('net').createConnection(20128,'localhost').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      test: [ "CMD-SHELL", "node -e \"require('net').createConnection(20128,'localhost').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\"" ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -37,8 +37,8 @@ services:
           memory: 1536M
           cpus: "2.0"
     ports:
-      - "9119:9119"   # Hermes internal dashboard
-      - "8642:8642"   # Hermes OpenAI-compatible API Server
+      - "9119:9119" # Hermes internal dashboard
+      - "8642:8642" # Hermes OpenAI-compatible API Server
     environment:
       - HERMES_HOME=/opt/hermes/data
       - HERMES_UID=${UID:-1000}
@@ -58,7 +58,7 @@ services:
       - ./config.yaml:/tmp/config.yaml.host:ro
       - ./hermes-entrypoint.sh:/hermes-entrypoint.sh:ro
       - ~/Personal:/opt/data/Personal
-    entrypoint: ["/bin/sh", "/hermes-entrypoint.sh"]
+    entrypoint: [ "/bin/sh", "/hermes-entrypoint.sh" ]
     depends_on:
       omniroute:
         condition: service_healthy
@@ -68,6 +68,7 @@ services:
     image: ghcr.io/silverbulletmd/silverbullet:latest
     container_name: silverbullet
     restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
     deploy:
       resources:
         limits:
