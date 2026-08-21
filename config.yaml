@@ -141,6 +141,19 @@ platforms:
   telegram:
     enabled: true
 
+# ── Knowledge Base & Vector Search ────────────────────────────────────
+# Indexes ~/Personal (all projects + SilverBullet notes) for RAG.
+# Uses local fastembed (all-MiniLM-L6-v2, ~80MB RAM, no API key).
+# File changes from SilverBullet are picked up automatically.
+knowledgebase:
+  enabled: true
+  directories:
+    - /opt/data/Personal
+  auto_retrieve: true
+  max_context_chunks: 8
+  embedding_model: local
+  reindex_on_change: true
+
 # ── Security ──────────────────────────────────────────────────────────
 # Secret redaction is ON by default — strings that look like API keys,
 # tokens, and passwords are masked in tool output, logs, and chat

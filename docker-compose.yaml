@@ -61,7 +61,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1536M
+          memory: 1792M
           cpus: "2.0"
     environment:
       - HERMES_HOME=/opt/hermes/data

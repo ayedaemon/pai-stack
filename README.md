@@ -50,9 +50,9 @@ All services are accessible over HTTPS via Tailscale TLS at `rpi.burro-smelt.ts.
 |-----------|--------|-----|
 | caddy | 64MB | 0.5 core |
 | omniroute | 512MB | 1 core |
-| hermes | 1536MB | 2 cores |
+| hermes | 1792MB | 2 cores |
 | silverbullet | 256MB | 0.5 core |
-| OS/headroom | ~1632MB | 0 core |
+| OS/headroom | ~1376MB | 0 core |
 
 ## Manual Combo Seeding
 
@@ -66,14 +66,33 @@ This creates the `personal/gemini-fallback` combo that routes requests through a
 
 To re-seed after a database reset, run the same command again.
 
-## Knowledgebase (SilverBullet)
+## Knowledgebase & Vector Search
+
+### SilverBullet (Note-taking UI)
 
 Access at `https://rpi.burro-smelt.ts.net:7070`
 
 - Username: from `SB_USER` in `.env`
 - Password: from `SB_PASSWORD` in `.env`
 
-Notes are stored at `~/Personal/silverbullet/` on the host. Hermes has read access to this directory at `/opt/data/Personal/silverbullet/`, so any notes you create in SilverBullet are automatically available as Hermes knowledgebase content.
+### Hermes RAG (Retrieval-Augmented Generation)
+
+Hermes indexes the entire `~/Personal` directory tree for vector search, which includes:
+- SilverBullet notes (`~/Personal/silverbullet/`)
+- All project directories under `~/Personal/`
+
+**How it works:**
+- Uses local embeddings (`all-MiniLM-L6-v2` via fastembed, ~80MB RAM, no API key)
+- Stores vectors in sqlite-vec alongside Hermes's existing database
+- `reindex_on_change: true` — file watcher picks up edits from SilverBullet and other tools automatically
+- `auto_retrieve: true` — relevant chunks are injected into conversation context automatically
+
+**Shared volume mapping:**
+
+| Host | Hermes Container | SilverBullet Container |
+|------|------------------|------------------------|
+| `~/Personal/` | `/opt/data/Personal/` (read/write) | — |
+| `~/Personal/silverbullet/` | `/opt/data/Personal/silverbullet/` | `/space` (read/write) |
 
 ## Dashboard
 
