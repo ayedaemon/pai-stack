@@ -68,13 +68,9 @@ To re-seed after a database reset, run the same command again.
 
 ## SilverBullet Configuration
 
-To configure SilverBullet with useful plugs like the **Obsidian-Style Visual Graph** (`silverbullet-graphview`), run the seed script:
+The **Obsidian-Style Visual Graph** (`silverbullet-graphview`) plug is automatically pre-loaded when you build the docker images.
 
-```bash
-./seed-silverbullet.sh
-```
-
-This script will initialize your SilverBullet `CONFIG.md` page with the required Lua configuration for the graph view. After running it, open SilverBullet and run the command `Plugs: Update` to install the plug.
+On container startup, it will automatically populate your `CONFIG.md` and load the plug into your SilverBullet workspace. No manual setup is required.
 
 ## Knowledgebase & Vector Search
 
@@ -116,10 +112,11 @@ Access at `https://rpi.burro-smelt.ts.net:9119`
 ```
 ├── docker-compose.yaml    # Service definitions (includes Caddy)
 ├── Dockerfile.caddy       # Custom Caddy build with Tailscale TLS module
+├── Dockerfile.silverbullet# Custom SilverBullet build with pre-loaded plugs
 ├── Caddyfile              # Reverse proxy configuration
 ├── config.yaml            # Hermes configuration (source of truth)
 ├── seed-combos.sh         # Combo seeding script
-├── seed-silverbullet.sh   # SilverBullet configuration script
+├── silverbullet-entrypoint.sh # Entrypoint wrapper for SilverBullet
 ├── .env                   # Secrets (git-ignored)
 ├── .env.example           # Template for .env
 ├── hermes-data/           # Hermes persistent data (git-ignored, contains config copy)

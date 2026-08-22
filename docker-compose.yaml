@@ -89,7 +89,9 @@ services:
     command: gateway run
 
   silverbullet:
-    image: ghcr.io/silverbulletmd/silverbullet:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.silverbullet
     container_name: silverbullet
     restart: unless-stopped
     user: "${UID:-1000}:${GID:-1000}"
