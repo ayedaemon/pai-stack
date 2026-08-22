@@ -66,6 +66,16 @@ This creates the `personal/gemini-fallback` combo that routes requests through a
 
 To re-seed after a database reset, run the same command again.
 
+## SilverBullet Configuration
+
+To configure SilverBullet with useful plugs like the **Obsidian-Style Visual Graph** (`silverbullet-graphview`), run the seed script:
+
+```bash
+./seed-silverbullet.sh
+```
+
+This script will initialize your SilverBullet `CONFIG.md` page with the required Lua configuration for the graph view. After running it, open SilverBullet and run the command `Plugs: Update` to install the plug.
+
 ## Knowledgebase & Vector Search
 
 ### SilverBullet (Note-taking UI)
@@ -109,6 +119,7 @@ Access at `https://rpi.burro-smelt.ts.net:9119`
 ├── Caddyfile              # Reverse proxy configuration
 ├── config.yaml            # Hermes configuration (source of truth)
 ├── seed-combos.sh         # Combo seeding script
+├── seed-silverbullet.sh   # SilverBullet configuration script
 ├── .env                   # Secrets (git-ignored)
 ├── .env.example           # Template for .env
 ├── hermes-data/           # Hermes persistent data (git-ignored, contains config copy)
