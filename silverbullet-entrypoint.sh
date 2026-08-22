@@ -43,4 +43,12 @@ EOF
 fi
 
 # Hand over to original SilverBullet entrypoint
-exec /docker-entrypoint.sh "$@"
+if [ -x "/docker-entrypoint.sh" ]; then
+    exec /docker-entrypoint.sh "$@"
+elif [ -x "/silverbullet.sh" ]; then
+    exec /silverbullet.sh "$@"
+elif [ -x "/silverbullet" ]; then
+    exec /silverbullet "$@"
+else
+    exec silverbullet "$@"
+fi
