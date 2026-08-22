@@ -68,9 +68,9 @@ To re-seed after a database reset, run the same command again.
 
 ## SilverBullet Configuration
 
-The **Obsidian-Style Visual Graph** (`silverbullet-graphview`) plug is automatically pre-loaded when you build the docker images.
+The **Obsidian-Style Visual Graph** (`silverbullet-graphview`) and **Tree View File Explorer** (`treeview`) plugs are automatically pre-loaded when you build the docker images.
 
-On container startup, it will automatically populate your `CONFIG.md` and load the plug into your SilverBullet workspace. No manual setup is required.
+On container startup, they will automatically populate your `CONFIG.md` and load into your SilverBullet workspace. No manual setup is required.
 
 ## Knowledgebase & Vector Search
 

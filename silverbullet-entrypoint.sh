@@ -19,6 +19,7 @@ This is your main configuration page.
 config.set({
   plugs = {
     "ghr:deepkn/silverbullet-graphview",
+    "github:joekrill/silverbullet-treeview/treeview.plug.js",
   }
 })
 ```
@@ -33,6 +34,7 @@ else
 config.set({
   plugs = {
     "ghr:deepkn/silverbullet-graphview",
+    "github:joekrill/silverbullet-treeview/treeview.plug.js",
   }
 })
 ```
