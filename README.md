@@ -24,9 +24,9 @@ docker compose up -d --build
 ./seed-combos.sh
 ```
 
-## Updating config.yaml
+## Updating hermes-config.yaml
 
-Edit `config.yaml` then restart — it syncs automatically:
+Edit `hermes-config.yaml` then restart — it syncs automatically:
 
 ```bash
 docker compose restart hermes
@@ -114,7 +114,7 @@ Access at `https://rpi.burro-smelt.ts.net:9119`
 ├── Dockerfile.caddy       # Custom Caddy build with Tailscale TLS module
 ├── Dockerfile.silverbullet# Custom SilverBullet build with pre-loaded plugs
 ├── Caddyfile              # Reverse proxy configuration
-├── config.yaml            # Hermes configuration (source of truth)
+├── hermes-config.yaml     # Hermes configuration (source of truth)
 ├── seed-combos.sh         # Combo seeding script
 ├── silverbullet-entrypoint.sh # Entrypoint wrapper for SilverBullet
 ├── .env                   # Secrets (git-ignored)

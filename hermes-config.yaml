@@ -1,0 +1,35 @@
+model:
+  # Removing the "default" key allows Hermes to query and list all available 
+  # models from the OmniRoute /v1/models endpoint instead of locking it to one.
+  provider: openai-api
+  base_url: http://omniroute:20128/v1
+
+database:
+  journal_mode: wal
+
+dashboard:
+  theme: cyberpunk
+  basic_auth:
+    username: admin
+    password_hash: scrypt$16384$8$1$uosygqgCy5PIBFlmUhRGQA==$KJ81eMJHF5EIKmMs03KWjrbECEbRiSCVfMRkiteN9BU=
+
+# ── Knowledge Base (SilverBullet) ─────────────────────────────────────
+knowledgebase:
+  enabled: true
+  directories:
+    - /opt/data/Personal
+  auto_retrieve: true
+  max_context_chunks: 8
+  embedding_model: local
+  reindex_on_change: true
+
+# ── Platforms (Telegram) ──────────────────────────────────────────────
+platforms:
+  telegram:
+    enabled: true
+
+platform_toolsets:
+  telegram:
+    - hermes-telegram
+
+_config_version: 34

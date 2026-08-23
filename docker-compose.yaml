@@ -79,7 +79,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - ./hermes-data:/opt/hermes/data
-      - ./config.yaml:/tmp/config.yaml.host:ro
+      - ./hermes-config.yaml:/tmp/hermes-config.yaml.host:ro
       - ./hermes-entrypoint.sh:/hermes-entrypoint.sh:ro
       - ~/Personal:/opt/data/Personal
     entrypoint: [ "/bin/sh", "/hermes-entrypoint.sh" ]
