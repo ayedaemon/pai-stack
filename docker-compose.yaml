@@ -63,3 +63,21 @@ services:
       omniroute:
         condition: service_healthy
     command: gateway run
+
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    restart: unless-stopped
+    hostname: rpi-syncthing
+    environment:
+      - PUID=${UID:-1000}
+      - PGID=${GID:-1000}
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./syncthing-config:/config
+      - ~/Personal:/data/Personal
+    ports:
+      - "8384:8384"       # Web GUI
+      - "22000:22000/tcp" # Sync protocol
+      - "22000:22000/udp" # QUIC sync protocol
+      - "21027:21027/udp" # Local discovery

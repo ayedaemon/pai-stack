@@ -1,4 +1,5 @@
 hermes-data/
 omniroute-data/
+syncthing-config/
 .env
 *.log
