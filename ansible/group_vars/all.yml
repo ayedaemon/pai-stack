@@ -1,0 +1,33 @@
+---
+# ==============================================================================
+# pai-stack Configuration & Secrets
+# ==============================================================================
+
+# Target Host Deployment Paths
+pai_stack_dir: "{{ ansible_user_dir }}/pai-stack"
+pai_personal_dir: "{{ ansible_user_dir }}/Personal"
+
+# Container User & Permission Mapping (matches host user UID/GID)
+pai_user: "{{ ansible_user }}"
+pai_uid: 1000
+pai_gid: 1000
+
+# Tailscale TLS & Domain Configuration
+# Passed via extra-vars from .env
+tailscale_domain: ""
+
+# Tailscale Node Setup (Optional if machine is already on Tailscale)
+tailscale_auth_key: ""
+tailscale_args: ""
+
+# Hermes Agent & OmniRoute Secrets
+# If left empty, secure random 32-byte hex keys/passwords will be generated on setup
+openai_api_key: ""
+api_server_key: ""
+hermes_dashboard_username: "admin"
+hermes_dashboard_password: ""
+hermes_dashboard_secret: ""
+
+# SilverBullet Authentication
+sb_user: "admin"
+sb_password: ""

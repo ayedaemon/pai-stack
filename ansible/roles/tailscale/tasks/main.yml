@@ -1,0 +1,54 @@
+---
+- name: Check if Tailscale is already installed
+  ansible.builtin.command: which tailscale
+  register: tailscale_check
+  changed_when: false
+  failed_when: false
+
+- name: Install Tailscale via official script
+  ansible.builtin.shell: |
+    curl -fsSL https://tailscale.com/install.sh | sh
+  become: yes
+  when: tailscale_check.rc != 0 and tailscale_install | bool
+
+- name: Ensure tailscaled service is enabled and running
+  ansible.builtin.service:
+    name: tailscaled
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Check Tailscale connection status
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status_raw
+  changed_when: false
+  failed_when: false
+  become: yes
+
+- name: Authenticate with Tailscale (if auth key provided and not already connected)
+  ansible.builtin.command: >
+    tailscale up
+    --authkey={{ tailscale_auth_key }}
+    {{ tailscale_args }}
+  become: yes
+  when:
+    - tailscale_auth_key is defined
+    - tailscale_auth_key | length > 0
+    - (tailscale_status_raw.rc != 0 or 'NeedsLogin' in tailscale_status_raw.stdout or 'Stopped' in tailscale_status_raw.stdout)
+
+- name: Configure Tailscale operator for user/container socket access
+  ansible.builtin.command: tailscale set --operator={{ pai_user | default(ansible_user) }}
+  become: yes
+  failed_when: false
+
+- name: Get Tailscale IPv4 address
+  ansible.builtin.command: tailscale ip -4
+  register: tailscale_ip
+  changed_when: false
+  failed_when: false
+
+- name: Show Tailscale IP
+  ansible.builtin.debug:
+    msg: "Tailscale is active at IP: {{ tailscale_ip.stdout | default('Not connected') }}"
+  when: tailscale_ip.rc == 0
+

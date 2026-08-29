@@ -1,0 +1,13 @@
+---
+# pai_user / pai_stack_dir / pai_personal_dir are provided by group_vars/all.yml
+# (resolved from the connection user). Defining them here with {{ ansible_user* }}
+# fails because role defaults are templated before connection/fact vars exist.
+pai_uid: 1000
+pai_gid: 1000
+pai_timezone: "Asia/Kolkata"
+
+openai_api_key: ""
+api_server_key: ""
+hermes_dashboard_username: "admin"
+hermes_dashboard_password: ""
+hermes_dashboard_secret: ""

@@ -1,0 +1,23 @@
+---
+- name: Deploy pai-stack on target host
+  hosts: all
+  gather_facts: yes
+  vars_files:
+    - group_vars/all.yml
+
+  roles:
+    - role: common
+      become: yes
+      tags: [common, base]
+
+    - role: tailscale
+      become: yes
+      tags: [tailscale, network]
+
+    - role: docker
+      become: yes
+      tags: [docker]
+
+    - role: pai_stack
+      become: yes
+      tags: [pai_stack, app]
