@@ -197,6 +197,56 @@ with the Pi.
 
 ---
 
+---
+
+## 🤖 Delegate Agents (Antigravity + OpenCode)
+
+Hermes can delegate coding tasks to two **isolated CLI containers** over MCP
+(Model Context Protocol). Hermes stays the manager: it retrieves project
+context from the KB, formulates the precise task, calls a delegate, reviews
+the result, and writes the final artifact back into `silverbulletKB` (which
+syncs to your machine). The delegates never get host/Docker access.
+
+```
+Hermes ──MCP/HTTP──► antigravity container  ─┐
+                   └─► opencode container     ├──► agent-workspace (/workspace, rw)
+                                                └──► silverbulletKB (/kb, read-only)
+```
+
+- **`antigravity`** — Google Antigravity CLI (`agy`) on your **Pro account**
+  (a different model family from OpenCode, good for independent second
+  opinions / research / docs).
+- **`opencode`** — OpenCode CLI using its **own free models**.
+- Both expose one tool, `run_task(task, context_refs, mode)`, over HTTP MCP
+  at `http://antigravity:8000/mcp` and `http://opencode:8001/mcp` (internal
+  only — **not** exposed via Caddy). They share `agent-workspace` and a
+  read-only mount of the KB; they cannot touch `STACK_ROOT` directly.
+- Concurrency is one-task-at-a-time per delegate (protects the Pi).
+
+### One-time Antigravity auth
+The `agy` container uses your Pro account via OAuth. After the first deploy:
+
+```bash
+docker compose exec -it antigravity agy login   # device-code flow → paste in browser
+```
+
+Credentials persist in the `antigravity-auth` volume, so no re-login on restart.
+
+### Configuration (`.env`)
+| Var | Purpose | Default |
+|-----|---------|---------|
+| `ANTIGRAVITY_MODEL` | Model `agy` uses | `Gemini 3.5 Flash (High)` |
+| `OPENCODE_MODEL` | OpenCode model (blank = its free/default) | _(blank)_ |
+| `OPENCODE_PERMISSION` | Must be `{"*":"allow"}` or OpenCode hangs headless | `{"*":"allow"}` |
+
+### Notes
+- Delegates operate in `/workspace`. For code tasks, give Hermes a git repo
+  URL or path; the delegate clones/edits there and returns a diff/summary.
+- Hermes writes the merged result into `silverbulletKB` — it does **not** let a
+  delegate write the live KB directly.
+
+---
+
 ## ⚙️ Updating Configuration
 
 To update Hermes configuration:
@@ -243,4 +293,29 @@ A `Makefile` wraps the Ansible runner and common runtime operations:
     ├── playbook.yml           # Unified deployment playbook
     ├── group_vars/            # User settings & secrets (all.yml)
     └── roles/                 # Roles: common, tailscale, docker, pai_stack
+
+## 💾 Data Storage & Permissions
+
+To avoid `EACCES` permission errors, container state is kept in **Docker named
+volumes** (owned by each container's own runtime UID) rather than host bind
+mounts. Only host-coupled data is bind-mounted.
+
+| Data | Storage | Notes |
+|------|---------|-------|
+| Hermes sessions/keys | named volume `hermes-data` | chowned to `HERMES_UID` in `hermes/entrypoint.sh` |
+| OmniRoute state | named volume `omniroute-data` | OmniRoute runs as root (`user: "0:0"`) |
+| Caddy certs/config | named volume `caddy-data`, `caddy-config` | |
+| Agent scratch + Antigravity OAuth | named volume `agent-workspace`, `antigravity-auth` | delegate containers run as root |
+| Knowledge Base | **bind mount** `${STACK_ROOT}/silverbulletKB` | required — Syncthing syncs `${STACK_ROOT}`; SilverBullet runs as `${UID}:${GID}` to match host ownership |
+| Config files | **bind mount (ro)** `./hermes/config.yaml`, `./caddy/Caddyfile`, `./omniroute/seed-combos.sh` | read-only, no writes |
+
+**Backups:** named volumes live in `/var/lib/docker/volumes/` on the Pi. Export one with:
+```bash
+docker run --rm -v <volume>:/data -v "$PWD":/backup busybox \
+  tar czf /backup/<volume>.tar.gz -C /data .
+```
+The KB is just files under `${STACK_ROOT}/silverbulletKB` (already Syncthing-synced).
+
+**Reset:** `make clean` runs `docker compose down -v`, which deletes all named
+volumes (Hermes re-auths, OmniRoute reseeds, Caddy re-issues Tailscale certs).
 ```

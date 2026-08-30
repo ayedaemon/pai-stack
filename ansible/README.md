@@ -13,7 +13,7 @@ Point it at any SSH-reachable address — a **LAN IP** (e.g. `192.168.1.50`) or 
   - Installs prerequisites (`curl`, `gnupg`, `ca-certificates`, `python3`).
   - Installs & starts Tailscale.
   - Installs official Docker Engine and Docker Compose plugin.
-  - Creates persistent folders with correct UID/GID permissions (`hermes-data`, `omniroute-data`, `caddy-data`, `caddy-config`, `~/Personal/silverbullet`).
+  - Creates the Syncthing note folder with correct UID/GID permissions (`~/Personal/silverbullet`). Container state (`hermes-data`, `omniroute-data`, `caddy-data`, `caddy-config`) lives in Docker **named volumes**, which Docker owns with each container's runtime UID — this avoids EACCES without host-UID coupling.
   - Builds custom images (Caddy with Tailscale plugin, SilverBullet with pre-loaded plugs).
   - Generates secure random credentials in `.env` (preserves existing secrets on re-runs).
   - Starts the stack with `docker compose up -d --build`.

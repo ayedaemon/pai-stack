@@ -32,10 +32,6 @@
     group: "{{ pai_user | default(ansible_user) }}"
     mode: "0755"
   loop:
-    - "{{ pai_stack_dir }}/hermes-data"
-    - "{{ pai_stack_dir }}/omniroute-data"
-    - "{{ pai_stack_dir }}/caddy-data"
-    - "{{ pai_stack_dir }}/caddy-config"
     - "{{ pai_personal_dir }}"
     - "{{ pai_personal_dir }}/silverbulletKB"
 
@@ -130,6 +126,8 @@
     - silverbullet
     - hermes
     - omniroute
+    - opencode
+    - antigravity
 
 - name: Ensure build-context directories exist (copy needs existing parents)
   ansible.builtin.file:
@@ -143,6 +141,8 @@
     - hermes
     - silverbullet
     - omniroute
+    - opencode
+    - antigravity
 
 - name: Copy project files (explicit file copies to avoid directory nesting)
   ansible.builtin.copy:
@@ -160,6 +160,11 @@
     - { src: "hermes/entrypoint.sh", dest: "hermes/entrypoint.sh", mode: "0755" }
     - { src: "omniroute/seed-combos.sh", dest: "omniroute/seed-combos.sh", mode: "0755" }
     - { src: "caddy/Caddyfile", dest: "caddy/Caddyfile", mode: "0644" }
+    - { src: "opencode/Dockerfile", dest: "opencode/Dockerfile", mode: "0644" }
+    - { src: "opencode/mcp_server.py", dest: "opencode/mcp_server.py", mode: "0644" }
+    - { src: "antigravity/Dockerfile", dest: "antigravity/Dockerfile", mode: "0644" }
+    - { src: "antigravity/mcp_server.py", dest: "antigravity/mcp_server.py", mode: "0644" }
+    - { src: "antigravity/seed_settings.json", dest: "antigravity/seed_settings.json", mode: "0644" }
 
 - name: Seed knowledge base scaffold into SilverBullet note space (never overwrite user edits)
   ansible.builtin.copy:
@@ -176,6 +181,8 @@
   loop:
     - caddy
     - silverbullet
+    - opencode
+    - antigravity
   register: dockerfile_stats
 
 - name: Fail fast if a build-context Dockerfile is missing at root
@@ -354,6 +361,13 @@
   register: seed_result
   changed_when: "'created' in seed_result.stdout or 'Seed complete' in seed_result.stdout"
   failed_when: false
+
+- name: Restart Hermes to re-probe /v1/models and discover the seeded free-chat combo
+  ansible.builtin.command: docker compose restart hermes
+  args:
+    chdir: "{{ pai_stack_dir }}"
+  register: hermes_restart_result
+  changed_when: hermes_restart_result.rc == 0
 
 - name: Retrieve Tailscale IP / hostname for display
   ansible.builtin.command: tailscale ip -4

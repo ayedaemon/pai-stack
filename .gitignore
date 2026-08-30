@@ -1,7 +1,3 @@
-hermes-data/
-omniroute-data/
-caddy-data/
-caddy-config/
 .env
 .deploy-secrets*.yml
 *.log

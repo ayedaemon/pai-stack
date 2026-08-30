@@ -6,7 +6,18 @@
 
 set -e
 
+# Ensure the data dir is owned by the UID Hermes drops to, so it can write
+# sessions/keys into the (named) volume without EACCES.
+chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" /opt/hermes/data 2>/dev/null || true
+
 cp /tmp/hermes-config.yaml.host /opt/hermes/data/hermes-config.yaml
+
+# Ensure the hermes CLI reads the same config the gateway does (CLI defaults to
+# config.yaml, not hermes-config.yaml or $HERMES_CONFIG).
+cp /opt/hermes/data/hermes-config.yaml /opt/hermes/data/config.yaml
+
+# Silence upstream SyntaxWarning in update_cmd.py (cosmetic, harmless but noisy)
+sed -i 's/venv\\Scripts/venv\\\\Scripts/g' /opt/hermes/hermes_cli/update_cmd.py 2>/dev/null || true
 
 # If password env var is set, regenerate the hash in config
 if [ -n "${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:-}" ]; then

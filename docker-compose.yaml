@@ -22,8 +22,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./caddy-data:/data
-      - ./caddy-config:/config
+      - caddy-data:/data
+      - caddy-config:/config
       - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
     depends_on:
       omniroute:
@@ -38,7 +38,7 @@ services:
     container_name: omniroute
     restart: unless-stopped
     stop_grace_period: 40s
-    user: "${UID:-1000}:${GID:-1000}"
+    user: "0:0"   # run as root (simplest); state lives in the omniroute-data named volume
     deploy:
       resources:
         limits:
@@ -50,7 +50,7 @@ services:
       - OMNIROUTE_AUTO_FREE_FALLBACK_TO_FULL_POOL=false
       - LOG_LEVEL=warn
     volumes:
-      - ./omniroute-data:/app/data
+      - omniroute-data:/app/data
       - ./omniroute/seed-combos.sh:/app/seed-combos.sh:ro
     healthcheck:
       test: [ "CMD-SHELL", "node -e \"require('net').createConnection(20128,'localhost').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\"" ]
@@ -83,7 +83,7 @@ services:
       - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
-      - ./hermes-data:/opt/hermes/data
+      - hermes-data:/opt/hermes/data
       - ./hermes/config.yaml:/tmp/hermes-config.yaml.host:ro
       - ./hermes/entrypoint.sh:/hermes-entrypoint.sh:ro
       - ${STACK_ROOT}:/opt/data/Personal
@@ -110,3 +110,65 @@ services:
       - SB_USER=${SB_USER:-admin}:${SB_PASSWORD}
     volumes:
       - ${STACK_ROOT}/silverbulletKB:/space
+
+  # ── Delegate agents (driven by Hermes over MCP) ──────────────────────────
+  # Each runs its CLI behind a thin MCP server. Hermes calls run_task().
+  # They share `agent-workspace` (rw) and read the KB (ro); nothing else.
+  antigravity:
+    build:
+      context: ./antigravity
+      dockerfile: Dockerfile
+    container_name: antigravity
+    restart: unless-stopped
+    environment:
+      - ANTIGRAVITY_MODEL=${ANTIGRAVITY_MODEL:-Gemini 3.5 Flash (High)}
+      - TASK_TIMEOUT=900
+      - HOME=/home/agy
+    volumes:
+      - agent-workspace:/workspace
+      - ${STACK_ROOT}/silverbulletKB:/kb:ro
+      - antigravity-auth:/home/agy/.gemini   # persisted Pro OAuth creds
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+          cpus: "2.0"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import socket; socket.create_connection(('127.0.0.1',8000))\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  opencode:
+    build:
+      context: ./opencode
+      dockerfile: Dockerfile
+    container_name: opencode
+    restart: unless-stopped
+    environment:
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-}
+      - OPENCODE_PERMISSION=${OPENCODE_PERMISSION:-{"*":"allow"}}
+      - TASK_TIMEOUT=900
+    volumes:
+      - agent-workspace:/workspace
+      - ${STACK_ROOT}/silverbulletKB:/kb:ro
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+          cpus: "2.0"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import socket; socket.create_connection(('127.0.0.1',8001))\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  agent-workspace:
+  antigravity-auth:
+  hermes-data:
+  omniroute-data:
+  caddy-data:
+  caddy-config:

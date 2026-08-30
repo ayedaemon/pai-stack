@@ -34,6 +34,5 @@ restart: ## Restart the stack
 update: ## Pull latest images & rebuild
 	docker compose pull && docker compose up -d --build
 
-clean:  ## Stop stack and remove local data dirs (DESTRUCTIVE)
+clean:  ## Stop stack and DELETE all persisted data (named volumes) — DESTRUCTIVE
 	docker compose down -v
-	rm -rf hermes-data omniroute-data caddy-data caddy-config syncthing-config
