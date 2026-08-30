@@ -1,0 +1,41 @@
+---
+- name: Check if Docker is installed
+  ansible.builtin.command: docker --version
+  register: docker_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install Docker via official get.docker.com script
+  ansible.builtin.shell: |
+    curl -fsSL https://get.docker.com | sh
+  become: yes
+  when: docker_installed.rc != 0
+
+- name: Ensure Docker service is running and enabled
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Ensure user is added to docker group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: docker
+    append: yes
+  loop: "{{ docker_users }}"
+  become: yes
+
+- name: Reset connection to refresh user group membership
+  ansible.builtin.meta: reset_connection
+
+- name: Verify Docker Compose plugin is available
+  ansible.builtin.command: docker compose version
+  register: docker_compose_version
+  changed_when: false
+  failed_when: docker_compose_version.rc != 0
+
+- name: Show Docker version
+  ansible.builtin.debug:
+    msg: "Docker is installed and ready: {{ docker_compose_version.stdout }}"
+

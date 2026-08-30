@@ -1,0 +1,39 @@
+---
+- name: Update apt cache (Debian/Ubuntu/Raspbian)
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == 'Debian'
+  become: yes
+
+- name: Install common prerequisites (Debian/Ubuntu/Raspbian)
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - sudo
+      - tar
+      - python3
+      - python3-pip
+      - python3-yaml
+      - git
+    state: present
+  when: ansible_os_family == 'Debian'
+  become: yes
+
+- name: Install common prerequisites (RedHat/CentOS/Fedora)
+  ansible.builtin.dnf:
+    name:
+      - curl
+      - ca-certificates
+      - gnupg2
+      - sudo
+      - tar
+      - python3
+      - python3-pip
+      - git
+    state: present
+  when: ansible_os_family == 'RedHat'
+  become: yes

@@ -1,5 +1,8 @@
+
 hermes-data/
 omniroute-data/
 syncthing-config/
+silverbullet
 .env
+.deploy-secrets*.yml
 *.log

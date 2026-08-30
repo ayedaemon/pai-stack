@@ -1,0 +1,13 @@
+FROM ghcr.io/silverbulletmd/silverbullet:latest
+
+# Download the graphview and treeview plugs
+RUN mkdir -p /opt/preloaded_plugs && \
+    wget -qO /opt/preloaded_plugs/graphview.plug.js https://github.com/deepkn/silverbullet-graphview/releases/latest/download/graphview.plug.js && \
+    wget -qO /opt/preloaded_plugs/treeview.plug.js https://raw.githubusercontent.com/joekrill/silverbullet-treeview/main/treeview.plug.js
+
+COPY entrypoint.sh /opt/silverbullet-entrypoint.sh
+
+# Ensure the script is readable and executable by the non-root user
+RUN chmod 755 /opt/silverbullet-entrypoint.sh
+
+ENTRYPOINT ["/sbin/tini", "--", "/opt/silverbullet-entrypoint.sh"]

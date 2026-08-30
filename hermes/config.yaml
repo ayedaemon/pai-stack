@@ -1,0 +1,111 @@
+model:
+  provider: omniroute
+  default: personal/free-chat
+  base_url: http://omniroute:20128/v1
+
+# Discovery ON: Hermes live-probes OmniRoute's /v1/models (the full ~1066 catalog
+# is browseable). The DEFAULT model is the `personal/free-chat` combo, which
+# omniroute/seed-combos.sh builds at startup from OmniRoute's OWN free LLM list
+# (OpenCode pool, OpenRouter :free, NVIDIA free) with failover. So every new chat
+# starts on a free, auto-routed model, while any paid model stays available on demand.
+providers:
+  omniroute:
+    api: http://omniroute:20128/v1
+    key_env: OPENAI_API_KEY
+    discover_models: true
+
+# Delegate agents: Hermes drives these two CLI containers over MCP (HTTP).
+# Each exposes a single `run_task` tool. They are separate, isolated
+# containers — Hermes never gets host/Docker access.
+mcp_servers:
+  antigravity:
+    url: http://antigravity:8000/mcp
+  opencode:
+    url: http://opencode:8001/mcp
+
+database:
+  journal_mode: wal
+
+dashboard:
+  theme: cyberpunk
+  basic_auth:
+    username: admin
+    password_hash: scrypt$16384$8$1$uosygqgCy5PIBFlmUhRGQA==$KJ81eMJHF5EIKmMs03KWjrbECEbRiSCVfMRkiteN9BU=
+
+# ── Agent identity & grounding ───────────────────────────────────────────
+# This is the single most important guard against "drifting" off your
+# projects. It tells Hermes to stay inside the documented scope and to answer
+# ONLY from the knowledge base, citing sources.
+agent:
+  system_prompt: |
+    You are the operations assistant for the projects documented in this
+    workspace's knowledge base (the SilverBullet space mounted at
+    /opt/data/Personal/silverbulletKB). Your job is to help with the CONFIGURED projects
+    using ONLY the information in the knowledge base and the project context
+    provided to you.
+
+    Grounding rules (always follow):
+    - Retrieve from the knowledge base BEFORE answering any project question.
+    - Base every claim on retrieved context. Cite the source page (file:lines).
+    - If the knowledge base has no relevant information, say so plainly.
+      Do NOT fall back to guesses or unrelated general knowledge.
+    - Stay within the scope of the documented projects. For requests outside
+      that scope, state that it is outside the configured projects.
+    - Prefer short, scannable replies on Telegram; include source links when useful.
+
+    # ── Delegation to sub-agents (you are the manager) ──────────────────────
+    # Two MCP tools let you delegate execution to coding agents running in
+    # isolated containers. You formulate the precise task and context; they
+    # only execute inside /workspace and return a result.
+    #   • mcp-opencode.run_task    — code implementation / bug fixes
+    #                                 (OpenCode, its own free models)
+    #   • mcp-antigravity.run_task — implementation, research, docs, review
+    #                                 (your Antigravity Pro account; a
+    #                                  different model family)
+    # Policy:
+    #   - Retrieve project context from the KB first; cite AGENTS.md scope.
+    #   - Delegate by strength: OpenCode for tight code edits, Antigravity for
+    #     broader/research tasks — OR fan out to both and merge their results
+    #     (two independent model families => higher-quality outcome).
+    #   - When the USER explicitly asks to implement, fix, refactor, research,
+    #     or generate code for a configured project, DELEGATE to these agents
+    #     (mcp-opencode.run_task and/or mcp-antigravity.run_task) instead of
+    #     attempting the edits yourself. They are the coding/sub-agent tools.
+    #   - Review returned diffs/summaries before accepting.
+    #   - Write the final artifact + a short change-log into silverbulletKB
+    #     (which syncs to the user's machine). Never let a sub-agent write the
+    #     live KB directly.
+    #   - Stay within configured-project scope; refuse out-of-scope requests.
+
+# Always-injected project manifest (lives in STACK_ROOT). This guarantees Hermes
+# knows the project list/scope even when retrieval returns nothing.
+context_files:
+  - /opt/data/Personal/silverbulletKB/AGENTS.md
+
+# ── Knowledge Base (SilverBullet) ─────────────────────────────────────────
+knowledgebase:
+  enabled: true
+  directories:
+    - /opt/data/Personal
+  auto_retrieve: true
+  max_context_chunks: 8          # 5-8 is the quality sweet spot; don't raise much
+  relevance_threshold: 0.5       # drop low-relevance chunks to reduce noise
+  embedding_model: local
+  reindex_on_change: true
+
+# ── Platforms (Telegram) ──────────────────────────────────────────────────
+platforms:
+  telegram:
+    enabled: true
+
+# Keep Telegram answers tight and on-scope for the configured projects.
+platform_hints:
+  telegram: "You are inside Telegram for the configured projects. Keep replies concise and on-topic. Reference the knowledge base for project facts and name the source channel/project when relevant."
+
+platform_toolsets:
+  telegram:
+    - hermes-telegram
+    - mcp-antigravity
+    - mcp-opencode
+
+_config_version: 34
