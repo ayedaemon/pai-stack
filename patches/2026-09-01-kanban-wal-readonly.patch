@@ -1,0 +1,24 @@
+diff --git a/hermes/entrypoint.sh b/hermes/entrypoint.sh
+index 4eef286..a172712 100644
+--- a/hermes/entrypoint.sh
++++ b/hermes/entrypoint.sh
+@@ -10,6 +10,19 @@ set -e
+ # sessions/keys into the (named) volume without EACCES.
+ chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" /opt/hermes/data 2>/dev/null || true
+ 
++# Ensure SQLite WAL/SHM files are created group/world-writable so the kanban
++# dashboard plugin and the dispatcher can both write to the same DB without
++# "kanban.db-wal is read-only" warnings. The default umask 022 makes new files
++# mode 0644, which means any process running as a non-owner (e.g. a worker
++# dispatched under a different uid, or the plugin after a chown from a
++# different container layer) cannot reopen the WAL. Setting umask 000 keeps
++# new files at 0666; combined with the chown above, the kanban plugin's
++# sqlite3.connect(...) call always produces a writable -wal/-shm pair.
++# Also back-fix existing files in case they were created with the old umask
++# (this is a no-op when permissions are already correct).
++umask 000
++find /opt/hermes/data -type f \( -name '*.db' -o -name '*.db-wal' -o -name '*.db-shm' -o -name '*.db.dispatch.lock' -o -name '*.db.init.lock' \) -exec chmod -c a+rw {} + 2>/dev/null || true
++
+ cp /tmp/hermes-config.yaml.host /opt/hermes/data/hermes-config.yaml
+ 
+ # Ensure the hermes CLI reads the same config the gateway does (CLI defaults to

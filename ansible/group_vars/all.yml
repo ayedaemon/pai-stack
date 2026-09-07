@@ -4,11 +4,14 @@
 # ==============================================================================
 
 # Target Host Deployment Paths
-pai_stack_dir: "{{ ansible_user_dir }}/pai-stack"
-pai_personal_dir: "{{ ansible_user_dir }}/Personal"
+pai_stack_dir: "{{ ansible_facts[\"user_dir\"] }}/pai-stack"
+pai_personal_dir: "{{ ansible_facts[\"user_dir\"] }}/Personal"
 
 # Container User & Permission Mapping (matches host user UID/GID)
-pai_user: "{{ ansible_user }}"
+# Resolves from the SSH connection user (deploy.sh passes TARGET_USER via -u).
+# Falls back to the fact-gathered login user so manual runs without -u still
+# target the right account instead of failing on undefined ansible_user.
+pai_user: "{{ ansible_user | default(ansible_user_id, true) }}"
 pai_uid: 1000
 pai_gid: 1000
 
@@ -20,14 +23,19 @@ tailscale_domain: ""
 tailscale_auth_key: ""
 tailscale_args: ""
 
-# Hermes Agent & OmniRoute Secrets
+# ── LLM Provider ────────────────────────────────────────────────────────
+llamacpp_base_url: "http://localhost:8080/v1"
+llamacpp_model_name: "nemotron-3-nano-omni-30b-a3b-reasoning-q4-k-m"
+
+# Hermes Agent & Provider Secrets
 # If left empty, secure random 32-byte hex keys/passwords will be generated on setup
-openai_api_key: ""
+openrouter_api_key: ""
+kilo_gateway_api_key: ""
+mistral_api_key: ""
 api_server_key: ""
 hermes_dashboard_username: "admin"
 hermes_dashboard_password: ""
 hermes_dashboard_secret: ""
 
-# SilverBullet Authentication
-sb_user: "admin"
-sb_password: ""
+# CodeGraph — code intelligence for Hermes
+codegraph_enabled: true

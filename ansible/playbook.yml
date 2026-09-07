@@ -5,6 +5,78 @@
   vars_files:
     - group_vars/all.yml
 
+  pre_tasks:
+    - name: Require a target user (TARGET_USER)
+      ansible.builtin.assert:
+        that: (pai_user | default('', true)) | length > 0
+        fail_msg: >-
+          No target user resolved. Deploy via ./deploy.sh with TARGET_USER set
+          (e.g. TARGET_USER=ayedaemon), or pass -u <user> / -e pai_user=<user>
+          to ansible-playbook.
+
+    - name: "Renew — Full teardown: remove all packages, configs, and stack files"
+      when: renew | default(false) | bool
+      block:
+        - name: "Renew — Stop all docker compose services"
+          ansible.builtin.command: docker compose down -v --remove-orphans
+          args:
+            chdir: "{{ pai_stack_dir }}"
+          failed_when: false
+          changed_when: false
+          become: true
+
+        - name: "Renew — Remove syncthing package, service, and configs"
+          ansible.builtin.apt:
+            name: syncthing
+            state: absent
+            purge: yes
+          become: true
+          ignore_errors: yes
+
+        - name: "Renew — Remove syncthing data and config directories"
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /var/lib/syncthing
+            - /etc/systemd/system/syncthing.service
+          become: true
+
+        - name: "Renew — Reload systemd after removing syncthing unit"
+          ansible.builtin.systemd:
+            daemon_reload: true
+          become: true
+          failed_when: false
+
+        - name: "Renew — Remove docker packages and configs"
+          ansible.builtin.apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+              - docker-buildx-plugin
+              - docker-compose-plugin
+            state: absent
+            purge: yes
+          become: true
+          ignore_errors: yes
+
+        - name: "Renew — Remove docker data and config directories"
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /var/lib/docker
+            - /etc/docker
+            - /var/lib/containerd
+          become: true
+
+        - name: "Renew — Remove the entire pai-stack deployment directory"
+          ansible.builtin.file:
+            path: "{{ pai_stack_dir }}"
+            state: absent
+          become: true
+
   roles:
     - role: common
       become: yes

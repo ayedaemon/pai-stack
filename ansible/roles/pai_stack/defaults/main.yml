@@ -6,7 +6,12 @@ pai_uid: 1000
 pai_gid: 1000
 pai_timezone: "Asia/Kolkata"
 
-openai_api_key: ""
+llamacpp_base_url: "http://localhost:8080/v1"
+llamacpp_model_name: "nemotron-3-nano-omni-30b-a3b-reasoning-q4-k-m"
+
+openrouter_api_key: ""
+kilo_gateway_api_key: ""
+mistral_api_key: ""
 api_server_key: ""
 hermes_dashboard_username: "admin"
 hermes_dashboard_password: ""

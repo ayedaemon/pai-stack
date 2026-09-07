@@ -17,6 +17,7 @@
     state: started
     enabled: yes
   become: yes
+  when: tailscale_check.rc == 0 or (tailscale_install | bool)
 
 - name: Check Tailscale connection status
   ansible.builtin.command: tailscale status --json
@@ -46,6 +47,11 @@
   register: tailscale_ip
   changed_when: false
   failed_when: false
+
+- name: Set Tailscale IP fact for reuse
+  ansible.builtin.set_fact:
+    tailscale_ipv4: "{{ tailscale_ip.stdout }}"
+  when: tailscale_ip.rc == 0
 
 - name: Show Tailscale IP
   ansible.builtin.debug:

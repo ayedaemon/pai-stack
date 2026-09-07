@@ -1,0 +1,78 @@
+--- a/hermes_cli/config_defaults.py
++++ b/hermes_cli/config_defaults.py
+@@ -2376,6 +2376,27 @@
+         # default profile. A task never ends up with assignee=None.
+         "default_assignee": "",
++        # Board-wide default model for spawned workers. Accepts the
++        # ``"provider/model"`` shorthand (e.g. ``openrouter/claude-3-haiku``)
++        # or a plain model name; when a provider is embedded, the
++        # dispatcher passes ``--provider <name>`` so the worker resolves
++        # the model against the intended backend instead of the assignee
++        # profile's configured provider.
++        #
++        # Precedence (highest wins):
++        #   1. Per-task ``model_override`` (set at create-time or via
++        #      ``kanban set-model <id>``) -- always wins, ignores this field.
++        #   2. This ``kanban.default_model`` setting -- applied to every
++        #      task that has no override, regardless of assignee profile.
++        #   3. Assignee profile's own ``model`` config -- the legacy
++        #      behaviour, when ``kanban.default_model`` is empty/unset.
++        #
++        # Empty string (default) preserves legacy behaviour. Use this when
++        # you want kanban runs to land on a specific model regardless of
++        # which profile claims the task -- e.g. a free model for triage /
++        # bulk fan-out work.
++        "default_model": "",
+
+         # Per-profile concurrency cap (#21582). When set to a positive int,
+
+--- a/hermes_cli/kanban_db.py
++++ b/hermes_cli/kanban_db.py
+@@ -10159,12 +10159,57 @@
+     if task.skills:
+         for sk in task.skills:
+             if sk:
+                 cmd.extend(["--skills", sk])
++    # Model selection, highest precedence first:
++    #   1. Per-task ``model_override`` (set at create-time or via
++    #      ``kanban set-model <id>``) -- always wins.
++    #   2. Board-wide ``kanban.default_model`` -- applied to every task
++    #      that has no override, regardless of assignee profile.
++    #   3. Assignee profile's own ``model`` config (legacy behaviour,
++    #      taken when both overrides are unset).
+     if task.model_override:
+         cmd.extend(["-m", task.model_override])
+         # Pin the provider too when the override names one, so the worker
+         # resolves the model against the intended backend instead of the
+         # profile's configured provider (mixing model X with provider Y is
+         # the classic mis-set that stalls a board).
+         if task.provider_override:
+             cmd.extend(["--provider", task.provider_override])
++    else:
++        # No per-task override -- fall through to the board-wide default
++        # if one is configured. Empty/unset = legacy "use the profile's
++        # own model" behaviour, so unset boards keep working unchanged.
++        from hermes_cli.config import load_config as _load_cfg
++        try:
++            _kb_default_model = (
++                (_load_cfg().get("kanban") or {}).get("default_model") or ""
++            ).strip()
++        except Exception:
++            # Config load failures must NOT block the dispatcher -- better
++            # to fall back to the legacy "profile model" path than to
++            # refuse to spawn a worker.
++            _kb_default_model = ""
++        if _kb_default_model:
++            cmd.extend(["-m", _kb_default_model])
++            # When the model string is ``provider/model``, pin the provider
++            # so the worker resolves against the intended backend instead of
++            # the profile's default. For plain model names (no slash), the
++            # profile's provider is used as-is.
++            if "/" in _kb_default_model:
++                _kb_provider, _kb_rest = _kb_default_model.split("/", 1)
++                if _kb_provider and _kb_rest:
++                    cmd.extend(["--provider", _kb_provider])
+
+     # Per-task thinking depth. Independent of the model override -- a task can
+     # run the profile's own model at a different depth -- so this is its own
+     # branch, not a nested one.

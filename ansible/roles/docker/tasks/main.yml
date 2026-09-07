@@ -24,10 +24,12 @@
     groups: docker
     append: yes
   loop: "{{ docker_users }}"
+  register: docker_group_result
   become: yes
 
 - name: Reset connection to refresh user group membership
   ansible.builtin.meta: reset_connection
+  when: docker_group_result.changed
 
 - name: Verify Docker Compose plugin is available
   ansible.builtin.command: docker compose version

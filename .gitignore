@@ -1,7 +1,8 @@
 
 hermes-data/
-omniroute-data/
 syncthing-config/
+caddy-data/
+caddy-config/
 silverbullet
 .env
 .deploy-secrets*.yml

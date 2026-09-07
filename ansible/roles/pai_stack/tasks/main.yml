@@ -11,9 +11,11 @@
     target_uid: "{{ user_getent.ansible_facts.getent_passwd[pai_user | default(ansible_user)][1] | default(pai_uid) }}"
     target_gid: "{{ user_getent.ansible_facts.getent_passwd[pai_user | default(ansible_user)][2] | default(pai_gid) }}"
 
-- name: Default STACK_ROOT to target user's ~/Personal when not provided
+- name: Default PERSONAL_FOLDER to target user's ~/Personal when not provided
   ansible.builtin.set_fact:
-    pai_personal_dir: "/home/{{ pai_user | default(ansible_user) }}/Personal"
+    pai_personal_dir: "{{ target_user_home }}/Personal"
+  vars:
+    target_user_home: "{{ user_getent.ansible_facts.getent_passwd[pai_user | default(ansible_user)][4] | default(ansible_facts['user_dir'], true) }}"
   when: pai_personal_dir | default('') | length == 0
 
 - name: Ensure target deployment directory exists
@@ -64,36 +66,93 @@
   changed_when: false
   when: not existing_env_stat.stat.exists and (hermes_dashboard_secret is not defined or hermes_dashboard_secret | length == 0)
 
-- name: Generate random SilverBullet password if not specified
-  ansible.builtin.command: openssl rand -hex 12
-  register: generated_sb_pass_cmd
-  changed_when: false
-  when: not existing_env_stat.stat.exists and (sb_password is not defined or sb_password | length == 0)
-
 - name: Generate a random Syncthing GUI password (used as fallback)
   ansible.builtin.command: openssl rand -hex 12
   register: generated_syncthing_pass_cmd
   changed_when: false
+  when: not existing_env_stat.stat.exists and (syncthing_gui_password is not defined or syncthing_gui_password | length == 0)
 
 - name: Set secret facts for new installation
   ansible.builtin.set_fact:
     generated_api_server_key: "{{ api_server_key if (api_server_key is defined and api_server_key | length > 0) else generated_api_key_cmd.stdout }}"
     generated_hermes_dashboard_password: "{{ hermes_dashboard_password if (hermes_dashboard_password is defined and hermes_dashboard_password | length > 0) else generated_dash_pass_cmd.stdout }}"
     generated_hermes_dashboard_secret: "{{ hermes_dashboard_secret if (hermes_dashboard_secret is defined and hermes_dashboard_secret | length > 0) else generated_dash_secret_cmd.stdout }}"
-    generated_sb_password: "{{ sb_password if (sb_password is defined and sb_password | length > 0) else generated_sb_pass_cmd.stdout }}"
     generated_syncthing_gui_user: "{{ syncthing_gui_user if (syncthing_gui_user is defined and syncthing_gui_user | length > 0) else 'admin' }}"
     generated_syncthing_gui_password: "{{ syncthing_gui_password if (syncthing_gui_password is defined and syncthing_gui_password | length > 0) else generated_syncthing_pass_cmd.stdout }}"
   when: not existing_env_stat.stat.exists
 
-- name: Preserve existing secrets if .env already exists
+
+
+- name: Generate fallback Syncthing GUI password if still empty (upgrade path)
+  ansible.builtin.command: openssl rand -hex 12
+  register: generated_syncthing_pass_fallback
+  changed_when: false
+  when: existing_env_stat.stat.exists and (generated_syncthing_gui_password | default('') | length == 0)
+
+- name: Set fallback Syncthing password fact (upgrade path)
   ansible.builtin.set_fact:
-    generated_api_server_key: "{{ (existing_env_slurp.content | b64decode | regex_search('API_SERVER_KEY=(.+)', '\\1'))[0] | default(api_server_key) }}"
-    generated_hermes_dashboard_password: "{{ (existing_env_slurp.content | b64decode | regex_search('HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=(.+)', '\\1'))[0] | default(hermes_dashboard_password) }}"
-    generated_hermes_dashboard_secret: "{{ (existing_env_slurp.content | b64decode | regex_search('HERMES_DASHBOARD_BASIC_AUTH_SECRET=(.+)', '\\1'))[0] | default(hermes_dashboard_secret) }}"
-    generated_sb_password: "{{ (existing_env_slurp.content | b64decode | regex_search('SB_PASSWORD=(.+)', '\\1'))[0] | default(sb_password) }}"
-    generated_syncthing_gui_user: "{{ (existing_env_slurp.content | b64decode | regex_search('SYNCTHING_GUI_USER=(.+)', '\\1'))[0] | default(syncthing_gui_user | default('admin')) }}"
-    generated_syncthing_gui_password: "{{ (existing_env_slurp.content | b64decode | regex_search('SYNCTHING_GUI_PASSWORD=(.+)', '\\1'))[0] | default(generated_syncthing_pass_cmd.stdout) }}"
+    generated_syncthing_gui_password: "{{ generated_syncthing_pass_fallback.stdout }}"
+  when: generated_syncthing_pass_fallback is defined and generated_syncthing_pass_fallback.stdout is defined and generated_syncthing_pass_fallback.stdout | length > 0
+
+- name: Preserve existing API_SERVER_KEY from .env
+  ansible.builtin.command:
+    cmd: "python3 -c \"import base64, re; d=base64.b64decode('{{ existing_env_slurp.content | b64decode }}'.encode()).decode(); m=re.search(r'API_SERVER_KEY=\\S+', d, re.MULTILINE); print(m.group().split('=',1)[1]) if m else ''\""
+    register: api_key_preserve
   when: existing_env_stat.stat.exists
+  changed_when: false
+
+- name: Set generated_api_server_key from existing .env
+  ansible.builtin.set_fact:
+    generated_api_server_key: "{{ api_key_preserve.stdout | default(api_server_key) }}"
+  when: existing_env_stat.stat.exists and api_key_preserve is defined and api_key_preserve.stdout is defined and api_key_preserve.stdout != ''
+
+- name: Preserve existing HERMES_DASHBOARD_BASIC_AUTH_PASSWORD from .env
+  ansible.builtin.command:
+    cmd: "python3 -c \"import base64, re; d=base64.b64decode('{{ existing_env_slurp.content | b64decode }}'.encode()).decode(); m=re.search(r'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=\\S+', d, re.MULTILINE); print(m.group().split('=',1)[1]) if m else ''\""
+    register: dash_pass_preserve
+  when: existing_env_stat.stat.exists
+  changed_when: false
+
+- name: Set generated_hermes_dashboard_password from existing .env
+  ansible.builtin.set_fact:
+    generated_hermes_dashboard_password: "{{ dash_pass_preserve.stdout | default(hermes_dashboard_password) }}"
+  when: existing_env_stat.stat.exists and dash_pass_preserve is defined and dash_pass_preserve.stdout is defined and dash_pass_preserve.stdout != ''
+
+- name: Preserve existing HERMES_DASHBOARD_BASIC_AUTH_SECRET from .env
+  ansible.builtin.command:
+    cmd: "python3 -c \"import base64, re; d=base64.b64decode('{{ existing_env_slurp.content | b64decode }}'.encode()).decode(); m=re.search(r'HERMES_DASHBOARD_BASIC_AUTH_SECRET=\\S+', d, re.MULTILINE); print(m.group().split('=',1)[1]) if m else ''\""
+    register: dash_secret_preserve
+  when: existing_env_stat.stat.exists
+  changed_when: false
+
+- name: Set generated_hermes_dashboard_secret from existing .env
+  ansible.builtin.set_fact:
+    generated_hermes_dashboard_secret: "{{ dash_secret_preserve.stdout | default(hermes_dashboard_secret) }}"
+  when: existing_env_stat.stat.exists and dash_secret_preserve is defined and dash_secret_preserve.stdout is defined and dash_secret_preserve.stdout != ''
+
+- name: Preserve existing SYNCTHING_GUI_USER from .env
+  ansible.builtin.command:
+    cmd: "python3 -c \"import base64, re; d=base64.b64decode('{{ existing_env_slurp.content | b64decode }}'.encode()).decode(); m=re.search(r'SYNCTHING_GUI_USER=\\S+', d, re.MULTILINE); print(m.group().split('=',1)[1]) if m else ''\""
+    register: syncthing_user_preserve
+  when: existing_env_stat.stat.exists
+  changed_when: false
+
+- name: Set generated_syncthing_gui_user from existing .env
+  ansible.builtin.set_fact:
+    generated_syncthing_gui_user: "{{ syncthing_user_preserve.stdout | default(syncthing_gui_user | default('admin')) }}"
+  when: existing_env_stat.stat.exists and syncthing_user_preserve is defined and syncthing_user_preserve.stdout is defined and syncthing_user_preserve.stdout != ''
+
+- name: Preserve existing SYNCTHING_GUI_PASSWORD from .env
+  ansible.builtin.command:
+    cmd: "python3 -c \"import base64, re; d=base64.b64decode('{{ existing_env_slurp.content | b64decode }}'.encode()).decode(); m=re.search(r'SYNCTHING_GUI_PASSWORD=\\S+', d, re.MULTILINE); print(m.group().split('=',1)[1]) if m else ''\""
+    register: syncthing_pass_preserve
+  when: existing_env_stat.stat.exists
+  changed_when: false
+
+- name: Set generated_syncthing_gui_password from existing .env
+  ansible.builtin.set_fact:
+    generated_syncthing_gui_password: "{{ syncthing_pass_preserve.stdout | default(syncthing_gui_password | default('')) | default(generated_syncthing_pass_cmd.stdout | default(''), true) }}"
+  when: existing_env_stat.stat.exists and syncthing_pass_preserve is defined and syncthing_pass_preserve.stdout is defined and syncthing_pass_preserve.stdout != ''
 
 - name: Template .env file
   ansible.builtin.template:
@@ -102,20 +161,7 @@
     owner: "{{ pai_user | default(ansible_user) }}"
     group: "{{ pai_user | default(ansible_user) }}"
     mode: "0600"
-
-- name: Compute Syncthing GUI basic-auth hash (bcrypt) for config.xml
-  ansible.builtin.command:
-    cmd: python3 -c "import bcrypt, os; print(bcrypt.hashpw(os.environ['P'].encode(), bcrypt.gensalt(rounds=12)).decode())"
-  environment:
-    P: "{{ generated_syncthing_gui_password }}"
-  register: syncthing_hash_cmd
-  changed_when: false
-  delegate_to: localhost
-  become: false
-
-- name: Set Syncthing GUI hash fact
-  ansible.builtin.set_fact:
-    syncthing_gui_password_hash: "{{ syncthing_hash_cmd.stdout }}"
+  register: env_template_result
 
 - name: Remove stale build-context dirs (prevent nested/missing files from prior runs)
   ansible.builtin.file:
@@ -123,11 +169,8 @@
     state: absent
   loop:
     - caddy
-    - silverbullet
+    - codegraph
     - hermes
-    - omniroute
-    - opencode
-    - antigravity
 
 - name: Ensure build-context directories exist (copy needs existing parents)
   ansible.builtin.file:
@@ -138,11 +181,8 @@
     mode: "0755"
   loop:
     - caddy
+    - codegraph
     - hermes
-    - silverbullet
-    - omniroute
-    - opencode
-    - antigravity
 
 - name: Copy project files (explicit file copies to avoid directory nesting)
   ansible.builtin.copy:
@@ -154,17 +194,23 @@
   loop:
     - { src: "docker-compose.yaml", dest: "docker-compose.yaml", mode: "0644" }
     - { src: "caddy/Dockerfile", dest: "caddy/Dockerfile", mode: "0644" }
-    - { src: "silverbullet/Dockerfile", dest: "silverbullet/Dockerfile", mode: "0644" }
-    - { src: "silverbullet/entrypoint.sh", dest: "silverbullet/entrypoint.sh", mode: "0755" }
-    - { src: "hermes/config.yaml", dest: "hermes/config.yaml", mode: "0644" }
+    - { src: "codegraph/Dockerfile", dest: "codegraph/Dockerfile", mode: "0644" }
+    - { src: "codegraph/package.json", dest: "codegraph/package.json", mode: "0644" }
+    - { src: "codegraph/server.js", dest: "codegraph/server.js", mode: "0644" }
     - { src: "hermes/entrypoint.sh", dest: "hermes/entrypoint.sh", mode: "0755" }
-    - { src: "omniroute/seed-combos.sh", dest: "omniroute/seed-combos.sh", mode: "0755" }
+    - { src: "hermes/Dockerfile", dest: "hermes/Dockerfile", mode: "0644" }
+    - { src: "hermes/apply-kanban-patch.py", dest: "hermes/apply-kanban-patch.py", mode: "0644" }
     - { src: "caddy/Caddyfile", dest: "caddy/Caddyfile", mode: "0644" }
-    - { src: "opencode/Dockerfile", dest: "opencode/Dockerfile", mode: "0644" }
-    - { src: "opencode/mcp_server.py", dest: "opencode/mcp_server.py", mode: "0644" }
-    - { src: "antigravity/Dockerfile", dest: "antigravity/Dockerfile", mode: "0644" }
-    - { src: "antigravity/mcp_server.py", dest: "antigravity/mcp_server.py", mode: "0644" }
-    - { src: "antigravity/seed_settings.json", dest: "antigravity/seed_settings.json", mode: "0644" }
+  register: pai_stack_copy_result
+
+- name: Template hermes config.yaml (reads llamacpp_base_url and llamacpp_model_name from .env)
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../hermes/config.yaml.j2"
+    dest: "{{ pai_stack_dir }}/hermes/config.yaml"
+    owner: "{{ pai_user | default(ansible_user) }}"
+    group: "{{ pai_user | default(ansible_user) }}"
+    mode: "0644"
+  register: hermes_config_result
 
 - name: Seed knowledge base scaffold into SilverBullet note space (never overwrite user edits)
   ansible.builtin.copy:
@@ -180,9 +226,7 @@
     path: "{{ pai_stack_dir }}/{{ item }}/Dockerfile"
   loop:
     - caddy
-    - silverbullet
-    - opencode
-    - antigravity
+    - codegraph
   register: dockerfile_stats
 
 - name: Fail fast if a build-context Dockerfile is missing at root
@@ -192,6 +236,17 @@
   loop: "{{ dockerfile_stats.results }}"
   loop_control:
     label: "{{ item.item }}"
+
+- name: Ensure PERSONAL_FOLDER exists for Syncthing sync (the folder it serves to the outside world)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ pai_user | default(ansible_user) }}"
+    group: "{{ pai_user | default(ansible_user) }}"
+    mode: "0755"
+  loop:
+    - "{{ pai_personal_dir }}"
+    - "{{ pai_personal_dir }}/silverbulletKB"
 
 - name: Remove any leftover Syncthing Docker container (now runs on the host)
   ansible.builtin.command: docker rm -f syncthing
@@ -205,25 +260,23 @@
   ansible.builtin.apt:
     name: syncthing
     state: present
-    update_cache: true
+    cache_valid_time: 3600
   become: true
 
-- name: Ensure Syncthing config and data directories exist
+- name: Ensure Syncthing config directory exists
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: /var/lib/syncthing
     state: directory
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: "0755"
-  loop:
-    - /var/lib/syncthing
-    - "{{ pai_personal_dir }}"
   become: true
 
 - name: Generate Syncthing config if missing (creates certs + device ID)
   ansible.builtin.command: syncthing --generate=/var/lib/syncthing
   args:
     creates: /var/lib/syncthing/config.xml
+  register: syncthing_generate_result
   become: true
 
 - name: Ensure Syncthing owns its config directory
@@ -235,18 +288,18 @@
     group: "{{ ansible_user }}"
   become: true
 
-- name: Read current Syncthing usage-reporting setting
-  ansible.builtin.slurp:
-    path: /var/lib/syncthing/config.xml
-  register: syncthing_cfg_slurp
-  become: true
-
 - name: Stop Syncthing before patching config (avoid it rewriting on exit)
   ansible.builtin.systemd:
     name: syncthing
     state: stopped
   become: true
   failed_when: false
+
+- name: Read current Syncthing config (after stop to avoid race)
+  ansible.builtin.slurp:
+    path: /var/lib/syncthing/config.xml
+  register: syncthing_cfg_slurp
+  become: true
 
 - name: Disable Syncthing anonymous usage reporting (telemetry)
   ansible.builtin.replace:
@@ -255,7 +308,7 @@
     replace: '<urAccepted>-1</urAccepted>'
   become: true
 
-- name: Point Syncthing default folder at STACK_ROOT
+- name: Point Syncthing default folder at PERSONAL_FOLDER
   ansible.builtin.replace:
     path: /var/lib/syncthing/config.xml
     regexp: '(<folder[^>]*path=")[^"]*(")'
@@ -269,12 +322,33 @@
     replace: '<folder id="personal"'
   become: true
 
-- name: Bind Syncthing GUI on host port 8385 (Caddy proxies :8384 with Tailscale TLS)
+- name: "Bind Syncthing GUI on host port 8385 (Caddy proxies :8384 with Tailscale TLS)"
   ansible.builtin.replace:
     path: /var/lib/syncthing/config.xml
-    regexp: '<address>[^<]*</address>'
-    replace: '<address>0.0.0.0:8385</address>'
+    regexp: '127\.0\.0\.1:8384'
+    replace: '0.0.0.0:8385'
   become: true
+
+- name: "Set Syncthing listen addresses for Tailscale connectivity"
+  ansible.builtin.replace:
+    path: /var/lib/syncthing/config.xml
+    regexp: '(<options>\s*<address>).*?(</address>)'
+    replace: '\g<1>tcp://0.0.0.0:22000, quic://0.0.0.0:22000\g<2>'
+  become: true
+
+- name: Compute Syncthing GUI basic-auth hash (bcrypt) — only when missing
+  ansible.builtin.command:
+    cmd: python3 -c "import bcrypt, os; print(bcrypt.hashpw(os.environ['P'].encode(), bcrypt.gensalt(rounds=12)).decode())"
+  environment:
+    P: "{{ generated_syncthing_gui_password }}"
+  register: syncthing_hash_cmd
+  changed_when: false
+  when: "'<user>' not in (syncthing_cfg_slurp.content | b64decode)"
+
+- name: Set Syncthing GUI hash fact
+  ansible.builtin.set_fact:
+    syncthing_gui_password_hash: "{{ syncthing_hash_cmd.stdout }}"
+  when: syncthing_hash_cmd is defined and syncthing_hash_cmd.stdout is defined
 
 - name: Set Syncthing GUI basic auth (user/password) in config.xml
   ansible.builtin.replace:
@@ -282,15 +356,6 @@
     regexp: '(</gui>)'
     replace: '    <user>{{ generated_syncthing_gui_user }}</user>\n    <password>{{ syncthing_gui_password_hash }}</password>\n\1'
   when: "'<user>' not in (syncthing_cfg_slurp.content | b64decode)"
-  become: true
-
-- name: Ensure Syncthing folder directory exists
-  ansible.builtin.file:
-    path: "{{ pai_personal_dir }}"
-    state: directory
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: "0755"
   become: true
 
 - name: Ensure Syncthing folder marker (.stfolder) exists
@@ -333,47 +398,64 @@
     daemon_reload: true
   become: true
 
-- name: Wait for Syncthing to listen on 8385
-  ansible.builtin.wait_for:
-    host: 127.0.0.1
-    port: 8385
-    delay: 5
-    timeout: 60
+- name: Wait for Syncthing to listen on 8385 (with diagnostics)
+  block:
+    - name: Wait for Syncthing to listen on 8385
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 8385
+        delay: 3
+        timeout: 90
+  rescue:
+    - name: Get Syncthing service status (on wait failure)
+      ansible.builtin.command: systemctl status syncthing --no-pager
+      register: syncthing_status_rescue
+      failed_when: false
+      become: true
+
+    - name: Get Syncthing journal (on wait failure)
+      ansible.builtin.command: journalctl -u syncthing -n 100 --no-pager
+      register: syncthing_journal_rescue
+      failed_when: false
+      become: true
+
+    - name: Show Syncthing failure diagnostics
+      ansible.builtin.debug:
+        msg:
+          - "Syncthing failed to listen on 127.0.0.1:8385 within 90s (Caddy will proxy 8384 → 8385 via Tailscale TLS)"
+          - "systemctl status: {{ syncthing_status_rescue.stdout | default('N/A') }}"
+          - "journal: {{ syncthing_journal_rescue.stdout | default('N/A') }}"
+
+    - name: Fail with diagnostics
+      ansible.builtin.fail:
+        msg: "Syncthing did not start on 8385 — check /var/lib/syncthing ownership (should be {{ ansible_user }}) and GUI <address>0.0.0.0:8385</address> in config.xml"
+
+- name: Build Docker Compose images (only when build context changed)
+  ansible.builtin.command: docker compose build --parallel
+  args:
+    chdir: "{{ pai_stack_dir }}"
+  register: compose_build_result
+  changed_when: compose_build_result.rc == 0
+  when: pai_stack_copy_result.changed or hermes_config_result.changed
 
 - name: Start Docker Compose services
-  ansible.builtin.command: docker compose up -d --build --remove-orphans
+  ansible.builtin.command: docker compose up -d --remove-orphans
   args:
     chdir: "{{ pai_stack_dir }}"
   register: compose_up_result
   changed_when: "'Started' in compose_up_result.stdout or 'Creating' in compose_up_result.stdout or 'Recreating' in compose_up_result.stdout"
 
-- name: Wait for OmniRoute API to become responsive (port 20128)
-  ansible.builtin.wait_for:
-    host: 127.0.0.1
-    port: 20128
-    delay: 10
-    timeout: 360
-
-- name: Seed OmniRoute model combos
-  ansible.builtin.command: docker compose exec -T omniroute /app/seed-combos.sh
-  args:
-    chdir: "{{ pai_stack_dir }}"
-  register: seed_result
-  changed_when: "'created' in seed_result.stdout or 'Seed complete' in seed_result.stdout"
-  failed_when: false
-
-- name: Restart Hermes to re-probe /v1/models and discover the seeded free-chat combo
-  ansible.builtin.command: docker compose restart hermes
-  args:
-    chdir: "{{ pai_stack_dir }}"
-  register: hermes_restart_result
-  changed_when: hermes_restart_result.rc == 0
-
-- name: Retrieve Tailscale IP / hostname for display
+- name: Retrieve Tailscale IP / hostname for display (reuse fact if available)
   ansible.builtin.command: tailscale ip -4
   register: ts_ip_res
   changed_when: false
   failed_when: false
+  when: tailscale_ipv4 is not defined
+
+- name: Set Tailscale IP fact from reuse
+  ansible.builtin.set_fact:
+    ts_ip_display: "{{ tailscale_ipv4 | default(ts_ip_res.stdout | default('N/A')) }}"
+  changed_when: false
 
 - name: Display Stack Access Summary
   ansible.builtin.debug:
@@ -381,7 +463,7 @@
       - "=================================================================="
       - "  PAI-STACK DEPLOYMENT SUCCESSFUL                                 "
       - "=================================================================="
-      - "Target Server:    {{ inventory_hostname }} (Tailscale IP: {{ ts_ip_res.stdout | default('N/A') }})"
+      - "Target Server:    {{ inventory_hostname }} (Tailscale IP: {{ ts_ip_display | default('N/A') }})"
       - "Tailscale Domain: {{ tailscale_domain }}"
       - ""
       - "Services (Accessed securely via Tailscale HTTPS):"
@@ -392,15 +474,11 @@
       - "  - Hermes API Server:  https://{{ tailscale_domain }}:8642"
       - "      API Key:          {{ generated_api_server_key }}"
       - ""
-      - "  - OmniRoute Gateway:  https://{{ tailscale_domain }}:20128"
-      - ""
-      - "  - SilverBullet UI:    https://{{ tailscale_domain }}:7070"
-      - "      Username:         {{ sb_user }}"
-      - "      Password:         {{ generated_sb_password }}"
-      - "      Notes Space:      {{ pai_personal_dir }}/silverbulletKB"
-      - ""
       - "  - Syncthing GUI:      https://{{ tailscale_domain }}:8384"
       - "      Username:         {{ generated_syncthing_gui_user }}"
       - "      Password:         {{ generated_syncthing_gui_password }}"
       - "      Sync Path:        {{ pai_personal_dir }}"
+      - ""
+      - "  - CodeGraph API:     Internal only (http://codegraph:20128)"
+      - "      Status:           {{ 'Enabled' if codegraph_enabled | default('true') | bool else 'Disabled' }}"
       - "=================================================================="

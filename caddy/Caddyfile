@@ -1,14 +1,6 @@
 # Caddy reverse proxy with Tailscale TLS
 # External access via Tailscale HTTPS, internal communication over local Docker network.
 
-# OmniRoute — AI model routing gateway
-{$TAILSCALE_DOMAIN:rpi.burro-smelt.ts.net}:20128 {
-	tls {
-		get_certificate tailscale
-	}
-	reverse_proxy omniroute:20128
-}
-
 # Hermes — Dashboard
 {$TAILSCALE_DOMAIN:rpi.burro-smelt.ts.net}:9119 {
 	tls {
@@ -25,18 +17,15 @@
 	reverse_proxy hermes:8642
 }
 
-# SilverBullet — Knowledge Base
-{$TAILSCALE_DOMAIN:rpi.burro-smelt.ts.net}:7070 {
-	tls {
-		get_certificate tailscale
-	}
-	reverse_proxy silverbullet:3000
-}
-
 # Syncthing — GUI (proxied to host:8385; auth handled by Syncthing itself)
 {$TAILSCALE_DOMAIN:rpi.burro-smelt.ts.net}:8384 {
 	tls {
 		get_certificate tailscale
 	}
 	reverse_proxy host.docker.internal:8385
+}
+
+# CodeGraph — internal only (Docker network, not exposed publicly)
+:20128 {
+	reverse_proxy codegraph:20128
 }

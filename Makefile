@@ -1,10 +1,10 @@
 # pai-stack convenience commands
 #
 # Provisioning is done ONLY via Ansible (./deploy.sh) — it installs Docker,
-# Tailscale, the stack, and seeds OmniRoute from bare SSH.
+# Tailscale, and the stack from bare SSH.
 # These targets wrap that, plus day-to-day runtime helpers.
 
-.PHONY: help deploy deploy-local seed logs status stop restart update clean
+.PHONY: help deploy deploy-renew logs status stop restart update clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -13,11 +13,8 @@ help:  ## Show this help
 deploy:  ## Remote provision via containerized Ansible (from your Mac/any Docker host)
 	./deploy.sh
 
-deploy-local:  ## Provision THIS host via containerized Ansible (--local)
-	./deploy.sh --local
-
-seed:   ## Re-seed OmniRoute model combos
-	docker compose exec -T omniroute /app/seed-combos.sh
+deploy-renew:  ## Remote FRESH reinstall: delete containers/volumes/.env then deploy
+	./deploy.sh --renew
 
 logs:   ## Tail logs for all services
 	docker compose logs -f
