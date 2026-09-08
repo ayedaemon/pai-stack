@@ -1,32 +1,4 @@
 services:
-  caddy:
-    build:
-      context: ./caddy
-      dockerfile: Dockerfile
-    container_name: caddy
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: "0.5"
-    ports:
-      - "9119:9119"    # Hermes Dashboard
-      - "8642:8642"    # Hermes API
-      - "8384:8384"    # Syncthing GUI (proxied to host:8385)
-    environment:
-      - TAILSCALE_DOMAIN=${TAILSCALE_DOMAIN:-rpi.burro-smelt.ts.net}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
-    depends_on:
-      hermes:
-        condition: service_started
-
   hermes:
     build:
       context: ./hermes
@@ -43,24 +15,25 @@ services:
       - HERMES_HOME=/opt/hermes/data
       - HERMES_UID=${UID:-1000}
       - HERMES_GID=${GID:-1000}
-      # Runtime flags (not config settings)
       - HERMES_DASHBOARD=1
       - HERMES_DASHBOARD_HOST=0.0.0.0
       - API_SERVER_HOST=0.0.0.0
       - API_SERVER_KEY=${API_SERVER_KEY}
-      # Basic Auth for Dashboard
       - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-admin}
       - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}
       - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET}
-      # Provider API keys for fallback
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-""}
       - KILO_GATEWAY_API_KEY=${KILO_GATEWAY_API_KEY:-""}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-""}
+      - FS_NOTIFIER_DEBOUNCE_SECONDS=${FS_NOTIFIER_DEBOUNCE_SECONDS:-30}
+    ports:
+      - "9119:9119"
+      - "8642:8642"
     volumes:
       - hermes-data:/opt/hermes/data
       - ./hermes/config.yaml:/tmp/hermes-config.yaml.host:ro
       - ./hermes/entrypoint.sh:/hermes-entrypoint.sh:ro
-      - ${PERSONAL_FOLDER}:/opt/data/Personal
+      - ${STACK_ROOT}:/opt/data/Personal
     extra_hosts:
       - "host.docker.internal:host-gateway"
     entrypoint: [ "/bin/sh", "/hermes-entrypoint.sh" ]
@@ -78,7 +51,7 @@ services:
           memory: 512M
           cpus: "1.0"
     volumes:
-      - ${PERSONAL_FOLDER}:/codebase:ro
+      - ${STACK_ROOT}:/codebase:ro
       - codegraph-data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:20128/health"]
@@ -89,6 +62,4 @@ services:
 
 volumes:
   hermes-data:
-  caddy-data:
-  caddy-config:
   codegraph-data:

@@ -1,41 +1,36 @@
 ---
-# ==============================================================================
-# pai-stack Configuration & Secrets
-# ==============================================================================
+# Target host paths
+pai_stack_dir: "{{ ansible_facts['user_dir'] }}/deployed-pai-stack"
+pai_personal_dir: "{{ ansible_facts['user_dir'] }}/Personal"
 
-# Target Host Deployment Paths
-pai_stack_dir: "{{ ansible_facts[\"user_dir\"] }}/pai-stack"
-pai_personal_dir: "{{ ansible_facts[\"user_dir\"] }}/Personal"
-
-# Container User & Permission Mapping (matches host user UID/GID)
-# Resolves from the SSH connection user (deploy.sh passes TARGET_USER via -u).
-# Falls back to the fact-gathered login user so manual runs without -u still
-# target the right account instead of failing on undefined ansible_user.
+# Container user (resolved from SSH connection)
 pai_user: "{{ ansible_user | default(ansible_user_id, true) }}"
-pai_uid: 1000
-pai_gid: 1000
 
-# Tailscale TLS & Domain Configuration
-# Passed via extra-vars from .env
-tailscale_domain: ""
+# Git repo to deploy
+pai_repo_url: "https://github.com/ayedaemon/pai-stack.git"
 
-# Tailscale Node Setup (Optional if machine is already on Tailscale)
+# Tailscale (passed via extra vars from .env)
 tailscale_auth_key: ""
-tailscale_args: ""
 
-# ── LLM Provider ────────────────────────────────────────────────────────
+# LLM Provider
 llamacpp_base_url: "http://localhost:8080/v1"
 llamacpp_model_name: "nemotron-3-nano-omni-30b-a3b-reasoning-q4-k-m"
 
-# Hermes Agent & Provider Secrets
-# If left empty, secure random 32-byte hex keys/passwords will be generated on setup
+# Provider API keys (blank = skip)
 openrouter_api_key: ""
 kilo_gateway_api_key: ""
 mistral_api_key: ""
-api_server_key: ""
-hermes_dashboard_username: "admin"
-hermes_dashboard_password: ""
-hermes_dashboard_secret: ""
 
-# CodeGraph — code intelligence for Hermes
+# Hermes secrets (blank = auto-generate)
+hermes_dashboard_password: ""
+api_server_key: ""
+
+# Syncthing GUI auth
+syncthing_gui_user: "admin"
+syncthing_gui_password: ""
+
+# CodeGraph
 codegraph_enabled: true
+
+# fs-notifier debounce (seconds)
+fs_notifier_debounce_seconds: 30

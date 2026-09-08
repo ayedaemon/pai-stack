@@ -48,7 +48,7 @@ within the configured scope — never hardcode a project count.
 ### Default skills (pre-seeded on every deploy, `force: no` — never overwrites your edits)
 - **stack-discovery** — `Skills/stack-discovery/SKILL.md` — router: scan `/opt/data/Personal/<project>` for `pyproject.toml`/`package.json`/`Dockerfile`/`postgres` markers and route to the right stack skill. **Run this first** on any unknown codebase.
 - **python** — `Skills/python/SKILL.md` — Python: `pyproject.toml`/`requirements.txt`, Poetry/uv/pip, Django/FastAPI/Flask, entrypoints, `pytest`, secret refs.
-- **docker** — `Skills/docker/SKILL.md` — Docker & Compose: multi-stage `Dockerfile`, `docker-compose.yaml` services/ports/volumes, Caddy/Tailscale, `docker compose config` validation.
+- **docker** — `Skills/docker/SKILL.md` — Docker & Compose: multi-stage `Dockerfile`, `docker-compose.yaml` services/ports/volumes, Tailscale, `docker compose config` validation.
 - **react** — `Skills/react/SKILL.md` — React: Vite/Next/CRA, components & hooks, `react-router` vs file-based routing, Zustand/Redux/Context, Tailwind/MUI, `tsconfig.json`.
 - **nodejs** — `Skills/nodejs/SKILL.md` — Node.js: `package.json` scripts, npm/yarn/pnpm, Express/Nest/Fastify, ESM vs CJS, `tsconfig.json`, monorepos.
 - **postgres** — `Skills/postgres/SKILL.md` — Postgres: compose `postgres` service, Prisma/Drizzle/Alembic/SQLAlchemy, schema & `migrations/`, `DATABASE_URL` refs, `psql`/`pg_dump` safety.

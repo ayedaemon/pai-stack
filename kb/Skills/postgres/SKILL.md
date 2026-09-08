@@ -31,7 +31,7 @@
    - Look for seeds: `seed.*`, `fixtures/`, `prisma/seed.*`, `scripts/seed*`
 6. Check ops & safety:
    - Volumes: is PG data in named volume (`pgdata:/var/lib/postgresql/data` `docker-compose.yaml:volumes`) vs bind mount vs ephemeral — flag data-loss risk
-   - Backups: any `pg_dump` / `backup` script, `Makefile` target, or `deploy-notes/` mention
+    - Backups: any `pg_dump` / `backup` script, or `Makefile` target
    - Health: `healthcheck: pg_isready` in compose? `depends_on: condition: service_healthy`?
    - Never run destructive `DROP` / `TRUNCATE` / `migrate --force` without explicit confirm — propose `EXPLAIN` / dry-run first
 7. Plan work:

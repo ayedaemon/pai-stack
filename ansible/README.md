@@ -1,99 +1,65 @@
-# Ansible Automation for pai-stack
+# ansible/ — Deployment
 
-Automated deployment of **Hermes Agent**, **CodeGraph**, **Syncthing (host)** and **Caddy (Tailscale HTTPS)** to a Raspberry Pi or any Linux server directly from your Mac.
+Automated deployment of **Hermes Agent**, **CodeGraph**, and **Syncthing (host)** to a Raspberry Pi or any Linux server.
 
-Point it at any SSH-reachable address — a **LAN IP** (e.g. `192.168.1.50`) or a **Tailscale address** (MagicDNS name / `100.x.y.z`) — and it bootstraps **Docker + Tailscale** from bare SSH, then starts the whole stack.
+## What You Need
 
-**Prerequisites:** `ansible-core` and `sshpass` installed on your dev machine.
+- `ansible-core` (`pip install ansible-core`)
+- `sshpass` (`brew install hudochenkov/sshpass/sshpass` on macOS)
+- SSH access to target
 
-## How it fits together
+## Files
 
 ```
-.env (local, gitignored)  ──source──►  ./deploy.sh  ──extra_vars──►  Ansible  ──template──►  target ~/pai-stack/.env
-                                                    │                           (ansible/roles/pai_stack/templates/env.j2)
-                                                    └─ mounts ──► docker-compose.yaml
+ansible/
+├── playbook.yml              # Flat deployment playbook (all tasks, no roles)
+├── group_vars/all.yml        # Configurable variables
+├── inventory.ini             # Optional inventory file
+├── templates/
+│   ├── env.j2                # Target .env template
+│   └── hermes/config.yaml.j2
+└── kb/                       # KB scaffold → ~/Personal/silverbulletKB
 ```
 
-* **Local `.env`** is the single source of truth you edit. Copy from `.env.example`. Never committed (see `.gitignore`).
-* **`./deploy.sh`** is the only supported entrypoint. It loads `.env` and invokes `ansible/playbook.yml` via SSH.
-* **Generated target `.env`** (`~/pai-stack/.env` on the Pi, `0600`) is rendered from `roles/pai_stack/templates/env.j2`. It contains `UID`/`GID`, `TAILSCALE_DOMAIN`, `PERSONAL_FOLDER`, provider keys, `API_SERVER_KEY`, `HERMES_DASHBOARD_BASIC_AUTH_*`, `SYNCTHING_GUI_*`. Secrets are auto-generated on first deploy and preserved on re-runs.
-
-## What deploy.sh forwards
-
-`deploy.sh` sources `.env` and passes these as Ansible `extra_vars` (see `deploy.sh:110`):
-
-| `.env` var | Ansible var | Notes |
-|---|---|---|
-| `TAILSCALE_DOMAIN` | `tailscale_domain` | Caddy TLS hostname |
-| `TAILSCALE_AUTH_KEY` | `tailscale_auth_key` | Only needed for fresh devices |
-| `HERMES_DASHBOARD_PASSWORD` | `hermes_dashboard_password` | Auto-generated (`openssl rand -hex 12`) if blank |
-| `PERSONAL_FOLDER` | `pai_personal_dir` | Only if set; otherwise defaults to `~/Personal` on target |
-
-Other `.env` vars (`TARGET_HOST`, `TARGET_USER`, `SSH_PASSWORD`, `BECOME_PASSWORD`) are used directly by `deploy.sh` for SSH/become and never copied to the target.
-
-All other target secrets (`API_SERVER_KEY`, `HERMES_DASHBOARD_BASIC_AUTH_SECRET`, `SYNCTHING_GUI_PASSWORD`, `UID`/`GID`) are generated inside `roles/pai_stack/tasks/main.yml` if no `~/pai-stack/.env` exists yet, otherwise preserved from the existing file.
-
-## Quick Start (recommended)
-
-### 1. Configure
+## Local install (localhost)
 
 ```bash
-cp .env.example .env
-# Edit .env:
-#   TARGET_HOST      = LAN or Tailscale IP/hostname of the target
-#   TARGET_USER      = SSH user on the target (e.g. pi)
-#   TAILSCALE_DOMAIN = MagicDNS name Caddy serves TLS for
-#   TAILSCALE_AUTH_KEY = leave blank if target already on tailnet
-#   HERMES_DASHBOARD_PASSWORD = blank = auto-generate
-#   SSH_PASSWORD / BECOME_PASSWORD = set for zero prompts, else leave blank
+ansible-playbook -i "localhost," -u $USER ansible/playbook.yml -K -k
 ```
 
-### 2. Deploy
-
-From your Mac (any Docker host) — SSHes to `TARGET_HOST`:
+## Remote install (common case)
 
 ```bash
-./deploy.sh
+ansible-playbook -i "${TARGET_HOST}," -u "${TARGET_USER}" ansible/playbook.yml \
+  -e "@.env" -k -K
 ```
 
-When prompted (if `SSH_PASSWORD`/`BECOME_PASSWORD` were left blank):
-- **SSH password**: server's SSH password
-- **BECOME password [sudo]**: server's sudo password
+Or set `SSH_PASSWORD` and `BECOME_PASSWORD` in `.env` for zero-prompt deploys.
 
-On success Ansible prints the access URLs and generated passwords.
+## What the Playbook Does
 
-## Roles
+1. Installs Tailscale (optional, skipped if no `TAILSCALE_AUTH_KEY`)
+2. Installs Docker via `get.docker.com`
+3. Creates directories (`~/Personal`, `~/Personal/silverbulletKB`, `~/deployed-pai-stack`)
+4. Clones pai-stack repo
+5. Templates `.env` (auto-generates secrets if blank)
+6. Templates hermes `config.yaml`
+7. Seeds KB scaffold (`kb/ → silverbulletKB/`, never overwrites existing)
+8. Installs Syncthing host service (systemd, binds `0.0.0.0:8384`)
+9. Builds & starts Docker containers
+10. Displays access summary
 
-| Role | Purpose |
-|---|---|
-| `common` | Base packages (`curl`, `gnupg`, `ca-certificates`, `python3`) |
-| `tailscale` | Install + `tailscale up` (skipped if already on tailnet), socket perms for Caddy |
-| `docker` | Official Docker Engine + Compose plugin |
-| `pai_stack` | Data dirs, secret generation, `env.j2` → `~/pai-stack/.env`, Syncthing host install, copy build contexts, KB scaffold (`kb/` → `PERSONAL_FOLDER/silverbulletKB`, `force: no`), `docker compose up --build`, Hermes restart |
+## Variables
 
-## Configuration reference
+See `group_vars/all.yml` for all configurable variables. Key ones:
 
-* **Local template:** `.env.example` (all tunable local vars, with comments).
-* **Ansible defaults:** `group_vars/all.yml` — `pai_stack_dir`, `pai_personal_dir`, `pai_uid`/`pai_gid`, `tailscale_domain`, `hermes_dashboard_*`, `codegraph_enabled`. Override via extra vars from `.env` or by editing the file for advanced use.
-* **Target env template:** `roles/pai_stack/templates/env.j2` — authoritative list of what ends up in `~/pai-stack/.env` on the Pi.
-* **Inventory:** `inventory.ini` is not used by `deploy.sh` (it builds its own `-i` inline). Only relevant for manual `ansible-playbook` runs.
-* **Ansible config:** `ansible.cfg`
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `tailscale_auth_key` | _(empty, skip Tailscale)_ | Auth key to join tailnet |
+| `pai_personal_dir` | `~/Personal` | STACK_ROOT location |
+| `pai_stack_dir` | `~/deployed-pai-stack` | Where repo is cloned |
+| `syncthing_gui_user` | `admin` | Syncthing GUI username |
 
-## Manual execution (without deploy.sh)
+## Re-deploy
 
-If you already have `ansible` and `sshpass` locally and prefer not to use the container runner:
-
-```bash
-# Remote
-ansible-playbook -i "rpi.burro-smelt.ts.net," -u <target-user> ansible/playbook.yml -k -K \
-  -e tailscale_domain="rpi.burro-smelt.ts.net"
-
-# Local
-ansible-playbook -i "localhost," -c local ansible/playbook.yml -K
-```
-
-You lose the `.env` auto-loading and secret-file handling that `deploy.sh` provides — prefer `deploy.sh` unless you know why you need this.
-
-## Re-deploy / idempotency
-
-Re-running `./deploy.sh` is safe: existing `~/pai-stack/.env` secrets are read back (`roles/pai_stack/tasks/main.yml:88`) and preserved, `kb/` scaffold is not overwritten (`force: no`), and Syncthing config is only patched if needed.
+Re-running is safe. Existing `.env` secrets are preserved, `kb/` scaffold is not overwritten, and Syncthing config is only patched if needed.

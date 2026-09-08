@@ -49,4 +49,9 @@ fi
 # By default hermes might look for config.yaml. Let's export HERMES_CONFIG
 export HERMES_CONFIG=/opt/hermes/data/hermes-config.yaml
 
+# Start fs-notifier in background (watches STACK_ROOT, notifies downstream services)
+if [ "${FS_NOTIFIER_ENABLED:-true}" = "true" ]; then
+    /hermes/fs-notifier.sh &
+fi
+
 exec /opt/hermes/docker/entrypoint-dispatch.sh "$@"
