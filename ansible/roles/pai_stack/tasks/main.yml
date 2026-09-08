@@ -94,65 +94,21 @@
     generated_syncthing_gui_password: "{{ generated_syncthing_pass_fallback.stdout }}"
   when: generated_syncthing_pass_fallback is defined and generated_syncthing_pass_fallback.stdout is defined and generated_syncthing_pass_fallback.stdout | length > 0
 
-- name: Preserve existing API_SERVER_KEY from .env
+- name: Preserve existing secrets from .env
   ansible.builtin.command:
-    cmd: "python3 -c \"import base64, re; d=base64.b64decode('{{ existing_env_slurp.content | b64decode }}'.encode()).decode(); m=re.search(r'API_SERVER_KEY=\\S+', d, re.MULTILINE); print(m.group().split('=',1)[1]) if m else ''\""
-    register: api_key_preserve
+    cmd: "python3 -c \"import json, re; d = open('{{ pai_stack_dir }}/.env', encoding='utf-8').read(); keys = ['API_SERVER_KEY', 'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD', 'HERMES_DASHBOARD_BASIC_AUTH_SECRET', 'SYNCTHING_GUI_USER', 'SYNCTHING_GUI_PASSWORD']; print(json.dumps({k: m.group(1).strip() for k in keys for m in [re.search('^' + k + '=(.+)$', d, re.M)] if m}))\""
+  register: existing_secrets
   when: existing_env_stat.stat.exists
   changed_when: false
 
-- name: Set generated_api_server_key from existing .env
+- name: Set secret facts from existing .env
   ansible.builtin.set_fact:
-    generated_api_server_key: "{{ api_key_preserve.stdout | default(api_server_key) }}"
-  when: existing_env_stat.stat.exists and api_key_preserve is defined and api_key_preserve.stdout is defined and api_key_preserve.stdout != ''
-
-- name: Preserve existing HERMES_DASHBOARD_BASIC_AUTH_PASSWORD from .env
-  ansible.builtin.command:
-    cmd: "python3 -c \"import base64, re; d=base64.b64decode('{{ existing_env_slurp.content | b64decode }}'.encode()).decode(); m=re.search(r'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=\\S+', d, re.MULTILINE); print(m.group().split('=',1)[1]) if m else ''\""
-    register: dash_pass_preserve
+    generated_api_server_key: "{{ (existing_secrets.stdout | from_json).API_SERVER_KEY | default(api_server_key) }}"
+    generated_hermes_dashboard_password: "{{ (existing_secrets.stdout | from_json).HERMES_DASHBOARD_BASIC_AUTH_PASSWORD | default(hermes_dashboard_password) }}"
+    generated_hermes_dashboard_secret: "{{ (existing_secrets.stdout | from_json).HERMES_DASHBOARD_BASIC_AUTH_SECRET | default(hermes_dashboard_secret) }}"
+    generated_syncthing_gui_user: "{{ (existing_secrets.stdout | from_json).SYNCTHING_GUI_USER | default(syncthing_gui_user | default('admin')) }}"
+    generated_syncthing_gui_password: "{{ (existing_secrets.stdout | from_json).SYNCTHING_GUI_PASSWORD | default(syncthing_gui_password | default('')) | default(generated_syncthing_pass_cmd.stdout | default(''), true) }}"
   when: existing_env_stat.stat.exists
-  changed_when: false
-
-- name: Set generated_hermes_dashboard_password from existing .env
-  ansible.builtin.set_fact:
-    generated_hermes_dashboard_password: "{{ dash_pass_preserve.stdout | default(hermes_dashboard_password) }}"
-  when: existing_env_stat.stat.exists and dash_pass_preserve is defined and dash_pass_preserve.stdout is defined and dash_pass_preserve.stdout != ''
-
-- name: Preserve existing HERMES_DASHBOARD_BASIC_AUTH_SECRET from .env
-  ansible.builtin.command:
-    cmd: "python3 -c \"import base64, re; d=base64.b64decode('{{ existing_env_slurp.content | b64decode }}'.encode()).decode(); m=re.search(r'HERMES_DASHBOARD_BASIC_AUTH_SECRET=\\S+', d, re.MULTILINE); print(m.group().split('=',1)[1]) if m else ''\""
-    register: dash_secret_preserve
-  when: existing_env_stat.stat.exists
-  changed_when: false
-
-- name: Set generated_hermes_dashboard_secret from existing .env
-  ansible.builtin.set_fact:
-    generated_hermes_dashboard_secret: "{{ dash_secret_preserve.stdout | default(hermes_dashboard_secret) }}"
-  when: existing_env_stat.stat.exists and dash_secret_preserve is defined and dash_secret_preserve.stdout is defined and dash_secret_preserve.stdout != ''
-
-- name: Preserve existing SYNCTHING_GUI_USER from .env
-  ansible.builtin.command:
-    cmd: "python3 -c \"import base64, re; d=base64.b64decode('{{ existing_env_slurp.content | b64decode }}'.encode()).decode(); m=re.search(r'SYNCTHING_GUI_USER=\\S+', d, re.MULTILINE); print(m.group().split('=',1)[1]) if m else ''\""
-    register: syncthing_user_preserve
-  when: existing_env_stat.stat.exists
-  changed_when: false
-
-- name: Set generated_syncthing_gui_user from existing .env
-  ansible.builtin.set_fact:
-    generated_syncthing_gui_user: "{{ syncthing_user_preserve.stdout | default(syncthing_gui_user | default('admin')) }}"
-  when: existing_env_stat.stat.exists and syncthing_user_preserve is defined and syncthing_user_preserve.stdout is defined and syncthing_user_preserve.stdout != ''
-
-- name: Preserve existing SYNCTHING_GUI_PASSWORD from .env
-  ansible.builtin.command:
-    cmd: "python3 -c \"import base64, re; d=base64.b64decode('{{ existing_env_slurp.content | b64decode }}'.encode()).decode(); m=re.search(r'SYNCTHING_GUI_PASSWORD=\\S+', d, re.MULTILINE); print(m.group().split('=',1)[1]) if m else ''\""
-    register: syncthing_pass_preserve
-  when: existing_env_stat.stat.exists
-  changed_when: false
-
-- name: Set generated_syncthing_gui_password from existing .env
-  ansible.builtin.set_fact:
-    generated_syncthing_gui_password: "{{ syncthing_pass_preserve.stdout | default(syncthing_gui_password | default('')) | default(generated_syncthing_pass_cmd.stdout | default(''), true) }}"
-  when: existing_env_stat.stat.exists and syncthing_pass_preserve is defined and syncthing_pass_preserve.stdout is defined and syncthing_pass_preserve.stdout != ''
 
 - name: Template .env file
   ansible.builtin.template:
