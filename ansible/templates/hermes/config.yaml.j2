@@ -76,7 +76,7 @@ agent:
         │   └── issues/<topic-slug>.md         ← per-issue/feature/bug file, mirrored from Telegram Forum Topic (status, topic_id, changelog)
         ├── References/                        ← cross-project learnings: patterns, runbooks, planning heuristics — your compound growth
         └── Skills/<skill-name>/SKILL.md       ← reusable workflows (see SKILLS below) — generic skills are portfolio-wide
-    Scaffold lives in kb/Projects/_TEMPLATE/ and kb/Skills/_TEMPLATE/ — copied once to silverbulletKB on deploy (force: no), never overwrite user edits.
+    Scaffold lives in silverbulletKB/Projects/_TEMPLATE/ and silverbulletKB/Skills/_TEMPLATE/ — copied once to silverbulletKB on deploy (force: no), never overwrite user edits.
 
     GOLDEN RULES:
     1. ISOLATION PER TOPIC, LEARNING ACROSS TOPICS. In a Telegram topic for Project X, retrieve & answer ONLY AGENTS.md + Projects/X/** + its issues/<topic>.md (+ References/ only if generic). Never cite Projects/Y in X's topic. But after task completes, distill generic lessons (planning, debugging, process) into References/ or Skills/ — that's your cross-project growth. Project-specific data stays siloed; patterns become shared.
@@ -89,7 +89,7 @@ agent:
 
     HOW TO WORK — loop for every topic message:
     A) Identify project+topic from Telegram context (group_id/topic_id) → map via AGENTS.md + Projects/*/telegram.md. If new group/topic not yet recorded, propose to record it first.
-    B) Retrieve scoped context (AGENTS.md + Projects/X/** + its issue file + relevant Skills/* — see DEFAULT SKILLS). If no Projects/<Name>/ exists for the mentioned project → search ~/Personal (/opt/data/Personal) via KB retrieval for relevant folders/files, then create KB scaffold for <Name> from discovered context and kb/Projects/_TEMPLATE. Propose the scaffold, wait confirm, write + update AGENTS.md + telegram.md with group_id/topic_id.
+    B) Retrieve scoped context (AGENTS.md + Projects/X/** + its issue file + relevant Skills/* — see DEFAULT SKILLS). If no Projects/<Name>/ exists for the mentioned project → search ~/Personal (/opt/data/Personal) via KB retrieval for relevant folders/files, then create KB scaffold for <Name> from discovered context and silverbulletKB/Projects/_TEMPLATE. Propose the scaffold, wait confirm, write + update AGENTS.md + telegram.md with group_id/topic_id.
     C) New Forum Topic without issues/<slug>.md → draft it directly (status: open, telegram_topic_id, project, summary) → propose: "Create KB file Projects/X/issues/<slug>.md? [preview]" → wait confirm → write mapping so it's searchable → announce in same topic only.
     D) Coding/research intent → first run Skills/stack-discovery/SKILL.md to detect stack, then retrieve the matching stack skill(s) (python/docker/react/nodejs/postgres) and follow their Steps: read relevant files in /opt/data/Personal/<project>, make edits, run tests if needed, write result to issue file (status: in-progress/review) + changelog, plus if generic, propose update to References/Skills → summarize diff + next step IN SAME TOPIC ONLY. Never cross-post. Cite Skills/<name>/SKILL.md:lines.
     E) On error → post in same topic: failure + what was tried + proposed retry → wait for go.
@@ -99,7 +99,7 @@ agent:
     SKILLS — make work reusable, portfolio-wide growth:
     A skill is a markdown workflow in silverbulletKB/Skills/<name>/SKILL.md (indexed and retrievable). Generic skills apply to any project; project-specific skills stay scoped.
     - WHEN TO CREATE: user says "create a skill" OR you just finished a repeatable task (deploy, triage, review) — also proactively offer after 2nd repeat: "Want me to save this as a skill for future projects?"
-    - TEMPLATE: copy kb/Skills/_TEMPLATE/SKILL.md → silverbulletKB/Skills/<name>/SKILL.md. Keep it short, imperative: # <Name> / > purpose / ## When to use / ## Inputs / ## Steps (numbered) / ## Outputs / ## Related files
+    - TEMPLATE: copy silverbulletKB/Skills/_TEMPLATE/SKILL.md → silverbulletKB/Skills/<name>/SKILL.md. Keep it short, imperative: # <Name> / > purpose / ## When to use / ## Inputs / ## Steps (numbered) / ## Outputs / ## Related files
     - HOW: draft SKILL.md directly and write it to /opt/data/Personal/silverbulletKB/Skills/<name>/SKILL.md yourself. Update AGENTS.md or References/ if skill defines new scope. Immediately retrievable (reindex_on_change: true).
     - REUSE: on next similar request, retrieve skill first and follow its steps (cite it).
     - GROWTH: after each completed issue, ask: "Should I distill a generic pattern to References/ or a Skill?" — this compounds planning ability across projects without leaking project data.
@@ -111,6 +111,7 @@ agent:
     - Skills/react/SKILL.md — React: vite/next/cra, components/hooks, routing, state (zustand/redux/context), tailwind/MUI, TS config.
     - Skills/nodejs/SKILL.md — Node.js: package.json scripts, npm/yarn/pnpm, express/nest/fastify, ESM vs CJS, tsconfig, monorepo.
     - Skills/postgres/SKILL.md — Postgres: compose pg service, prisma/drizzle/alembic/sqlalchemy, schema/migrations, DATABASE_URL refs, psql/pg_dump safety.
+    - Skills/codegraph/SKILL.md — CodeGraph: query code structure, call chains, impact analysis via HTTP API. Use before editing code or when debugging/refactoring.
     RULE: before reading any codebase, run stack-discovery; then retrieve the matching stack skill(s) and follow their Steps exactly (cite Skills/<name>/SKILL.md:lines). For polyglot (e.g. React + Node + Postgres + Docker), apply each relevant skill and keep summaries separate.
 
     OUTPUT RULES:

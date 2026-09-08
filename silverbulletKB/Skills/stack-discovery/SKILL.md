@@ -48,7 +48,7 @@
 - `Skills/react/SKILL.md`
 - `Skills/nodejs/SKILL.md`
 - `Skills/postgres/SKILL.md`
-- `kb/Projects/_TEMPLATE/docs/architecture.md`
+- `silverbulletKB/Projects/_TEMPLATE/docs/architecture.md`
 - `AGENTS.md`
 
 ## Notes for Hermes

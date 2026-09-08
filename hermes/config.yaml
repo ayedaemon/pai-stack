@@ -1,7 +1,7 @@
 model:
   provider: office1
-  default: {{ llamacpp_model_name }}
-  base_url: {{ llamacpp_base_url }}
+  default: nemotron-3-nano-omni-30b-a3b-reasoning-q4-k-m
+  base_url: http://host.docker.internal:8080/v1
 
 # Primary: remote llama.cpp on Tailscale (Office1). Fallback: OpenRouter then Kilo Gateway.
 # Hermes tries the primary first; on failure it cascades through fallback_providers.
@@ -10,7 +10,7 @@ model:
 # which requires Settings → Providers → Local models enabled. Use generic custom name.
 providers:
   office1:
-    api: {{ llamacpp_base_url }}
+    api: http://host.docker.internal:8080/v1
     key_env: OPENAI_API_KEY
 
 fallback_providers:
@@ -37,7 +37,7 @@ database:
 #   2. This kanban.default_model setting
 #   3. Assignee profile's own model config
 kanban:
-  default_model: {{ llamacpp_model_name }}
+  default_model: nemotron-3-nano-omni-30b-a3b-reasoning-q4-k-m
 
 dashboard:
   theme: cyberpunk
@@ -60,7 +60,7 @@ agent:
     - Hermes KB index: /opt/data/Personal  [knowledgebase.directories — indexes the ENTIRE sync root, so ~/Personal is searchable]
     - KB space: /opt/data/Personal/silverbulletKB  [plain markdown files — WRITE HERE for indexed KB, synced to Mac via Syncthing]
     - Codebases: /opt/data/Personal/github.com/... or /opt/data/Personal/Projects/...
-    - Models: Local llama.cpp (primary) with OpenRouter/Kilo Gateway/Mistral fallback. Default model: {{ llamacpp_model_name }}.
+    - Models: Local llama.cpp (primary) with OpenRouter/Kilo Gateway/Mistral fallback. Default model: nemotron-3-nano-omni-30b-a3b-reasoning-q4-k-m.
     - Network: All services bind directly to Tailscale IP. Tailscale encrypts all traffic via WireGuard. Inter-container traffic is over Docker network.
     - CodeGraph: http://codegraph:20128 — code intelligence API for call chains, impact analysis, symbol search.
 

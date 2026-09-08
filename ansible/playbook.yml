@@ -19,6 +19,7 @@
       ansible.builtin.set_fact:
         target_uid: "{{ user_getent.ansible_facts.getent_passwd[ansible_user][1] | default('1000') }}"
         target_gid: "{{ user_getent.ansible_facts.getent_passwd[ansible_user][2] | default('1000') }}"
+        pai_personal_dir: "{{ (STACK_ROOT | default(PERSONAL_FOLDER | default(pai_personal_dir, true), true)) | replace('~', ansible_facts['user_dir']) }}"
 
     # ── 1. Tailscale (optional — skip if no auth key) ──────────
     - name: Add Tailscale GPG key
@@ -119,10 +120,10 @@
 
     - name: Set secret facts
       ansible.builtin.set_fact:
-        generated_api_key: "{{ api_server_key | default('', true) | length > 0 | ternary(api_server_key, gen_api_key.stdout) }}"
-        generated_dash_pass: "{{ hermes_dashboard_password | default('', true) | length > 0 | ternary(hermes_dashboard_password, gen_dash_pass.stdout) }}"
-        generated_dash_secret: "{{ gen_dash_secret.stdout }}"
-        generated_syncthing_pass: "{{ syncthing_gui_password | default('', true) | length > 0 | ternary(syncthing_gui_password, gen_syncthing_pass.stdout) }}"
+        generated_api_key: "{{ API_SERVER_KEY | default(api_server_key | default('', true), true) | length > 0 | ternary(API_SERVER_KEY | default(api_server_key | default('', true), true), gen_api_key.stdout) }}"
+        generated_dash_pass: "{{ HERMES_DASHBOARD_BASIC_AUTH_PASSWORD | default(hermes_dashboard_basic_auth_password | default(HERMES_DASHBOARD_PASSWORD | default(hermes_dashboard_password | default('', true), true), true), true) | length > 0 | ternary(HERMES_DASHBOARD_BASIC_AUTH_PASSWORD | default(hermes_dashboard_basic_auth_password | default(HERMES_DASHBOARD_PASSWORD | default(hermes_dashboard_password | default('', true), true), true), true), gen_dash_pass.stdout) }}"
+        generated_dash_secret: "{{ HERMES_DASHBOARD_BASIC_AUTH_SECRET | default(hermes_dashboard_basic_auth_secret | default('', true), true) | length > 0 | ternary(HERMES_DASHBOARD_BASIC_AUTH_SECRET | default(hermes_dashboard_basic_auth_secret | default('', true), true), gen_dash_secret.stdout) }}"
+        generated_syncthing_pass: "{{ SYNCTHING_GUI_PASSWORD | default(syncthing_gui_password | default('', true), true) | length > 0 | ternary(SYNCTHING_GUI_PASSWORD | default(syncthing_gui_password | default('', true), true), gen_syncthing_pass.stdout) }}"
 
     # ── 6. Template configs (overwrite every deploy) ────────────
     - name: Template .env
@@ -144,7 +145,7 @@
     # ── 7. Seed KB scaffold ─────────────────────────────────────
     - name: Seed KB scaffold
       ansible.builtin.copy:
-        src: kb/
+        src: silverbulletKB/
         dest: "{{ pai_personal_dir }}/silverbulletKB/"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"

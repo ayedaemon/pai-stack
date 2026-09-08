@@ -234,8 +234,16 @@ Hermes config is templated from `hermes/config.yaml.j2` on every deploy.
 │   ├── Dockerfile
 │   ├── server.js
 │   └── package.json
-├── kb/                        # KB scaffold → ~/Personal/silverbulletKB
-├── Skills/                    # CodeGraph skill for Hermes
+├── silverbulletKB/              # KB scaffold → ~/Personal/silverbulletKB
+│   └── Skills/
+│       ├── _TEMPLATE/
+│       ├── codegraph/
+│       ├── docker/
+│       ├── nodejs/
+│       ├── postgres/
+│       ├── python/
+│       ├── react/
+│       └── stack-discovery/
 ├── docs/
 │   ├── BLUEPRINT.md
 │   └── adr/

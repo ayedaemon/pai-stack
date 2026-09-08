@@ -29,7 +29,7 @@
    - Env: which vars come from host `.env` vs hard-coded; flag raw secrets in compose
 5. Check pai-stack conventions (if repo is pai-stack itself):
    - Build contexts must be flat (playbook copies files into `~/deployed-pai-stack/`)
-   - `kb/` → `silverbulletKB` seeding is `force: no` — never overwrite user edits
+   - `silverbulletKB/` seeding is `force: no` — never overwrite user edits
    - Services bind directly to Tailscale IP (no reverse proxy) — Tailscale encrypts via WireGuard
 6. Plan change:
    - For read-only: summarize services, deps graph, build order, how to run (`docker compose up --build`, `docker compose logs -f <svc>`)

@@ -18,7 +18,7 @@ ansible/
 ├── templates/
 │   ├── env.j2                # Target .env template
 │   └── hermes/config.yaml.j2
-└── kb/                       # KB scaffold → ~/Personal/silverbulletKB
+└── silverbulletKB/           # KB scaffold → ~/Personal/silverbulletKB
 ```
 
 ## Local install (localhost)
@@ -44,7 +44,7 @@ Or set `SSH_PASSWORD` and `BECOME_PASSWORD` in `.env` for zero-prompt deploys.
 4. Clones pai-stack repo
 5. Templates `.env` (auto-generates secrets if blank)
 6. Templates hermes `config.yaml`
-7. Seeds KB scaffold (`kb/ → silverbulletKB/`, never overwrites existing)
+7. Seeds KB scaffold (`silverbulletKB/`, never overwrites existing)
 8. Installs Syncthing host service (systemd, binds `0.0.0.0:8384`)
 9. Builds & starts Docker containers
 10. Displays access summary
@@ -62,4 +62,4 @@ See `group_vars/all.yml` for all configurable variables. Key ones:
 
 ## Re-deploy
 
-Re-running is safe. Existing `.env` secrets are preserved, `kb/` scaffold is not overwritten, and Syncthing config is only patched if needed.
+Re-running is safe. Existing `.env` secrets are preserved, `silverbulletKB/` scaffold is not overwritten, and Syncthing config is only patched if needed.

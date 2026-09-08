@@ -14,7 +14,7 @@ Remove `antigravity` and `opencode` services from `docker-compose.yaml:121`, the
 - **In-process shell for Hermes** — already the chosen path; Hermes uses LLM providers directly, no extra isolation needed at this scale.
 
 ## Consequences
-- Positive: ~3 GB RAM saved, no OAuth, simpler `docker compose ps`, one `hermes/config.yaml:54` to govern behavior, `kb/Skills/_TEMPLATE/SKILL.md:13` steps simplified to direct draft.
+- Positive: ~3 GB RAM saved, no OAuth, simpler `docker compose ps`, one `hermes/config.yaml:54` to govern behavior, `silverbulletKB/Skills/_TEMPLATE/SKILL.md:13` steps simplified to direct draft.
 - Negative: No automatic second-opinion fan-out; can be added later as a fallback provider if needed.
 
 ## Trade-offs

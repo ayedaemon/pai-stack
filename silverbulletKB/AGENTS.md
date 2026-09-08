@@ -28,7 +28,7 @@ within the configured scope — never hardcode a project count.
 ## Ground rules for the assistant
 1. Retrieve from the knowledge base before answering — scoped to the originating topic's project (AGENTS.md + Projects/<Current>/** + its issues/<topic>.md). Never cite other projects' data in a topic.
 2. Cite the source page (file:lines) for any factual claim.
-3. If no KB exists for the mentioned project, search `~/Personal` (`/opt/data/Personal`) for relevant folders/files, then create KB scaffold for it from `kb/Projects/_TEMPLATE` — don't guess.
+3. If no KB exists for the mentioned project, search `~/Personal` (`/opt/data/Personal`) for relevant folders/files, then create KB scaffold for it from `silverbulletKB/Projects/_TEMPLATE` — don't guess.
 4. Stay within the configured projects; for out-of-scope in a topic, redirect to the correct project's topic.
 5. Treat `AGENTS.md` + `Projects/<Name>/telegram.md` as the source of truth for scope, group_id and topic mappings.
 6. KB first, topic second: write to KB first, then summarize in the originating topic only. Wait for confirm before writing (hybrid).
@@ -52,5 +52,6 @@ within the configured scope — never hardcode a project count.
 - **react** — `Skills/react/SKILL.md` — React: Vite/Next/CRA, components & hooks, `react-router` vs file-based routing, Zustand/Redux/Context, Tailwind/MUI, `tsconfig.json`.
 - **nodejs** — `Skills/nodejs/SKILL.md` — Node.js: `package.json` scripts, npm/yarn/pnpm, Express/Nest/Fastify, ESM vs CJS, `tsconfig.json`, monorepos.
 - **postgres** — `Skills/postgres/SKILL.md` — Postgres: compose `postgres` service, Prisma/Drizzle/Alembic/SQLAlchemy, schema & `migrations/`, `DATABASE_URL` refs, `psql`/`pg_dump` safety.
+- **codegraph** — `Skills/codegraph/SKILL.md` — CodeGraph: query code structure, call chains, impact analysis via HTTP API. Use before editing code or when debugging/refactoring.
 - Hermes retrieves the matching skill(s) automatically before reading code — polyglot projects (e.g. React + Node + Postgres + Docker) apply each relevant skill and keep summaries separate. Cite `Skills/<name>/SKILL.md:lines`.
 - Template for new skills: `Skills/_TEMPLATE/SKILL.md`

@@ -38,7 +38,7 @@ Tagline: **Hermes Agent + Syncthing + CodeGraph (Tailscale WireGuard)** `README.
 | **Latency** | Chat replies in seconds, not minutes | `auto_retrieve: true` `max_context_chunks: 8` `relevance_threshold: 0.5` + `reindex_on_change: true` `hermes/config.yaml:140` |
 | **Operability** | Full rebuild <15 min from bare SSH | Ansible `common → tailscale → docker → pai_stack` `ansible/playbook.yml:8` |
 | **Portability** | Move to new Pi without data loss | Named volumes `docker-compose.yaml:101` + bind mount `PERSONAL_FOLDER`, `make clean` is explicit `Makefile:37` |
-| **Evolvability** | Unbounded projects, no hardcoded names | `AGENTS.md` manifest `kb/AGENTS.md:13` + `_TEMPLATE` scaffolding `kb/Projects/_TEMPLATE/` |
+| **Evolvability** | Unbounded projects, no hardcoded names | `AGENTS.md` manifest `silverbulletKB/AGENTS.md:13` + `_TEMPLATE` scaffolding `silverbulletKB/Projects/_TEMPLATE/` |
 
 ---
 
@@ -108,7 +108,7 @@ flowchart LR
     V2 --> CG
 ```
 
-*Only host-coupled data is bind-mounted* `README.md:268`. Scaffold `kb/` → `silverbulletKB/` copied once `force: no` — user edits never overwritten.
+*Only host-coupled data is bind-mounted* `README.md:268`. Scaffold `silverbulletKB/` copied once `force: no` — user edits never overwritten.
 
 ---
 
@@ -201,13 +201,13 @@ These are the **guardrails that keep Hermes from drifting** as portfolio grows. 
 | P1 | **Isolation per topic, learning across topics** `hermes/config.yaml:85` | In topic X, retrieve & answer ONLY `AGENTS.md` + `Projects/X/**` + its `issues/<slug>.md`. After completion, distill generic patterns into `References/` or `Skills/` — compound growth without leaking project data. | `system_prompt` + `AGENTS.md:29` + retrieval scoping |
 | P2 | **KB first, topic second** `hermes/config.yaml:86` | Never post decision/diff to Telegram without first writing to `silverbulletKB`. Topic is ephemeral view; KB is durable truth. Cite `file:lines`. | `system_prompt` loop A-G |
 | P3 | **Ask first (hybrid)** `hermes/config.yaml:87` | Mirror & propose, but never write KB from chat without explicit confirm from that topic. | `system_prompt` + `AGENTS.md:34` |
-| P4 | **Permission gate + searchable mapping** `hermes/config.yaml:88` | First message in new group/topic → record `group_id + topic_id` in `Projects/<Name>/telegram.md` + `issues/<slug>.md`. If not listed, refuse: "Not in telegram.md". | `telegram.md` `kb/Projects/_TEMPLATE/telegram.md:1` + `AGENTS.md:24` |
+| P4 | **Permission gate + searchable mapping** `hermes/config.yaml:88` | First message in new group/topic → record `group_id + topic_id` in `Projects/<Name>/telegram.md` + `issues/<slug>.md`. If not listed, refuse: "Not in telegram.md". | `telegram.md` `silverbulletKB/Projects/_TEMPLATE/telegram.md:1` + `AGENTS.md:24` |
 | P5 | **Evolving portfolio — no hardcoded names** `hermes/config.yaml:89` | Never invent `ProjectAlpha/Beta`. On unknown project, search `~/Personal` via RAG, create scaffold from `_TEMPLATE`, propose, wait confirm, write `Projects/<Name>/{README,docs/architecture,telegram,config}` + update `AGENTS.md`. No project limit. | `system_prompt` + `AGENTS.md:14` |
 | P6 | **Secrets as references** `hermes/config.yaml:90` | Never write raw secrets to KB or git; use "API key in 1Password / env `X`". | `system_prompt` + `env.j2:1` (0600) |
 | P7 | **Concise per-topic, no cross-post** `hermes/config.yaml:91` | Telegram: short bullets + citations per topic; Dashboard/API may be verbose. Never duplicate content across topics/groups. | `system_prompt` + `platform_hints.telegram` `hermes/config.yaml:149` |
 | P8 | **Unified paths** | `${PERSONAL_FOLDER}` is `/opt/data/Personal` everywhere (Hermes, RAG). | `docker-compose.yaml:92` |
 | P9 | **Free-first, quality on demand** `hermes/config.yaml:7` | Default chat = free combos (`personal/free-chat`) with failover. | `discover_models: true` |
-| P10 | **Skills compound** `hermes/config.yaml:111` | After 2nd repeat or on "create a skill", draft `Skills/<name>/SKILL.md` directly, write to KB, retrieve next time. Generic skills are portfolio-wide. | `_TEMPLATE/SKILL.md` `kb/Skills/_TEMPLATE/SKILL.md:1` |
+| P10 | **Skills compound** `hermes/config.yaml:111` | After 2nd repeat or on "create a skill", draft `Skills/<name>/SKILL.md` directly, write to KB, retrieve next time. Generic skills are portfolio-wide. | `_TEMPLATE/SKILL.md` `silverbulletKB/Skills/_TEMPLATE/SKILL.md:1` |
 
 **Mantra:** *You live in Telegram Topics, but think in markdown KB.*
 
@@ -247,7 +247,7 @@ Hermes dashboard at `:9119` (BasicAuth `admin/$HERMES_DASHBOARD_BASIC_AUTH_PASSW
 
 **Ansible pipeline** `ansible/playbook.yml`: flat playbook (no roles). Steps: `common` (dirs), `tailscale` (install/join via `TAILSCALE_AUTH_KEY` `.env.example:46`), `docker`, `pai_stack`.
 
-**Configs are overwritten on every deploy** — templates are the source of truth. Secrets are preserved: `ansible/playbook.yml` reads existing `~/deployed-pai-stack/.env` → preserves secrets else generates `openssl rand -hex 32`. Templates `env.j2` (UID/GID resolved, `PERSONAL_FOLDER`, keys). Copies build contexts flat, seeds `kb/ → silverbulletKB` (force: yes — configs overwritten), installs Syncthing host, configures `config.xml` (telemetry `urAccepted=-1`, folder path/ID, GUI address/auth, `.stfolder`), systemd, `docker compose up -d --build --remove-orphans`, wait `:20128`, seed combos, `restart hermes`.
+**Configs are overwritten on every deploy** — templates are the source of truth. Secrets are preserved: `ansible/playbook.yml` reads existing `~/deployed-pai-stack/.env` → preserves secrets else generates `openssl rand -hex 32`. Templates `env.j2` (UID/GID resolved, `PERSONAL_FOLDER`, keys). Copies build contexts flat, seeds `silverbulletKB/` (force: no), installs Syncthing host, configures `config.xml` (telemetry `urAccepted=-1`, folder path/ID, GUI address/auth, `.stfolder`), systemd, `docker compose up -d --build --remove-orphans`, wait `:20128`, seed combos, `restart hermes`.
 
 **Env forwarding contract** `README.md:92`: local `.env` never copied; only `HERMES_DASHBOARD_PASSWORD`, `PERSONAL_FOLDER` forwarded as extra vars.
 
@@ -315,5 +315,5 @@ Each ADR follows template: Status, Context, Decision, Alternatives, Consequences
 * `hermes/config.yaml:1`, `hermes/entrypoint.sh:1`, `hermes/Dockerfile:1`, `hermes/apply-kanban-patch.py:1`
 * `docker-compose.yaml:1`, `codegraph/server.js:1`
 * `ansible/playbook.yml`, `ansible/templates/env.j2`, `ansible/group_vars/all.yml`
-* `kb/AGENTS.md:1`, `kb/Projects/_TEMPLATE/`, `kb/Skills/_TEMPLATE/SKILL.md:1`
+* `silverbulletKB/AGENTS.md:1`, `silverbulletKB/Projects/_TEMPLATE/`, `silverbulletKB/Skills/_TEMPLATE/SKILL.md:1`
 * `Makefile:1`, `.env.example:1`
