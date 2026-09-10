@@ -1,51 +1,55 @@
 #!/bin/sh
 # Hermes entrypoint wrapper:
-# 1. Syncs hermes-config.yaml from host
-# 2. Overwrites dashboard password hash from env var
-# 3. Delegates to real entrypoint
+# 1. Sets permissions on Hermes home / SQLite WAL files
+# 2. Configures knowledge base directories dynamically relative to HERMES_DATA_DIR
+# 3. Sets dashboard auth password hash if provided
+# 4. Spawns filesystem notifier in background
+# 5. Delegates to upstream entrypoint
 
 set -e
 
-# Ensure the data dir is owned by the UID Hermes drops to, so it can write
-# sessions/keys into the (named) volume without EACCES.
+# Ensure lazy-packages directory exists inside hermes-data volume
+mkdir -p /opt/hermes/data/lazy-packages
+
+# Ensure the hermes runtime data dir is owned by the UID Hermes drops to
 chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" /opt/hermes/data 2>/dev/null || true
 
-# Ensure SQLite WAL/SHM files are created group/world-writable so the kanban
-# dashboard plugin and the dispatcher can both write to the same DB without
-# "kanban.db-wal is read-only" warnings. The default umask 022 makes new files
-# mode 0644, which means any process running as a non-owner (e.g. a worker
-# dispatched under a different uid, or the plugin after a chown from a
-# different container layer) cannot reopen the WAL. Setting umask 000 keeps
-# new files at 0666; combined with the chown above, the kanban plugin's
-# sqlite3.connect(...) call always produces a writable -wal/-shm pair.
-# Also back-fix existing files in case they were created with the old umask
-# (this is a no-op when permissions are already correct).
+# Ensure SQLite WAL/SHM files are created group/world-writable
 umask 000
 find /opt/hermes/data -type f \( -name '*.db' -o -name '*.db-wal' -o -name '*.db-shm' -o -name '*.db.dispatch.lock' -o -name '*.db.init.lock' \) -exec chmod -c a+rw {} + 2>/dev/null || true
 
 cp /tmp/hermes-config.yaml.host /opt/hermes/data/hermes-config.yaml
 
-# stack_root is canonical inside containers (host STACK_ROOT → container /stack_root); no /opt/data/Personal fallback
+DATA_DIR="${HERMES_DATA_DIR:-/opt/data}"
 
-# Inject KB_DIRS into knowledgebase.directories (unless default "." = index all)
+# Dynamically adjust paths in config to match DATA_DIR
+sed -i "s|/opt/hermes/data/workspace|${DATA_DIR}|g" /opt/hermes/data/hermes-config.yaml
+sed -i "s|/opt/data|${DATA_DIR}|g" /opt/hermes/data/hermes-config.yaml
+sed -i "s|/stack_root|${DATA_DIR}|g" /opt/hermes/data/hermes-config.yaml
+
+# Inject KB_DIRS into knowledgebase.directories relative to DATA_DIR
 if [ -n "${KB_DIRS:-}" ] && [ "$KB_DIRS" != "." ]; then
     KB_YAML=$(echo "$KB_DIRS" | python3 -c "
-import sys
+import sys, os
+base_dir = os.environ.get('HERMES_DATA_DIR', '/opt/data').rstrip('/')
 dirs = [d.strip() for d in sys.stdin.read().split(',') if d.strip()]
-print('\n'.join(f'    - /stack_root/{d}' for d in dirs))
+print('\n'.join(f'    - {base_dir}/{d.lstrip(\"/\")}' for d in dirs))
 ")
     sed -i "/^knowledgebase:/,/^[^ ]/{s|directories:.*|directories:\n${KB_YAML}|}" \
         /opt/hermes/data/hermes-config.yaml
+else
+    # Index entire DATA_DIR
+    sed -i "/^knowledgebase:/,/^[^ ]/{s|directories:.*|directories:\n    - ${DATA_DIR}|}" \
+        /opt/hermes/data/hermes-config.yaml
 fi
 
-# Ensure the hermes CLI reads the same config the gateway does (CLI defaults to
-# config.yaml, not hermes-config.yaml or $HERMES_CONFIG).
+# Ensure CLI reads the same config
 cp /opt/hermes/data/hermes-config.yaml /opt/hermes/data/config.yaml
 
-# Silence upstream SyntaxWarning in update_cmd.py (cosmetic, harmless but noisy)
+# Silence harmless upstream syntax warning in update_cmd.py
 sed -i 's/venv\\Scripts/venv\\\\Scripts/g' /opt/hermes/hermes_cli/update_cmd.py 2>/dev/null || true
 
-# If password env var is set, regenerate the hash in config
+# If password env var is set, regenerate hash in config
 if [ -n "${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:-}" ]; then
     HASH=$(sh -c '. /opt/hermes/.venv/bin/activate && python3 -c "
 from plugins.dashboard_auth.basic import hash_password
@@ -55,16 +59,22 @@ print(hash_password(os.environ[\"HERMES_DASHBOARD_BASIC_AUTH_PASSWORD\"]))
 
     if [ -n "$HASH" ]; then
         sed -i "s|password_hash:.*|password_hash: ${HASH}|" /opt/hermes/data/hermes-config.yaml
+        sed -i "s|password_hash:.*|password_hash: ${HASH}|" /opt/hermes/data/config.yaml
     fi
 fi
 
-# We also need to tell hermes to use the new config filename if possible.
-# By default hermes might look for config.yaml. Let's export HERMES_CONFIG
 export HERMES_CONFIG=/opt/hermes/data/hermes-config.yaml
+export FS_NOTIFIER_WATCH_PATH="${FS_NOTIFIER_WATCH_PATH:-${DATA_DIR}}"
 
-# Start fs-notifier in background (watches STACK_ROOT, notifies downstream services)
+# Start fs-notifier in background
 if [ "${FS_NOTIFIER_ENABLED:-true}" = "true" ]; then
-    /hermes/fs-notifier.sh &
+    if [ -f /fs-notifier.sh ]; then
+        /bin/sh /fs-notifier.sh &
+    elif [ -f /hermes/fs-notifier.sh ]; then
+        /bin/sh /hermes/fs-notifier.sh &
+    else
+        echo "[WARN] fs-notifier.sh not found, file watching disabled"
+    fi
 fi
 
 exec /opt/hermes/docker/entrypoint-dispatch.sh "$@"

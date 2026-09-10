@@ -9,6 +9,10 @@ services:
     depends_on:
       mcp-server:
         condition: service_healthy
+      codegraph:
+        condition: service_healthy
+      embeddings:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -16,6 +20,9 @@ services:
           cpus: "3.0"
     environment:
       - HERMES_HOME=/opt/hermes/data
+      - HERMES_DATA_DIR=/opt/data
+      - HERMES_LAZY_INSTALL_TARGET=/opt/hermes/data/lazy-packages
+      - PYTHONPATH=/opt/hermes/data/lazy-packages
       - HERMES_UID=${UID:-1000}
       - HERMES_GID=${GID:-1000}
       - HERMES_DASHBOARD=1
@@ -25,19 +32,24 @@ services:
       - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-admin}
       - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}
       - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-""}
-      - KILO_GATEWAY_API_KEY=${KILO_GATEWAY_API_KEY:-""}
-      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-""}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - KILO_GATEWAY_API_KEY=${KILO_GATEWAY_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
       - FS_NOTIFIER_DEBOUNCE_SECONDS=${FS_NOTIFIER_DEBOUNCE_SECONDS:-30}
+      - FS_NOTIFIER_WATCH_PATH=/opt/data
       - KB_DIRS=${KB_DIRS:-.}
+      - EMBEDDINGS_URL=http://embeddings:8080/v1
     ports:
       - "9119:9119"
       - "8642:8642"
     volumes:
       - hermes-data:/opt/hermes/data
       - ./hermes/config.yaml:/tmp/hermes-config.yaml.host:ro
-      - ./hermes/entrypoint.sh:/hermes-entrypoint.sh:ro
-      - ${STACK_ROOT}:/stack_root
+      - type: bind
+        source: ${WORKSPACE_DIR}
+        target: /opt/data
+        bind:
+          create_host_path: false
     extra_hosts:
       - "host.docker.internal:host-gateway"
     entrypoint: [ "/bin/sh", "/hermes-entrypoint.sh" ]
@@ -49,6 +61,9 @@ services:
       dockerfile: Dockerfile
     container_name: codegraph
     restart: unless-stopped
+    depends_on:
+      embeddings:
+        condition: service_healthy
     ports:
       - "20128:20128"
     deploy:
@@ -56,16 +71,48 @@ services:
         limits:
           memory: 512M
           cpus: "1.0"
+    environment:
+      - WORKSPACE_PATH=/workspace
+      - EMBEDDINGS_URL=http://embeddings:8080/v1
     volumes:
-      - ${STACK_ROOT}:/stack_root:ro
-      - ${STACK_ROOT}:/codebase:ro # compat: old /codebase alias
+      - type: bind
+        source: ${WORKSPACE_DIR}/${CODEGRAPH_SUBDIR:-.}
+        target: /workspace
+        read_only: true
+        bind:
+          create_host_path: false
       - codegraph-data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:20128/health"]
       interval: 30s
-      timeout: 30s
+      timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 10s
+
+  embeddings:
+    build:
+      context: ./embeddings
+      dockerfile: Dockerfile
+    container_name: embeddings
+    restart: unless-stopped
+    ports:
+      - "8088:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+    environment:
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-ai/nomic-embed-text-v1.5}
+      - PORT=8080
+    volumes:
+      - embeddings-cache:/root/.cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   mcp-server:
     build:
@@ -90,3 +137,4 @@ services:
 volumes:
   hermes-data:
   codegraph-data:
+  embeddings-cache:

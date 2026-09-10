@@ -14,3 +14,7 @@ RUN cd /opt/hermes \
   && rm -f /tmp/apply-kanban-patch.py \
   && python3 -c "from hermes_cli.config_defaults import *; print('kanban patch verified: default_model in defaults')" \
   && python3 -c "assert 'default_model' in open('/opt/hermes/hermes_cli/kanban_db_dispatch.py').read(), 'patch not applied to kanban_db_dispatch.py'"
+
+COPY entrypoint.sh /hermes-entrypoint.sh
+COPY fs-notifier.sh /fs-notifier.sh
+RUN chmod +x /hermes-entrypoint.sh /fs-notifier.sh

@@ -2,7 +2,7 @@ FROM debian:12-slim
 
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates && \
+    curl ca-certificates ripgrep && \
     rm -rf /var/lib/apt/lists/*
 
 # Download codegraph binary for host arch (graph-only mode, no ONNX needed)

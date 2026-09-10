@@ -6,33 +6,46 @@
 <title>CodeGraph Explorer</title>
 <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 <style>
-  html,body{margin:0;height:100%;background:#0d1117;color:#c9d1d9;font-family:system-ui,sans-serif}
+  html,body{margin:0;height:100%;background:#0d1117;color:#c9d1d9;font-family:system-ui,-apple-system,sans-serif}
   #bar{display:flex;gap:8px;padding:10px;background:#161b22;border-bottom:1px solid #30363d;flex-wrap:wrap;align-items:center}
-  #bar input,#bar select{background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px}
-  #bar input{width:260px}
-  #bar button{background:#238636;color:#fff;border:0;border-radius:6px;padding:6px 14px;cursor:pointer}
+  #bar input,#bar select{background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px}
+  #bar input{width:280px}
+  #bar button{background:#238636;color:#fff;border:0;border-radius:6px;padding:6px 14px;cursor:pointer;font-weight:500}
   #bar button:hover{background:#2ea043}
-  #results{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px;font-size:13px}
-  #results button{background:#21262d;color:#58a6ff;border:1px solid #30363d;border-radius:12px;padding:3px 10px;cursor:pointer}
+  #results{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px;font-size:13px;max-height:140px;overflow-y:auto}
+  .res-btn{background:#21262d;color:#58a6ff;border:1px solid #30363d;border-radius:6px;padding:4px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-align:left}
+  .res-btn:hover{background:#30363d;color:#79c0ff}
+  .badge{font-size:10px;padding:1px 5px;border-radius:4px;text-transform:uppercase;font-weight:bold}
+  .badge-symbol{background:#1f6feb22;color:#58a6ff;border:1px solid #1f6feb66}
+  .badge-text{background:#23863622;color:#3fb950;border:1px solid #23863666}
   #info{padding:4px 12px;font-size:12px;color:#8b949e;min-height:18px}
-  #graph{width:100%;height:calc(100% - 130px)}
+  #graph{width:100%;height:calc(100% - 150px)}
   .node circle{stroke:#0d1117;stroke-width:1.5px;cursor:pointer}
   .node text{fill:#c9d1d9;font-size:11px;pointer-events:none}
   .link{stroke:#484f58;stroke-opacity:.7}
-  .tooltip{position:absolute;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:12px;pointer-events:none;display:none;max-width:320px;word-break:break-all}
+  .tooltip{position:absolute;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 12px;font-size:12px;pointer-events:none;display:none;max-width:380px;word-break:break-all;box-shadow:0 4px 12px rgba(0,0,0,0.5)}
 </style>
 </head>
 <body>
 <div id="bar">
   <strong>CodeGraph Explorer</strong>
-  <input id="q" placeholder="symbol name… (Enter to search)">
+  <input id="q" placeholder="search symbols, text, code… (Enter)">
+  <select id="searchType">
+    <option value="hybrid">Hybrid Search</option>
+    <option value="symbol">Symbols Only</option>
+    <option value="text">Full Text (Content)</option>
+  </select>
   <button id="searchBtn">Search</button>
-  <select id="depth"><option value="1">depth 1</option><option value="2">depth 2</option></select>
+  <select id="depth">
+    <option value="1">depth 1</option>
+    <option value="2">depth 2</option>
+  </select>
 </div>
 <div id="results"></div>
-<div id="info">Type a symbol, pick a match, browse its call neighborhood. Click a node to re-center.</div>
+<div id="info">Type a query (symbols or code content) to explore. Click a symbol match to visualize call graphs.</div>
 <svg id="graph"></svg>
 <div class="tooltip" id="tip"></div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const svg = d3.select('#graph');
@@ -46,7 +59,8 @@ async function api(p) {
 
 $('searchBtn').onclick = doSearch;
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
-// Live typeahead — debounced symbol list as you type, click a row to browse.
+$('searchType').addEventListener('change', doSearch);
+
 let typeTimer = null;
 $('q').addEventListener('input', () => {
   clearTimeout(typeTimer);
@@ -55,25 +69,49 @@ $('q').addEventListener('input', () => {
 
 async function doSearch() {
   const q = $('q').value.trim();
+  const searchType = $('searchType').value;
   if (q.length < 2) return;
-  $('info').textContent = 'Searching for "' + q + '"…';
+
+  $('info').textContent = 'Searching (' + searchType + ') for "' + q + '"…';
   let res;
   try {
-    res = await api('/symbols?q=' + encodeURIComponent(q));
+    res = await api('/search?q=' + encodeURIComponent(q) + '&type=' + searchType);
   } catch (e) {
     $('info').textContent = 'Search failed: ' + e.message;
     return;
   }
+
   const list = res.items || [];
   const box = $('results');
   box.innerHTML = '';
-  if (!list.length) { $('info').textContent = 'No matches for "' + q + '".'; return; }
-  $('info').textContent = list.length + ' match(es) — click one to visualize:';
+  if (!list.length) {
+    $('info').textContent = 'No matches found for "' + q + '".';
+    return;
+  }
+
+  $('info').textContent = list.length + ' match(es) (' + (res.tookMs || 0) + 'ms) — click a symbol to view its neighborhood graph:';
+
   list.forEach((r) => {
     const b = document.createElement('button');
-    b.textContent = r.name + (r.kind ? '  ·  ' + r.kind : '') + (r.file ? '  ·  ' + r.file : '');
-    b.title = r.file || r.name;
-    b.onclick = () => load(r.name);
+    b.className = 'res-btn';
+
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + (r.matchType === 'symbol' ? 'badge-symbol' : 'badge-text');
+    badge.textContent = r.matchType;
+    b.appendChild(badge);
+
+    const label = document.createElement('span');
+    if (r.matchType === 'symbol') {
+      label.textContent = r.name + (r.kind ? ' (' + r.kind + ')' : '') + (r.file ? ' · ' + r.file : '');
+      b.onclick = () => load(r.name);
+    } else {
+      label.textContent = (r.file ? r.file : 'match') + (r.line ? ':' + r.line : '') + (r.snippet ? ' — ' + r.snippet : '');
+      b.onclick = () => {
+        $('info').textContent = 'Text match at ' + r.file + (r.line ? ':' + r.line : '') + (r.snippet ? ' — ' + r.snippet : '');
+      };
+    }
+    b.appendChild(label);
+    b.title = (r.file || '') + (r.line ? ':' + r.line : '') + (r.snippet ? '\n' + r.snippet : '');
     box.appendChild(b);
   });
 }
@@ -81,9 +119,9 @@ async function doSearch() {
 async function load(symbol) {
   const depth = $('depth').value;
   $('info').textContent = 'Loading neighborhood for "' + symbol + '" (depth ' + depth + ')…';
-  const g = await api('/neighborhood/' + encodeURIComponent(symbol) + '?depth=' + depth);
+  const g = await api('/symbols/' + encodeURIComponent(symbol) + '?view=graph&depth=' + depth);
   if (!g.nodes || !g.nodes.length) {
-    $('info').textContent = 'No graph for "' + symbol + '". ' + (g.note || '');
+    $('info').textContent = 'No graph available for "' + symbol + '". ' + (g.note || '');
     return;
   }
   $('info').textContent = 'Center: ' + g.center + ' — ' + g.nodes.length + ' nodes, ' + g.edges.length + ' edges' + (g.truncated ? ' (capped at 300)' : '');

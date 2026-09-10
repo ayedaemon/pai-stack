@@ -1,11 +1,28 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const { execSync } = require('child_process');
 const app = express();
 const PORT = 20128;
+const WORKSPACE = path.normalize(process.env.WORKSPACE_PATH || '/workspace');
+const EMBEDDINGS_URL = process.env.EMBEDDINGS_URL || 'http://embeddings:8080/v1';
+const VECTOR_CACHE_FILE = '/data/vector_cache.json';
 
 app.use(express.json());
 app.use('/viz', express.static(path.join(__dirname, 'viz')));
+
+function toRelativePath(filePath) {
+  if (!filePath) return '';
+  const prefix = WORKSPACE.endsWith('/') ? WORKSPACE : `${WORKSPACE}/`;
+  if (filePath.startsWith(prefix)) {
+    return filePath.slice(prefix.length);
+  }
+  return filePath.replace(/^\/workspace\/?/, '')
+                 .replace(/^\/opt\/hermes\/data\/workspace\/?/, '')
+                 .replace(/^\/opt\/data\/?/, '')
+                 .replace(/^\/stack_root\/?/, '')
+                 .replace(/^\/codebase\/?/, '');
+}
 
 function runCodeGraph(tool, args = {}) {
   const argsJson = JSON.stringify(args);
@@ -13,7 +30,7 @@ function runCodeGraph(tool, args = {}) {
   console.log(`[codegraph] start tool=${tool} args=${argsJson.slice(0, 200)}`);
   try {
     const result = execSync(
-      `codegraph-server --run-tool ${tool} --tool-args '${argsJson}' --graph-only --workspace /stack_root --exclude node_modules --exclude .git --exclude __pycache__ --exclude .venv --exclude dist --exclude build`,
+      `codegraph-server --run-tool ${tool} --tool-args '${argsJson}' --graph-only --workspace ${WORKSPACE} --exclude node_modules --exclude .git --exclude __pycache__ --exclude .venv --exclude dist --exclude build`,
       { encoding: 'utf-8', timeout: 120000, maxBuffer: 10 * 1024 * 1024 }
     );
     console.log(`[codegraph] done tool=${tool} took=${Date.now() - started}ms bytes=${result.length}`);
@@ -24,92 +41,178 @@ function runCodeGraph(tool, args = {}) {
   }
 }
 
-app.get('/health', (req, res) => {
-  // lightweight liveness — don't run heavy graph tool here (previous codegraph_stats is unknown and ETIMEDOUT on RPi)
-  res.json({ status: 'ok' });
-});
-
-app.get('/context/:symbol', (req, res) => {
-  const result = runCodeGraph('codegraph_get_ai_context', { symbol: req.params.symbol });
-  res.json(result);
-});
-
-app.get('/callers/:symbol', (req, res) => {
-  const result = runCodeGraph('codegraph_get_callers', { symbol: req.params.symbol });
-  res.json(result);
-});
-
-app.get('/callees/:symbol', (req, res) => {
-  const result = runCodeGraph('codegraph_get_callees', { symbol: req.params.symbol });
-  res.json(result);
-});
-
-app.get('/impact/:path(*)', (req, res) => {
-  const result = runCodeGraph('codegraph_analyze_impact', { filePath: req.params.path });
-  res.json(result);
-});
-
-app.get('/search', (req, res) => {
-  const query = req.query.q;
-  if (!query) return res.status(400).json({ error: 'Missing ?q= query parameter' });
-  const result = runCodeGraph('codegraph_symbol_search', { query });
-  res.json(result);
-});
-
-// Trimmed symbol list for the viz picker — same verified search tool,
-// shaped into small clickable rows.
-app.get('/symbols', (req, res) => {
-  const query = req.query.q || req.query.prefix || '';
-  if (query.length < 2) return res.status(400).json({ error: 'Pass ?q= with at least 2 characters' });
-  const limit = Math.min(parseInt(req.query.limit || '30', 10) || 30, 100);
+// ── Full-Text Lexical Search (ripgrep) ─────────────────────────────────────────
+function runRipgrep(query, limit = 30) {
   const started = Date.now();
+  // Escape single quotes for shell safety
+  const safeQuery = query.replace(/'/g, "'\\''");
+  const cmd = `rg --json --max-count ${limit} -i -e '${safeQuery}' ${WORKSPACE} ` +
+              `--glob '!node_modules/**' --glob '!.git/**' --glob '!__pycache__/**' ` +
+              `--glob '!.venv/**' --glob '!dist/**' --glob '!build/**' ` +
+              `--glob '!*.db*' --glob '!*.lock'`;
+  try {
+    const stdout = execSync(cmd, { encoding: 'utf-8', timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
+    const lines = stdout.trim().split('\n').filter(Boolean);
+    const results = [];
+
+    for (const line of lines) {
+      if (results.length >= limit) break;
+      try {
+        const item = JSON.parse(line);
+        if (item.type === 'match') {
+          const matchData = item.data;
+          const rawFile = matchData.path?.text || '';
+          const lineNum = matchData.line_number || null;
+          const snippet = (matchData.lines?.text || '').trim();
+          results.push({
+            name: null,
+            kind: 'text',
+            file: toRelativePath(rawFile),
+            line: lineNum,
+            snippet: snippet.length > 200 ? snippet.slice(0, 200) + '...' : snippet,
+            matchType: 'text',
+            score: 0.8,
+          });
+        }
+      } catch (_) {
+        // Skip malformed JSON lines
+      }
+    }
+    console.log(`[ripgrep] q="${query}" returned=${results.length} took=${Date.now() - started}ms`);
+    return results;
+  } catch (e) {
+    // ripgrep exit code 1 means "no matches found", which is not a server error
+    if (e.status === 1) return [];
+    console.log(`[ripgrep] error q="${query}": ${e.message}`);
+    return [];
+  }
+}
+
+// ── AST Symbol Search ─────────────────────────────────────────────────────────
+function runSymbolSearch(query, limit = 30) {
   const result = runCodeGraph('codegraph_symbol_search', { query });
   const raw = Array.isArray(result) ? result : (result.results || result.symbols || []);
-  const items = (Array.isArray(raw) ? raw : []).slice(0, limit).map((r) => ({
+  return (Array.isArray(raw) ? raw : []).slice(0, limit).map((r) => ({
     id: String(r.node_id ?? r.nodeId ?? r.id ?? ''),
     name: r.symbol?.name ?? r.name ?? '',
-    kind: r.symbol?.kind ?? r.kind ?? '',
-    file: (r.symbol?.location?.file ?? r.location?.file ?? r.file ?? '').replace('/stack_root/', '').replace('/codebase/', ''),
-    score: r.score ?? null,
+    kind: r.symbol?.kind ?? r.kind ?? 'Symbol',
+    file: toRelativePath(r.symbol?.location?.file ?? r.location?.file ?? r.file ?? ''),
+    line: r.symbol?.location?.range?.start?.line ?? r.line ?? null,
+    snippet: r.symbol?.detail || r.match_reason || null,
+    matchType: 'symbol',
+    score: r.score ?? 1.0,
   })).filter((x) => x.name);
-  console.log(`[symbols] q=${query} returned=${items.length} took=${Date.now() - started}ms`);
-  res.json({ query, count: items.length, items });
-});
+}
 
-app.get('/map', (req, res) => {
-  const result = runCodeGraph('codegraph_get_module_summary');
-  res.json(result);
-});
+// ── Vector Search & Embeddings Integration ────────────────────────────────────
+let vectorCache = new Map();
 
-app.get('/stats', (req, res) => {
-  const result = runCodeGraph('codegraph_memory_stats');
-  res.json(result);
-});
+function loadVectorCache() {
+  try {
+    if (fs.existsSync(VECTOR_CACHE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(VECTOR_CACHE_FILE, 'utf-8'));
+      vectorCache = new Map(Object.entries(data));
+      console.log(`[embeddings] loaded ${vectorCache.size} cached vector(s)`);
+    }
+  } catch (e) {
+    console.log(`[embeddings] could not load cache: ${e.message}`);
+  }
+}
 
-app.post('/query', (req, res) => {
-  const { tool, args = {} } = req.body;
-  if (!tool) return res.status(400).json({ error: 'Missing "tool" in request body' });
-  const result = runCodeGraph(tool, args);
-  res.json(result);
-});
+function saveVectorCache() {
+  try {
+    const dir = path.dirname(VECTOR_CACHE_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const obj = Object.fromEntries(vectorCache);
+    fs.writeFileSync(VECTOR_CACHE_FILE, JSON.stringify(obj), 'utf-8');
+  } catch (e) {
+    console.log(`[embeddings] could not save cache: ${e.message}`);
+  }
+}
 
-// Scoped neighborhood explorer for quick browsing — aggregates callers/callees
-// into D3-ready {nodes, edges}, capped so the browser never chokes.
-app.get('/neighborhood/:symbol', (req, res) => {
-  const symbol = req.params.symbol;
-  const depth = Math.min(parseInt(req.query.depth || '1', 10) || 1, 2);
+async function fetchEmbedding(text, prefix = 'search_query: ') {
+  try {
+    const res = await fetch(`${EMBEDDINGS_URL}/embeddings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: `${prefix}${text}` })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.data?.[0]?.embedding || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function cosineSimilarity(a, b) {
+  let dot = 0.0, normA = 0.0, normB = 0.0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+async function indexSymbolsForSemanticSearch(symbols) {
+  let newIndexed = 0;
+  for (const s of symbols) {
+    const id = `${s.file}:${s.line}:${s.name}`;
+    if (!vectorCache.has(id)) {
+      const textToEmbed = `${s.kind || 'symbol'} ${s.name} in ${s.file}${s.snippet ? ': ' + s.snippet : ''}`;
+      const vec = await fetchEmbedding(textToEmbed, 'search_document: ');
+      if (vec) {
+        vectorCache.set(id, { ...s, vector: vec });
+        newIndexed++;
+      }
+    }
+  }
+  if (newIndexed > 0) {
+    saveVectorCache();
+    console.log(`[embeddings] indexed ${newIndexed} new symbol(s), total=${vectorCache.size}`);
+  }
+}
+
+async function runSemanticSearch(query, limit = 30) {
+  const queryVec = await fetchEmbedding(query, 'search_query: ');
+  if (!queryVec) return [];
+
+  const matches = [];
+  for (const item of vectorCache.values()) {
+    if (item.vector) {
+      const score = cosineSimilarity(queryVec, item.vector);
+      if (score > 0.40) {
+        matches.push({
+          id: item.id,
+          name: item.name,
+          kind: item.kind,
+          file: item.file,
+          line: item.line,
+          snippet: item.snippet,
+          matchType: 'semantic',
+          score: Math.round(score * 100) / 100,
+        });
+      }
+    }
+  }
+
+  matches.sort((a, b) => b.score - a.score);
+  return matches.slice(0, limit);
+}
+
+// ── Neighborhood Builder Helper ───────────────────────────────────────────────
+function buildNeighborhood(symbol, depth = 1) {
   const MAX_NODES = 300;
-  const t0 = Date.now();
-  console.log(`[neighborhood] start symbol=${symbol} depth=${depth}`);
-
-  const nodes = new Map(); // id -> {id,label,kind,file}
+  const nodes = new Map();
   const edges = [];
   const seenEdges = new Set();
 
   const symId = (s) => String(s.node_id ?? s.nodeId ?? s.id ?? s.symbol?.name ?? s.name ?? JSON.stringify(s).slice(0, 60));
   const symLabel = (s) => s.symbol?.name ?? s.name ?? symId(s);
   const symKind = (s) => s.symbol?.kind ?? s.kind ?? 'Unknown';
-  const symFile = (s) => s.symbol?.location?.file ?? s.location?.file ?? s.file ?? '';
+  const symFile = (s) => toRelativePath(s.symbol?.location?.file ?? s.location?.file ?? s.file ?? '');
 
   function addNode(s) {
     const id = symId(s);
@@ -125,7 +228,6 @@ app.get('/neighborhood/:symbol', (req, res) => {
       edges.push({ source: a, target: b, kind });
     }
   }
-  // codegraph tool responses vary in shape — collect symbol-like entries defensively
   function collect(result) {
     if (!result || result.error) return [];
     const out = [];
@@ -139,10 +241,9 @@ app.get('/neighborhood/:symbol', (req, res) => {
     return out;
   }
 
-  // Resolve center via search (first SymbolName match wins, else first result)
   const searchRes = runCodeGraph('codegraph_symbol_search', { query: symbol });
   const candidates = collect(searchRes);
-  if (!candidates.length) return res.json({ center: symbol, nodes: [], edges: [], note: 'no matches — try GET /search?q= first' });
+  if (!candidates.length) return { center: symbol, nodes: [], edges: [], note: 'no matches' };
   const centerRaw = candidates.find((c) => c.match_reason === 'SymbolName') || candidates[0];
   const centerId = addNode(centerRaw);
   const centerName = symLabel(centerRaw);
@@ -151,7 +252,6 @@ app.get('/neighborhood/:symbol', (req, res) => {
     if (nodes.size >= MAX_NODES) return;
     const callers = collect(runCodeGraph('codegraph_get_callers', { symbol: name }));
     const callees = collect(runCodeGraph('codegraph_get_callees', { symbol: name }));
-    console.log(`[neighborhood] hop=${hop} name=${name} callers=${callers.length} callees=${callees.length} nodes=${nodes.size} elapsed=${Date.now() - t0}ms`);
     const selfId = [...nodes.values()].find((n) => n.label === name)?.id;
     if (!selfId) return;
     callers.slice(0, 50).forEach((c) => {
@@ -170,11 +270,196 @@ app.get('/neighborhood/:symbol', (req, res) => {
     }
   }
   expand(centerName, 1);
+  return { center: centerName, centerId, nodes: [...nodes.values()], edges, truncated: nodes.size >= MAX_NODES };
+}
 
-  console.log(`[neighborhood] finish center=${centerName} nodes=${nodes.size} edges=${edges.length} total=${Date.now() - t0}ms`);
-  res.json({ center: centerName, centerId, nodes: [...nodes.values()], edges, truncated: nodes.size >= MAX_NODES });
+// ==============================================================================
+// ── CANONICAL API ENDPOINTS ───────────────────────────────────────────────────
+// ==============================================================================
+
+// Liveness check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', workspace: WORKSPACE });
 });
 
+// 1. Unified Multi-Modal Search
+// GET /search?q=...&type=hybrid|symbol|text|semantic&limit=30
+app.get('/search', async (req, res) => {
+  const query = (req.query.q || req.query.query || '').trim();
+  if (!query || query.length < 2) {
+    return res.status(400).json({ error: 'Query (?q=) must be at least 2 characters' });
+  }
+
+  const type = (req.query.type || 'hybrid').toLowerCase();
+  const limit = Math.min(parseInt(req.query.limit || '30', 10) || 30, 100);
+  const started = Date.now();
+
+  let results = [];
+
+  if (type === 'symbol') {
+    results = runSymbolSearch(query, limit);
+    indexSymbolsForSemanticSearch(results).catch(() => {});
+  } else if (type === 'text') {
+    results = runRipgrep(query, limit);
+  } else if (type === 'semantic') {
+    results = await runSemanticSearch(query, limit);
+  } else {
+    // Default: 'hybrid' (combines AST symbols, semantic vectors, and ripgrep text matches)
+    const symbols = runSymbolSearch(query, limit);
+    indexSymbolsForSemanticSearch(symbols).catch(() => {});
+    const textMatches = runRipgrep(query, limit);
+    const semanticMatches = await runSemanticSearch(query, limit);
+
+    // Merge & deduplicate by file:line
+    const seen = new Set();
+    symbols.forEach((s) => {
+      seen.add(`${s.file}:${s.line}:${s.name}`);
+      results.push(s);
+    });
+
+    semanticMatches.forEach((m) => {
+      const key = `${m.file}:${m.line}:${m.name}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(m);
+      }
+    });
+
+    textMatches.forEach((t) => {
+      const key = `${t.file}:${t.line}:${t.name}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(t);
+      }
+    });
+
+    // Rank: symbol exact matches first, then semantic matches, then text matches
+    results.sort((a, b) => (b.score || 0) - (a.score || 0));
+    results = results.slice(0, limit);
+  }
+
+  console.log(`[search] q="${query}" type=${type} returned=${results.length} took=${Date.now() - started}ms`);
+  res.json({
+    query,
+    type,
+    count: results.length,
+    tookMs: Date.now() - started,
+    items: results,
+  });
+});
+
+// 2. Full Symbol Intelligence
+// GET /symbols/:name?view=all|context|callers|callees|graph&depth=1|2
+app.get('/symbols/:name', (req, res) => {
+  const name = req.params.name;
+  const view = (req.query.view || 'all').toLowerCase();
+  const depth = Math.min(parseInt(req.query.depth || '1', 10) || 1, 2);
+
+  if (view === 'context') {
+    return res.json(runCodeGraph('codegraph_get_ai_context', { symbol: name }));
+  }
+  if (view === 'callers') {
+    return res.json(runCodeGraph('codegraph_get_callers', { symbol: name }));
+  }
+  if (view === 'callees') {
+    return res.json(runCodeGraph('codegraph_get_callees', { symbol: name }));
+  }
+  if (view === 'graph') {
+    return res.json(buildNeighborhood(name, depth));
+  }
+
+  // view === 'all': Consolidated symbol intelligence
+  const context = runCodeGraph('codegraph_get_ai_context', { symbol: name });
+  const callers = runCodeGraph('codegraph_get_callers', { symbol: name });
+  const callees = runCodeGraph('codegraph_get_callees', { symbol: name });
+  const graph = buildNeighborhood(name, depth);
+
+  res.json({
+    symbol: name,
+    context,
+    callers,
+    callees,
+    graph,
+  });
+});
+
+// 3. Blast Radius / Impact Analysis
+// GET /impact/:path(*)
+app.get('/impact/:path(*)', (req, res) => {
+  let filePath = req.params.path;
+  if (!filePath.startsWith('/') && !filePath.startsWith(WORKSPACE)) {
+    filePath = path.join(WORKSPACE, filePath);
+  }
+  const result = runCodeGraph('codegraph_analyze_impact', { filePath });
+  res.json(result);
+});
+
+// 4. Module Architecture Summary
+// GET /map
+app.get('/map', (req, res) => {
+  const result = runCodeGraph('codegraph_get_module_summary');
+  res.json(result);
+});
+
+// 5. Explicit Reindex Trigger
+// POST /reindex
+app.post('/reindex', (req, res) => {
+  console.log(`[codegraph] workspace reindex requested`);
+  const result = runCodeGraph('codegraph_reindex_workspace', req.body || {});
+  res.json({ status: 'ok', result });
+});
+
+// 6. Memory Stats & Diagnostics
+// GET /stats
+app.get('/stats', (req, res) => {
+  const result = runCodeGraph('codegraph_memory_stats');
+  res.json({ workspace: WORKSPACE, stats: result });
+});
+
+// ==============================================================================
+// ── BACKWARD-COMPATIBILITY ALIASES ────────────────────────────────────────────
+// ==============================================================================
+
+// /symbols?q=... -> alias to /search?type=symbol (used by viz typeahead)
+app.get('/symbols', (req, res) => {
+  const query = req.query.q || req.query.prefix || '';
+  if (query.length < 2) return res.status(400).json({ error: 'Pass ?q= with at least 2 characters' });
+  const limit = Math.min(parseInt(req.query.limit || '30', 10) || 30, 100);
+  const items = runSymbolSearch(query, limit);
+  res.json({ query, count: items.length, items });
+});
+
+// Legacy /context/:symbol
+app.get('/context/:symbol', (req, res) => {
+  res.json(runCodeGraph('codegraph_get_ai_context', { symbol: req.params.symbol }));
+});
+
+// Legacy /callers/:symbol
+app.get('/callers/:symbol', (req, res) => {
+  res.json(runCodeGraph('codegraph_get_callers', { symbol: req.params.symbol }));
+});
+
+// Legacy /callees/:symbol
+app.get('/callees/:symbol', (req, res) => {
+  res.json(runCodeGraph('codegraph_get_callees', { symbol: req.params.symbol }));
+});
+
+// Legacy /neighborhood/:symbol
+app.get('/neighborhood/:symbol', (req, res) => {
+  const depth = Math.min(parseInt(req.query.depth || '1', 10) || 1, 2);
+  res.json(buildNeighborhood(req.params.symbol, depth));
+});
+
+// Legacy generic /query (used by fs-notifier.sh)
+app.post('/query', (req, res) => {
+  const { tool, args = {} } = req.body;
+  if (!tool) return res.status(400).json({ error: 'Missing "tool" in request body' });
+  const result = runCodeGraph(tool, args);
+  res.json(result);
+});
+
+loadVectorCache();
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`CodeGraph API server listening on port ${PORT}`);
+  console.log(`CodeGraph API server listening on port ${PORT} (workspace: ${WORKSPACE}, embeddings: ${EMBEDDINGS_URL})`);
 });

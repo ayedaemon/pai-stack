@@ -16,12 +16,11 @@
 ## Steps
 1. Identify what you need: symbol context, callers/callees, impact analysis, or search
 2. Query CodeGraph via HTTP:
-   - `GET /context/:symbol` — full context (source, callers, callees, deps)
-   - `GET /callers/:symbol` — who calls this function
-   - `GET /callees/:symbol` — what this function calls
+   - `GET /search?q=:query&type=hybrid|symbol|text` — multi-modal search (hybrid AST symbols + ripgrep full text)
+   - `GET /symbols/:name` — consolidated symbol intelligence (definition, context, callers, callees, graph)
    - `GET /impact/:path` — blast radius of file changes
-   - `GET /search?q=:query` — semantic symbol search
    - `GET /map` — most-connected files overview
+   - `POST /reindex` — trigger workspace reindexing
 3. Analyze results — identify affected files, test coverage needs, and risk areas
 4. Apply changes with awareness of call chain implications
 5. Write result to issue file (status: in-progress/review) with `file:lines` citations
@@ -32,12 +31,13 @@
 - Changelog entry in originating Telegram topic
 
 ## Related files
-- `hermes/config.yaml.j2:150` — codegraph.api_url configuration
+- `hermes/config.yaml:108` — codegraph.api_url configuration
 - `codegraph/server.js:1` — HTTP wrapper implementation
-- `docker-compose.yaml:69` — codegraph service definition
+- `docker-compose.yaml:54` — codegraph service definition
 
 ## Notes for Hermes
-- CodeGraph runs in graph-only mode (no embeddings) — fast queries, minimal RAM
+- CodeGraph runs in hybrid mode: Tree-sitter for AST symbol graphs + ripgrep for blazing fast full-text search
 - All queries go through HTTP API at `http://codegraph:20128`
-- Results are cached in-memory by CodeGraph — repeated queries are fast
+- Use `GET /search?q=<term>&type=hybrid` for searching both symbols and content
+- Use `GET /symbols/<name>` to fetch full context, callers, and callees in a single query
 - For large codebases, start with `/map` to understand structure before deep-diving
