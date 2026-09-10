@@ -25,6 +25,19 @@ find /opt/hermes/data -type f \( -name '*.db' -o -name '*.db-wal' -o -name '*.db
 
 cp /tmp/hermes-config.yaml.host /opt/hermes/data/hermes-config.yaml
 
+# stack_root is canonical inside containers (host STACK_ROOT → container /stack_root); no /opt/data/Personal fallback
+
+# Inject KB_DIRS into knowledgebase.directories (unless default "." = index all)
+if [ -n "${KB_DIRS:-}" ] && [ "$KB_DIRS" != "." ]; then
+    KB_YAML=$(echo "$KB_DIRS" | python3 -c "
+import sys
+dirs = [d.strip() for d in sys.stdin.read().split(',') if d.strip()]
+print('\n'.join(f'    - /stack_root/{d}' for d in dirs))
+")
+    sed -i "/^knowledgebase:/,/^[^ ]/{s|directories:.*|directories:\n${KB_YAML}|}" \
+        /opt/hermes/data/hermes-config.yaml
+fi
+
 # Ensure the hermes CLI reads the same config the gateway does (CLI defaults to
 # config.yaml, not hermes-config.yaml or $HERMES_CONFIG).
 cp /opt/hermes/data/hermes-config.yaml /opt/hermes/data/config.yaml

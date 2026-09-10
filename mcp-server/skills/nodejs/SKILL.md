@@ -4,7 +4,7 @@
 
 ## When to use
 - Trigger: user says Node, npm, `package.json`, `*.js`/`*.ts`, `express`, `nestjs`, `fastify`, or asks to read/debug/build a Node app
-- Preconditions: project under `/opt/data/Personal/...` with `package.json`
+- Preconditions: project under `/stack_root/...` with `package.json`
 - Auto-use: when `stack-discovery` finds `package.json` (and Node is not just React tooling)
 
 ## Inputs

@@ -1,259 +1,249 @@
 # pai-stack
 
-**Hermes Agent** + **Syncthing** + **CodeGraph** — personal AI infrastructure on a single Pi/server.
+**Hermes Agent + Syncthing + CodeGraph — stack_root on a Pi or your Mac.**
 
----
-
-## Architecture
+One `.env`, two commands, same stack. No reverse proxy. Tailscale WireGuard encrypts all remote traffic.
 
 ```text
-Mac / Clients (over Tailscale)
-              │
-              ▼ WireGuard (encrypted)
-┌─────────────────────────────────────────────┐
-│              Raspberry Pi                    │
-│                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  │
-│  │     Hermes      │  │   CodeGraph     │  │
-│  │  :9119 dashboard│  │  :20128 internal│  │
-│  │  :8642 API      │  │                 │  │
-│  └────────┬────────┘  └────────┬────────┘  │
-│           │  Docker network    │           │
-│           └────────┬───────────┘           │
-│                    │                       │
-│  ┌─────────────────┴─────────────────────┐ │
-│  │           Syncthing (host)            │ │
-│  │  :8384 GUI  :22000 sync               │ │
-│  └───────────────────────────────────────┘ │
-└─────────────────────────────────────────────┘
+Mac / Workstation (STACK_ROOT) ──WireGuard──▶ Pi (~/stack_root, Syncthing ID stack_root)
+         │                                              │
+         │ docker compose up (local)                   │ ansible + docker compose (remote)
+         ▼                                              ▼
+┌─────────────────┐  Docker network  ┌─────────────────┐
+│ Hermes :9119    │──────────────────│ CodeGraph :20128│
+│   :8642 API     │  /stack_root     │                 │
+└─────────────────┘                  └─────────────────┘
+         │                                    │
+         └──────────┬─────────────────────────┘
+                    ▼
+         ┌───────────────────────────┐
+         │ Syncthing (host, Pi only) │
+         │ :8384 GUI  :22000 sync    │
+         └───────────────────────────┘
 ```
 
-No reverse proxy. Tailscale encrypts all traffic via WireGuard. Each service binds directly to the Tailscale IP.
+* Inside every container the same path: `/stack_root` (host `$STACK_ROOT` → container `/stack_root`). `Projects/Foo` is always `stack_root/Projects/Foo`.
+* On Pi host the same path: `~/stack_root` (Syncthing folder ID `stack_root`).
+* Secrets are in `~/deployed-pai-stack/.env` (remote) or `./.env` (local), auto-generated on first run if blank.
 
 ---
 
-## What You Get
+## 1) Prerequisites
 
-| Service | Purpose | Access |
-|---------|---------|--------|
-| **Hermes** | AI agent — RAG, Kanban, Telegram, Dashboard | `https://TailscaleIP:9119` (dashboard), `:8642` (API) |
-| **Syncthing** | Bidirectional file sync across devices | `https://TailscaleIP:8384` |
-| **CodeGraph** | Code intelligence API (call chains, impact, search) | Internal only (`http://codegraph:20128`) |
-
-**Data flow:** Write notes on Mac → Syncthing syncs to Pi → Hermes indexes for RAG → CodeGraph parses code → Hermes uses both to answer.
+- **Both modes:** Docker & Docker Compose (Docker Desktop, OrbStack, or Engine), `git`.
+- **Remote only:** `ansible-core` + `sshpass` on your Mac (`pip install ansible-core; brew install hudochenkov/sshpass/sshpass`), SSH to Pi (`ssh pi@rpi.burro-smelt.ts.net`).
 
 ---
 
-## Quick Start
-
-This stack is provisioned **entirely by Ansible** — it SSHes into the target machine and installs everything from bare SSH.
-
-**Prerequisites on your dev machine:** `ansible-core` + `sshpass`
-
-```bash
-pip install ansible-core
-# macOS: brew install hudochenkov/sshpass/sshpass
-# Debian/Ubuntu: apt install sshpass
-```
-
-### Local install (on the same machine)
-
-Even localhost deploy uses SSH — ensure `sshd` is running:
-
-```bash
-# macOS: System Settings → General → Sharing → Remote Login
-# Linux: sudo systemctl enable --now sshd
-ansible-playbook -i "localhost," -u $USER ansible/playbook.yml -K -k
-```
-
-### Remote install (the common case)
-
-Point at your Pi via LAN or Tailscale address:
+## 2) One env file for both modes
 
 ```bash
 cp .env.example .env
-# Edit .env with TARGET_HOST, TARGET_USER, etc.
-
-ansible-playbook -i "${TARGET_HOST}," -u "${TARGET_USER}" ansible/playbook.yml \
-  -e "@.env" -k -K
+# Edit only Sections 1-3 in .env — rest has sane defaults or auto-generates.
 ```
 
-Or set `SSH_PASSWORD` and `BECOME_PASSWORD` in `.env` for zero-prompt deploys.
+```env
+# 1. WORKSPACE — REQUIRED (both) — absolute path, no default
+STACK_ROOT=/Users/you/stack_root          # Mac: /Users/you/stack_root, Pi: ~/stack_root after sync
 
-### Post-deploy workflow
+# 2. LLM — set at least one so Hermes answers when local LLM is down
+OPENROUTER_API_KEY="sk-or-v1-..."
+# KILO_GATEWAY_API_KEY=""  MISTRAL_API_KEY=""
 
-1. Credentials printed at end of deploy — save them
-2. Open Hermes Dashboard at `https://TailscaleIP:9119`
-3. Pair Syncthing devices — see [Syncing Your Devices](#syncing-your-devices)
-4. Wait for initial sync (minutes depending on KB size)
-5. Verify Hermes sees notes — query the dashboard
-6. CodeGraph builds code graph automatically on first deploy
+# 3. DEPLOY TARGET — empty = local, set = remote Pi
+TARGET_HOST=""                             # "" → local, "rpi.burro-smelt.ts.net" → remote
+TARGET_USER="pi"
 
----
+# 4. SECRETS — leave blank → deploy.sh generates and writes back to .env
+HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=""
+API_SERVER_KEY=""
 
-## Services & Access
+# 5. SERVICES — rarely change
+CODEGRAPH_ENABLED=true
+KB_DIRS="."                                # "." = index whole stack_root
 
-| Service | URL | Auth |
-|---------|-----|------|
-| **Hermes Dashboard** | `https://TailscaleIP:9119` | Basic Auth `admin` / generated password |
-| **Hermes API** | `https://TailscaleIP:8642` | Bearer token (`API_SERVER_KEY`) |
-| **Syncthing GUI** | `https://TailscaleIP:8384` | Basic Auth `admin` / generated password |
-| **CodeGraph** | `http://codegraph:20128` (Docker network) | None |
-
-> All credentials are generated on first deploy and written to `~/deployed-pai-stack/.env`.
-
----
-
-## How Hermes Uses Your Data
-
-### RAG (Retrieval-Augmented Generation)
-
-- **Indexes all of `STACK_ROOT`** — not just `silverbulletKB`. Everything under `~/Personal` is searchable.
-- **Local embeddings** (`all-MiniLM-L6-v2`, ~80MB RAM) — no data leaves your machine.
-- **Auto-reindex on file change** — edits are immediately available for retrieval.
-- **`AGENTS.md`** always injected into Hermes' context (scope manifest).
-- **`silverbulletKB/`** is where Hermes writes back — indexed + synced.
-
-### CodeGraph (Code Intelligence)
-
-- Hermes queries CodeGraph at `http://codegraph:20128` for code-aware planning.
-- Provides: call chain tracing, impact analysis, symbol search.
-- Reads `STACK_ROOT` **read-only** — never writes to your codebase.
-- **fs-notifier** watches `STACK_ROOT` and triggers CodeGraph rebuild when files change (configurable debounce via `FS_NOTIFIER_DEBOUNCE_SECONDS`).
-
-### Structuring the Knowledge Base
-
-```
-~/Personal/
-├── AGENTS.md                      ← scope manifest (always injected)
-├── Projects/
-│   ├── ProjectAlpha/
-│   │   ├── README.md
-│   │   ├── docs/architecture.md
-│   │   ├── telegram.md
-│   │   └── config.md
-│   └── ProjectBeta/ ...
-└── References/                   ← shared glossary, runbooks
+# 6. ADVANCED — remote-only & rarely touched
+TAILSCALE_AUTH_KEY=""                      # only for fresh Pi not yet on tailnet
+SYNCTHING_GUI_PASSWORD=""                  # blank → auto-generated on Pi, ignored locally
+UID=1000 GID=1000                          # fallbacks, auto-detected
 ```
 
-Tips: Use specific H2/H3 headings for better chunks. Keep `AGENTS.md` as the single source of truth. Store secret *references*, never raw values.
+See `.env.example` for full 6-section order (Workspace → LLM → Deploy Target → Secrets → Services → Advanced). **Most users only touch 1-3.**
 
 ---
 
-## Syncing Your Devices (Syncthing)
+## 3) Choose a mode — what `deploy.sh` will do
 
-> Syncthing runs on the Pi host as a **systemd service** (not a Docker container).
+### A. Local (`--local`, default) — no Pi, no Syncthing, no Tailscale
 
-The deploy configures Syncthing's default folder with **Folder ID `personal`** pointing at `~/Personal`.
-
-### Quick Pairing
-
-1. Install Syncthing on your device (`brew install syncthing` / syncthing.net)
-2. Open Pi's Syncthing GUI: `https://TailscaleIP:8384`
-3. Copy Pi's **Device ID** (Actions → Show ID)
-4. On your device: Add Remote Device → paste Device ID → Save
-5. Add local folder with **Folder ID** = `personal`, share with Pi
-6. On Pi: accept folder share, point to existing `~/Personal`
-
-### Detailed Steps
-
-**Prerequisites:**
-- Both devices on the same Tailscale tailnet (recommended) or reachable via LAN.
-
-**Steps:**
-1. Open Pi's GUI — `https://TailscaleIP:8384`, log in with deploy credentials
-2. On Pi: **Actions → Show ID** → copy Device ID
-3. On your machine: **Add Remote Device** → paste Device ID → Save
-4. Add local folder, set **Folder ID** to `personal`, share with Pi
-5. On Pi: accept folder share, choose existing `~/Personal`
-
-**Notes:**
-- Bidirectional by default (Send & Receive). Deletes go to `.stversions` (trash).
-- `STACK_ROOT` is the same folder Hermes reads/writes.
-- To change sync path: edit `STACK_ROOT` in `.env` and re-deploy.
-
----
-
-## fs-notifier
-
-A background process inside the Hermes container that watches `STACK_ROOT` for file changes and triggers CodeGraph graph rebuilds.
-
-**Configurable via `.env`:**
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FS_NOTIFIER_DEBOUNCE_SECONDS` | `30` | How long to wait after last change before triggering rebuild |
-
-**How it works:**
-1. `inotifywait` watches `/opt/data/Personal` recursively
-2. On change, starts a debounce timer
-3. After `DEBOUNCE_SECONDS` of no changes, sends `POST` to CodeGraph
-4. CodeGraph runs `reindex_workspace` (incremental via content hashing)
-
----
-
-## Updating Configuration
-
-Configs are **overwritten on every deploy**. To update:
-
-1. Edit `.env` or `ansible/group_vars/all.yml`
-2. Re-run `ansible-playbook ...`
-
-Hermes config is templated from `hermes/config.yaml.j2` on every deploy.
-
-### Makefile Shortcuts
-
-| Command | Description |
-|---------|-------------|
-| `make logs` | Tail logs |
-| `make status` | Show running services |
-| `make stop` / `make restart` | Stop / restart the stack |
-| `make update` | Pull latest images & rebuild |
-| `make clean` | Stop & remove data (destructive) |
-
----
-
-## Repository Structure
-
+```bash
+./deploy.sh              # same as --local
+# or: make deploy
 ```
-├── README.md
-├── ansible/
-│   ├── playbook.yml           # Flat deployment playbook
-│   ├── group_vars/all.yml     # Configurable variables
-│   └── templates/
-│       ├── env.j2             # Target .env template
-│       └── hermes/config.yaml.j2
-├── docker-compose.yaml        # Hermes + CodeGraph
-├── hermes/
-│   ├── Dockerfile
-│   ├── entrypoint.sh
-│   ├── fs-notifier.sh         # Filesystem watcher
-│   ├── config.yaml.j2
-│   └── apply-kanban-patch.py
-├── codegraph/
-│   ├── Dockerfile
-│   ├── server.js
-│   └── package.json
-├── silverbulletKB/              # KB scaffold → ~/Personal/silverbulletKB
-│   └── Skills/
-│       ├── _TEMPLATE/
-│       ├── codegraph/
-│       ├── docker/
-│       ├── nodejs/
-│       ├── postgres/
-│       ├── python/
-│       ├── react/
-│       └── stack-discovery/
-├── docs/
-│   ├── BLUEPRINT.md
-│   └── adr/
-├── .env.example
-├── Makefile
-└── docker-compose.yaml
+
+**Sequential nested steps (exactly what runs):**
+
+1. **Pre-flight**
+   1.1. Ensure `.env` exists (if missing, `cp .env.example .env` and exit so you edit `STACK_ROOT`).
+   1.2. Load `.env` (filters `UID/GID` — bash readonly; docker reads file directly).
+   1.3. Validate `STACK_ROOT` is set and absolute (`/…` or `~/…`). Fail fast if empty.
+   1.4. Auto-generate missing secrets (`API_SERVER_KEY` 32 hex, `HERMES_*` 32/12) and write back to `.env` (idempotent — re-run preserves).
+
+2. **Local filesystem**
+   2.1. `mkdir -p $STACK_ROOT` on **this machine only**.
+   2.2. **Does NOT** create `~/deployed-pai-stack` on this machine.
+   2.3. **Does NOT** touch `/var/lib/syncthing`, `~/.config/syncthing`, or install Syncthing/Tailscale.
+   2.4. Prints `Note: TARGET_HOST/TAILSCALE_AUTH_KEY ignored in --local` if those are set — they are Pi-only.
+
+3. **Docker**
+   3.1. `docker compose config` — validates `${STACK_ROOT}:/stack_root` mount.
+   3.2. `docker compose up -d --build --remove-orphans` — builds/starts 3 services:
+       - `hermes` (`:9119` dashboard, `:8642` API) — mounts `${STACK_ROOT}:/stack_root`
+       - `codegraph` (`:20128`) — mounts `${STACK_ROOT}:/stack_root:ro` + alias `${STACK_ROOT}:/codebase:ro`
+       - `mcp-server` (`:8000`) — no host mount, serves `skills/`/`tools/`/`kb/` via MCP.
+   3.3. Volumes created (if missing): `hermes-data` (`/opt/hermes/data`), `codegraph-data` (`/data`). **NOT deleted** on `stop` — only `clean` (`down -v`) deletes.
+
+4. **Post-check**
+   4.1. `docker compose ps` — all 3 `healthy`/`running`.
+   4.2. No `~/deployed-pai-stack/.env` created locally (that's Pi-only).
+   4.3. **No folders modified outside:** does not create `~/stack_root/.stfolder`, does not write to `~/stack_root/Projects` (scaffold seed is Pi-only; locally your `STACK_ROOT` is used as-is).
+
+**Result on disk (local):**
+```
+./pai-stack/.env                 # your edited + auto-generated secrets (0600 if you chmod)
+$STACK_ROOT/                     # your existing folder, untouched except mkdir if missing
+  Projects/  (as you left it)    # NOT seeded with _TEMPLATE locally
+  github.com/ ...                # as you left it
 ```
 
 ---
 
-## Design & Philosophy
+### B. Remote (`--remote`) — Pi via SSH, full stack
 
-> For the full architecture, trade-offs, and principles, see **[docs/BLUEPRINT.md](docs/BLUEPRINT.md)** and **[docs/adr/](docs/adr/)**.
+```bash
+# in .env: TARGET_HOST="rpi.burro-smelt.ts.net"  TARGET_USER="pi"
+./deploy.sh --remote
+# or: make deploy-remote
+# fresh Pi: ./deploy.sh --remote --renew  (or make deploy-remote-renew)
+```
+
+**Sequential nested steps (linear Ansible playbook `ansible/playbook.yml:1-290`, flat no roles):**
+
+1. **Pre-flight (same as local 1.1-1.4, but `SYNCTHING_GUI_PASSWORD` also generated if blank, only in --remote)**
+
+2. **Host environment on Pi**
+   2.1. **Detect UID/GID** — `getent passwd {{ansible_user}}` → `target_uid/gid` (e.g. `1000`), sets `pai_stack_root = {{ STACK_ROOT | default(pai_stack_root) }}` → `/home/pi/stack_root`.
+   2.2. **Tailscale (optional)** — *only if `TAILSCALE_AUTH_KEY` non-empty*:
+       2.2.1. Add GPG key + repo `pkgs.tailscale.com`
+       2.2.2. `apt install tailscale`
+       2.2.3. `tailscale up --authkey=... --hostname={{inventory_hostname}}`
+       2.2.4. `tailscale set --operator={{ansible_user}}`
+       *Skipped entirely if Pi already on tailnet (`TAILSCALE_AUTH_KEY=""`). No host files touched.*
+
+   2.3. **Docker** — `docker --version` check → if missing `curl get.docker.com | sh` → `usermod -aG docker {{ansible_user}}`.
+
+3. **Directories on Pi**
+   3.1. `mkdir -p {{pai_stack_root}}` (`~/stack_root`, `0755`, `owner: pi`) — **the literal stack_root** (Syncthing ID `stack_root`).
+   3.2. `mkdir -p {{pai_stack_dir}}` (`~/deployed-pai-stack`, `0755`) — the running copy of this repo.
+   3.3. **Does NOT** create `~/Personal` or `~/stack_root/Projects` yet (next step).
+
+4. **Clone repo on Pi**
+   4.1. `git clone {{pai_repo_url}} → {{pai_stack_dir}}` (`force: yes`) — overwrites `~/deployed-pai-stack` with your Mac's `pai-stack` repo. **Local `~/deployed-pai-stack` on Mac is untouched.**
+   4.2. **Does NOT** clone into `~/stack_root` — that stays your KB/code.
+
+5. **Secrets on Pi (in memory → templated)**
+   5.1. `openssl rand -hex` four times → `gen_api_key, gen_dash_pass, gen_dash_secret, gen_syncthing_pass`.
+   5.2. `generated_* = existing .env value ? keep : new` — **preserves** `~/deployed-pai-stack/.env` secrets on re-deploy. Only first deploy writes.
+
+6. **Template configs (overwritten every deploy)**
+   6.1. `template env.j2 → {{pai_stack_dir}}/.env` (`0600`) — `STACK_ROOT={{pai_stack_root}}` (`/home/pi/stack_root`), `UID={{target_uid}}`, `API_SERVER_KEY={{generated_api_key}}`, `KB_DIRS={{kb_dirs}}`.
+   6.2. `template hermes/config.yaml.j2 → {{pai_stack_dir}}/hermes/config.yaml` (`0644`) — Ecosystem Map now `stack_root: /stack_root [host ${STACK_ROOT} ↔ container /stack_root]`, `knowledgebase: - /stack_root`, `KB LAYOUT: /stack_root/ ← stack_root`.
+   6.3. **Does NOT** template to `~/stack_root/.env` — only to `~/deployed-pai-stack`.
+
+7. **Seed scaffold on Pi (only if missing)**
+   7.1. `copy mcp-server/kb/Projects/ → {{pai_stack_root}}/Projects/` (`force: no`, `preserve`).
+   7.2. Creates `~/stack_root/Projects/_TEMPLATE/{README.md, docs/architecture.md, telegram.md, config.md}` and `~/stack_root/AGENTS.md` **if they don't exist**.
+   7.3. **Does NOT** overwrite existing `~/stack_root/Projects/YourApp/` — safe to re-run.
+   7.4. **Local mode does NOT run this step** — no scaffold seeded locally.
+
+8. **Syncthing host service on Pi (systemd, NOT Docker)**
+   8.1. `apt install syncthing` (if missing).
+   8.2. `syncthing --generate=/var/lib/syncthing` (creates `config.xml` if missing).
+   8.3. Patch `config.xml` (become true):
+       8.3.1. `urAccepted → -1` (telemetry off)
+       8.3.2. `folder path → {{pai_stack_root}}` (`~/stack_root`)
+       8.3.3. `folder id → stack_root` (was `personal`)
+       8.3.4. `127.0.0.1:8384 → 0.0.0.0:8384` (bind to Tailscale IP)
+       8.3.5. `address → tcp://0.0.0.0:22000`
+       8.3.6. GUI `admin` + bcrypt hash of `generated_syncthing_pass` (only if no `<user>` yet)
+   8.4. `touch {{pai_stack_root}}/.stfolder` (`0644`).
+   8.5. Install `/etc/systemd/system/syncthing.service` (`ExecStart=syncthing serve --home=/var/lib/syncthing User={{ansible_user}}`), `daemon-reload`, `enable`, `start`.
+   8.6. **Does NOT** install Syncthing as a Docker container — `docker compose ps` will **not** show it. `make clean` ( `down -v`) does **not** delete it.
+
+9. **Build & start containers on Pi**
+   9.1. `docker compose -f {{pai_stack_dir}}/docker-compose.yaml up -d --build --remove-orphans` — same 3 services as local, same mounts `~/stack_root:/stack_root` (and `:/codebase:ro` alias), same volumes `hermes-data`, `codegraph-data`.
+   9.2. **Entrypoints inside containers:**
+       9.2.1. `hermes/entrypoint.sh` — `KB_DIRS` → `/stack_root/${dir}`, `chown /opt/hermes/data`, `umask 000` for WAL, copy `hermes-config.yaml`, start `fs-notifier.sh &` (`WATCH_PATH=/stack_root`).
+       9.2.2. `hermes/fs-notifier.sh` — `inotifywait -r /stack_root` → POST `http://codegraph:20128/query` debounce 30s.
+
+10. **Health wait & output**
+    10.1. Wait for `curl -f http://localhost:20128/health` (codegraph) and `http://localhost:8000/health` (mcp-server), then print:
+        `Hermes https://<Tailscale IP>:9119  Syncthing https://<Tailscale IP>:8384`
+    10.2. Secrets now live only in `~/deployed-pai-stack/.env` on Pi (`0600`).
+
+**Result on disk (remote Pi):**
+```
+~/stack_root/                         # STACK_ROOT host, Syncthing ID stack_root, Send&Receive
+  .stfolder
+  AGENTS.md                           # seeded if missing
+  Projects/_TEMPLATE/ ...             # seeded if missing (force: no)
+  Projects/YourApp/ ...               # you create via chat, synced from Mac
+~/deployed-pai-stack/                 # pai_stack_dir — the running compose project
+  .env                                # templated, 0600, STACK_ROOT=/home/pi/stack_root
+  docker-compose.yaml                 # /stack_root mounts
+  hermes/config.yaml                  # templated
+/var/lib/syncthing/config.xml         # patched — path ~/stack_root, id stack_root
+/etc/systemd/system/syncthing.service # host service
+Docker volumes: hermes-data, codegraph-data
+```
+
+---
+
+## 4) What is NOT created or modified
+
+| Mode | Not created / Not modified |
+|------|----------------------------|
+| **Local** | No `~/deployed-pai-stack` on local machine; no `/var/lib/syncthing`; no `/etc/systemd/system/syncthing.service`; no Tailscale install; no `~/stack_root/.stfolder` created by deploy (only `mkdir -p $STACK_ROOT` if missing); no seed of `Projects/_TEMPLATE` (your `STACK_ROOT` is left as-is); no overwrite of an existing `.env` secrets (generated only if blank). |
+| **Remote** | Does not modify your Mac's `STACK_ROOT` folder (except via Syncthing sync after); does not modify `~/stack_root/Projects/YourApp` if it already exists (`force: no`); does not delete `hermes-data`/`codegraph-data` unless `--renew`/`make clean`; does not overwrite `~/deployed-pai-stack/.env` secrets on re-deploy (preserves); does not create `~/Personal` (literal `~/stack_root` only). |
+| **Both** | Never writes raw secrets to KB markdown (`Projects/`, `Skills`); never `force: yes` on `~/stack_root`; `clean` (`down -v`) is explicit and deletes named volumes only. |
+
+---
+
+## 5) Verify after deploy
+
+```bash
+# Local or Pi (SSH to Pi first if remote):
+docker exec hermes ls -la /stack_root          # should show Projects
+docker exec codegraph ls -la /stack_root       # same
+docker compose ps                               # hermes/codegraph/mcp-server healthy
+docker compose logs -f hermes
+# Remote Pi only:
+systemctl status syncthing                      # active
+grep -A2 '<folder id="stack_root"' /var/lib/syncthing/config.xml  # path ~/stack_root
+cat ~/deployed-pai-stack/.env | grep STACK_ROOT # /home/pi/stack_root
+```
+
+---
+
+## 6) Update & clean
+
+```bash
+./deploy.sh --local              # local update (rebuild)
+./deploy.sh --remote             # remote update (git pull + rebuild, preserves secrets)
+./deploy.sh --local --renew      # local fresh (DELETE volumes)
+./deploy.sh --remote --renew     # remote fresh
+make clean                       # DANGER: docker compose down -v (named volumes)
+```
+
+See `docs/SETUP_FLOW.md` for the 2-mode mental model and `docs/BLUEPRINT.md` for decisions.
+

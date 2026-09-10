@@ -15,11 +15,11 @@
 2. Plan: confirm scope and output location (usually `Skills/<name>/SKILL.md` or `Projects/<Name>/...`).
 3. Draft the artifact directly (research, plan, or implementation) grounded in retrieved context.
 4. Review the draft — reject if out-of-scope or missing citations.
-5. Write final artifact yourself into `/opt/data/Personal/silverbulletKB/<path>` with a short changelog (what/why/sources).
+5. Write final artifact yourself into `/stack_root/<path>` with a short changelog (what/why/sources).
 6. Verify via KB search that the new page is retrievable; update `AGENTS.md` or `References/` if scope changed.
 
 ## Outputs
-- Primary artifact: `<path in silverbulletKB>`
+- Primary artifact: `<path in knowledge base>`
 - Changelog: short note of what changed and source files
 
 ## Related files

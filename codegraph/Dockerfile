@@ -30,6 +30,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 
 WORKDIR /app
 COPY package.json server.js ./
+COPY viz/ ./viz/
 RUN npm install --production
 
 EXPOSE 20128

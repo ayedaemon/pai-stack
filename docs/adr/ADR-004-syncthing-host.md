@@ -4,10 +4,10 @@
 Accepted
 
 ## Context
-`PERSONAL_FOLDER` (`~/Personal`) must be the canonical folder shared by Hermes (`/opt/data/Personal`) and the user's Mac/phone. Earlier stack ran Syncthing as a container; it lacked Tailscale interface binding and required volume hacks.
+`STACK_ROOT` (`~/stack_root`) must be the canonical folder shared by Hermes (`/stack_root`) and the user's Mac/phone. Earlier stack ran Syncthing as a container; it lacked Tailscale interface binding and required volume hacks.
 
 ## Decision
-Install `syncthing` via apt `ansible/playbook.yml`, generate `/var/lib/syncthing` config, configure `config.xml` to `path: pai_personal_dir`, `id: personal`, GUI `0.0.0.0:8384` (direct on Tailscale IP, no reverse proxy), bcrypt auth, and run `syncthing serve --home=/var/lib/syncthing` as systemd owned by `ansible_user`. All services bind directly to Tailscale IP; Tailscale encrypts via WireGuard.
+Install `syncthing` via apt `ansible/playbook.yml`, generate `/var/lib/syncthing` config, configure `config.xml` to `path: pai_stack_root`, `id: stack_root`, GUI `0.0.0.0:8384` (direct on Tailscale IP, no reverse proxy), bcrypt auth, and run `syncthing serve --home=/var/lib/syncthing` as systemd owned by `ansible_user`. All services bind directly to Tailscale IP; Tailscale encrypts via WireGuard.
 
 ## Alternatives Considered
 - **Syncthing container** — extra NAT, no direct Tailscale announce (needs hostNetwork), extra volume mounts.
@@ -18,4 +18,4 @@ Install `syncthing` via apt `ansible/playbook.yml`, generate `/var/lib/syncthing
 - Negative: One service not in `docker compose ps`; managed via `systemctl` and `ansible/playbook.yml`.
 
 ## Trade-offs
-Native network reachability and single-source `PERSONAL_FOLDER` prioritized over compose purity.
+Native network reachability and single-source `STACK_ROOT` prioritized over compose purity.

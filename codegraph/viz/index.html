@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodeGraph Explorer</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+  html,body{margin:0;height:100%;background:#0d1117;color:#c9d1d9;font-family:system-ui,sans-serif}
+  #bar{display:flex;gap:8px;padding:10px;background:#161b22;border-bottom:1px solid #30363d;flex-wrap:wrap;align-items:center}
+  #bar input,#bar select{background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px}
+  #bar input{width:260px}
+  #bar button{background:#238636;color:#fff;border:0;border-radius:6px;padding:6px 14px;cursor:pointer}
+  #bar button:hover{background:#2ea043}
+  #results{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px;font-size:13px}
+  #results button{background:#21262d;color:#58a6ff;border:1px solid #30363d;border-radius:12px;padding:3px 10px;cursor:pointer}
+  #info{padding:4px 12px;font-size:12px;color:#8b949e;min-height:18px}
+  #graph{width:100%;height:calc(100% - 130px)}
+  .node circle{stroke:#0d1117;stroke-width:1.5px;cursor:pointer}
+  .node text{fill:#c9d1d9;font-size:11px;pointer-events:none}
+  .link{stroke:#484f58;stroke-opacity:.7}
+  .tooltip{position:absolute;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:12px;pointer-events:none;display:none;max-width:320px;word-break:break-all}
+</style>
+</head>
+<body>
+<div id="bar">
+  <strong>CodeGraph Explorer</strong>
+  <input id="q" placeholder="symbol name… (Enter to search)">
+  <button id="searchBtn">Search</button>
+  <select id="depth"><option value="1">depth 1</option><option value="2">depth 2</option></select>
+</div>
+<div id="results"></div>
+<div id="info">Type a symbol, pick a match, browse its call neighborhood. Click a node to re-center.</div>
+<svg id="graph"></svg>
+<div class="tooltip" id="tip"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const svg = d3.select('#graph');
+const tip = $('tip');
+let sim = null;
+
+async function api(p) {
+  const r = await fetch(p);
+  return r.json();
+}
+
+$('searchBtn').onclick = doSearch;
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+// Live typeahead — debounced symbol list as you type, click a row to browse.
+let typeTimer = null;
+$('q').addEventListener('input', () => {
+  clearTimeout(typeTimer);
+  typeTimer = setTimeout(doSearch, 350);
+});
+
+async function doSearch() {
+  const q = $('q').value.trim();
+  if (q.length < 2) return;
+  $('info').textContent = 'Searching for "' + q + '"…';
+  let res;
+  try {
+    res = await api('/symbols?q=' + encodeURIComponent(q));
+  } catch (e) {
+    $('info').textContent = 'Search failed: ' + e.message;
+    return;
+  }
+  const list = res.items || [];
+  const box = $('results');
+  box.innerHTML = '';
+  if (!list.length) { $('info').textContent = 'No matches for "' + q + '".'; return; }
+  $('info').textContent = list.length + ' match(es) — click one to visualize:';
+  list.forEach((r) => {
+    const b = document.createElement('button');
+    b.textContent = r.name + (r.kind ? '  ·  ' + r.kind : '') + (r.file ? '  ·  ' + r.file : '');
+    b.title = r.file || r.name;
+    b.onclick = () => load(r.name);
+    box.appendChild(b);
+  });
+}
+
+async function load(symbol) {
+  const depth = $('depth').value;
+  $('info').textContent = 'Loading neighborhood for "' + symbol + '" (depth ' + depth + ')…';
+  const g = await api('/neighborhood/' + encodeURIComponent(symbol) + '?depth=' + depth);
+  if (!g.nodes || !g.nodes.length) {
+    $('info').textContent = 'No graph for "' + symbol + '". ' + (g.note || '');
+    return;
+  }
+  $('info').textContent = 'Center: ' + g.center + ' — ' + g.nodes.length + ' nodes, ' + g.edges.length + ' edges' + (g.truncated ? ' (capped at 300)' : '');
+  render(g);
+}
+
+function color(kind) {
+  const k = (kind || '').toLowerCase();
+  if (k.includes('function') || k.includes('method')) return '#58a6ff';
+  if (k.includes('class')) return '#f778ba';
+  if (k.includes('module')) return '#3fb950';
+  if (k.includes('interface') || k.includes('type')) return '#d29922';
+  return '#8b949e';
+}
+
+function render(g) {
+  const w = svg.node().clientWidth, h = svg.node().clientHeight;
+  svg.selectAll('*').remove();
+  const g0 = svg.append('g');
+  svg.call(d3.zoom().on('zoom', (e) => g0.attr('transform', e.transform)));
+
+  const link = g0.append('g').selectAll('line').data(g.edges).join('line').attr('class', 'link');
+  const node = g0.append('g').selectAll('g').data(g.nodes).join('g')
+    .attr('class', 'node')
+    .call(d3.drag()
+      .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+  node.append('circle')
+    .attr('r', (d) => d.id === g.centerId ? 10 : 6)
+    .attr('fill', (d) => color(d.kind))
+    .on('click', (e, d) => load(d.label))
+    .on('mousemove', (e, d) => {
+      tip.style.display = 'block';
+      tip.style.left = (e.pageX + 12) + 'px';
+      tip.style.top = (e.pageY + 12) + 'px';
+      tip.innerHTML = '<b>' + d.label + '</b><br>' + (d.kind || '') + '<br><span style="color:#8b949e">' + (d.file || '') + '</span>';
+    })
+    .on('mouseleave', () => { tip.style.display = 'none'; });
+  node.append('text').attr('dx', 12).attr('dy', 4).text((d) => d.label);
+
+  sim = d3.forceSimulation(g.nodes)
+    .force('link', d3.forceLink(g.edges).id((d) => d.id).distance(90))
+    .force('charge', d3.forceManyBody().strength(-220))
+    .force('center', d3.forceCenter(w / 2, h / 2))
+    .on('tick', () => {
+      link.attr('x1', (d) => d.source.x).attr('y1', (d) => d.source.y)
+          .attr('x2', (d) => d.target.x).attr('y2', (d) => d.target.y);
+      node.attr('transform', (d) => 'translate(' + d.x + ',' + d.y + ')');
+    });
+}
+</script>
+</body>
+</html>

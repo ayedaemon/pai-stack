@@ -1,7 +1,7 @@
 ---
 # Target host paths
 pai_stack_dir: "{{ ansible_facts['user_dir'] }}/deployed-pai-stack"
-pai_personal_dir: "{{ ansible_facts['user_dir'] }}/Personal"
+pai_stack_root: "{{ ansible_facts['user_dir'] }}/stack_root"
 
 # Container user (resolved from SSH connection)
 pai_user: "{{ ansible_user | default(ansible_user_id, true) }}"
@@ -34,3 +34,6 @@ codegraph_enabled: true
 
 # fs-notifier debounce (seconds)
 fs_notifier_debounce_seconds: 30
+
+# KB directories to index (comma-separated, relative to STACK_ROOT)
+kb_dirs: "."

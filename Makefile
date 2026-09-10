@@ -1,8 +1,6 @@
 # pai-stack convenience commands
-#
-# Provisioning is done ONLY via Ansible (./deploy.sh) — it installs Docker,
-# Tailscale, and the stack from bare SSH.
-# These targets wrap that, plus day-to-day runtime helpers.
+# Single .env, explicit flag: --local (default) → docker compose, --remote → ansible (tailscale+syncthing+compose)
+# See docs/SETUP_FLOW.md for the 2-mode model.
 
 .PHONY: help deploy deploy-renew logs status stop restart update clean
 
@@ -10,11 +8,17 @@ help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-deploy:  ## Remote provision via containerized Ansible (from your Mac/any Docker host)
-	./deploy.sh
+deploy:  ## Local deploy (default, no flag → docker compose)
+	./deploy.sh --local
 
-deploy-renew:  ## Remote FRESH reinstall: delete containers/volumes/.env then deploy
-	./deploy.sh --renew
+deploy-remote:  ## Remote deploy to Pi (requires TARGET_HOST in .env)
+	./deploy.sh --remote
+
+deploy-renew:  ## Local FRESH reinstall (delete volumes) — add --remote for Pi fresh
+	./deploy.sh --local --renew
+
+deploy-remote-renew:  ## Remote FRESH reinstall on Pi
+	./deploy.sh --remote --renew
 
 logs:   ## Tail logs for all services
 	docker compose logs -f

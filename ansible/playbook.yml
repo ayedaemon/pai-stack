@@ -19,7 +19,7 @@
       ansible.builtin.set_fact:
         target_uid: "{{ user_getent.ansible_facts.getent_passwd[ansible_user][1] | default('1000') }}"
         target_gid: "{{ user_getent.ansible_facts.getent_passwd[ansible_user][2] | default('1000') }}"
-        pai_personal_dir: "{{ (STACK_ROOT | default(PERSONAL_FOLDER | default(pai_personal_dir, true), true)) | replace('~', ansible_facts['user_dir']) }}"
+        pai_stack_root: "{{ (STACK_ROOT | default(pai_stack_root, true)) | replace('~', ansible_facts['user_dir']) }}"
 
     # ── 1. Tailscale (optional — skip if no auth key) ──────────
     - name: Add Tailscale GPG key
@@ -86,8 +86,7 @@
         group: "{{ ansible_user }}"
         mode: "0755"
       loop:
-        - "{{ pai_personal_dir }}"
-        - "{{ pai_personal_dir }}/silverbulletKB"
+        - "{{ pai_stack_root }}"
         - "{{ pai_stack_dir }}"
 
     # ── 4. Clone repo ───────────────────────────────────────────
@@ -142,11 +141,11 @@
         group: "{{ ansible_user }}"
         mode: "0644"
 
-    # ── 7. Seed KB scaffold ─────────────────────────────────────
-    - name: Seed KB scaffold
+    # ── 7. Seed project scaffold ─────────────────────────────────
+    - name: Seed Projects/_TEMPLATE scaffold
       ansible.builtin.copy:
-        src: silverbulletKB/
-        dest: "{{ pai_personal_dir }}/silverbulletKB/"
+        src: mcp-server/kb/Projects/
+        dest: "{{ pai_stack_root }}/Projects/"
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"
         mode: "preserve"
@@ -195,18 +194,18 @@
         replace: '<urAccepted>-1</urAccepted>'
       become: true
 
-    - name: Configure Syncthing — point folder at STACK_ROOT
+    - name: Configure Syncthing — point folder at stack_root (STACK_ROOT)
       ansible.builtin.replace:
         path: /var/lib/syncthing/config.xml
         regexp: '(<folder[^>]*path=")[^"]*(")'
-        replace: '\1{{ pai_personal_dir }}\2'
+        replace: '\1{{ pai_stack_root }}\2'
       become: true
 
-    - name: Configure Syncthing — set folder ID to personal
+    - name: Configure Syncthing — set folder ID to stack_root
       ansible.builtin.replace:
         path: /var/lib/syncthing/config.xml
         regexp: '<folder id="[^"]*"'
-        replace: '<folder id="personal"'
+        replace: '<folder id="stack_root"'
       become: true
 
     - name: Configure Syncthing — bind GUI to 0.0.0.0:8384
@@ -241,7 +240,7 @@
 
     - name: Ensure Syncthing folder marker exists
       ansible.builtin.file:
-        path: "{{ pai_personal_dir }}/.stfolder"
+        path: "{{ pai_stack_root }}/.stfolder"
         state: touch
         owner: "{{ ansible_user }}"
         group: "{{ ansible_user }}"

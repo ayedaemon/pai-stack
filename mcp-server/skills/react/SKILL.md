@@ -4,7 +4,7 @@
 
 ## When to use
 - Trigger: user says React, `*.jsx`, `*.tsx`, `package.json` with `react`/`next`/`vite`, or asks to read/debug/build a React app
-- Preconditions: project under `/opt/data/Personal/...` with `package.json` containing `react`
+- Preconditions: project under `/stack_root/...` with `package.json` containing `react`
 - Auto-use: when `stack-discovery` finds `react` in `package.json:dependencies` or `src/**/*.jsx?` / `*.tsx`
 
 ## Inputs

@@ -4,7 +4,7 @@
 
 ## When to use
 - Trigger: user mentions Docker, `Dockerfile`, `docker-compose.yaml`, `compose.yaml`, `container`, `image`, or asks to containerize/debug/deploy
-- Preconditions: project under `/opt/data/Personal/...` with `Dockerfile` or `docker-compose.yaml`
+- Preconditions: project under `/stack_root/...` with `Dockerfile` or `docker-compose.yaml`
 - Auto-use: when `stack-discovery` finds `Dockerfile*` or `docker-compose*` at root or `hermes/` style subdirs
 
 ## Inputs
@@ -24,12 +24,12 @@
    - Note s6-overlay / `USER root` patterns (see `hermes/Dockerfile:7` / `hermes/entrypoint.sh:1` if relevant)
 4. Analyze Compose:
    - Map service → port → host mapping (`ports: - "20128:20128"` style `docker-compose.yaml:14`)
-   - Volumes: named (`hermes-data:/opt/hermes/data` `docker-compose.yaml:89`) vs bind (`${PERSONAL_FOLDER}:/opt/data/Personal` `:92`) — check for `EACCES` risk, `user: "${UID:-1000}"`, `deploy.resources.limits`
+   - Volumes: named (`hermes-data:/opt/hermes/data` `docker-compose.yaml:89`) vs bind (`${STACK_ROOT}:/stack_root` `:92`) — check for `EACCES` risk, `user: "${UID:-1000}"`, `deploy.resources.limits`
    - Network: default bridge vs custom; `extra_hosts: host.docker.internal` `docker-compose.yaml:22` for host services (Syncthing pattern)
    - Env: which vars come from host `.env` vs hard-coded; flag raw secrets in compose
 5. Check pai-stack conventions (if repo is pai-stack itself):
    - Build contexts must be flat (playbook copies files into `~/deployed-pai-stack/`)
-   - `silverbulletKB/` seeding is `force: no` — never overwrite user edits
+   - Knowledge base seeding is `force: no` — never overwrite user edits
    - Services bind directly to Tailscale IP (no reverse proxy) — Tailscale encrypts via WireGuard
 6. Plan change:
    - For read-only: summarize services, deps graph, build order, how to run (`docker compose up --build`, `docker compose logs -f <svc>`)

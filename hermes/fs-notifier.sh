@@ -4,7 +4,7 @@
 # Configurable via environment variables.
 set -e
 
-WATCH_PATH="${FS_NOTIFIER_WATCH_PATH:-/opt/data/Personal}"
+WATCH_PATH="${FS_NOTIFIER_WATCH_PATH:-/stack_root}"
 NOTIFY_URL="${FS_NOTIFIER_NOTIFY_URL:-http://codegraph:20128/query}"
 NOTIFY_PAYLOAD="${FS_NOTIFIER_NOTIFY_PAYLOAD:-{\"tool\":\"codegraph_reindex_workspace\",\"args\":{}}}"
 DEBOUNCE="${FS_NOTIFIER_DEBOUNCE_SECONDS:-30}"

@@ -22,9 +22,9 @@ Tagline: **Hermes Agent + Syncthing + CodeGraph (Tailscale WireGuard)** `README.
 |----|-------------|
 | F1 | Chat-ops via Telegram Forum: one Forum Group per project, one Topic per issue/feature/bug; answers isolated to originating topic |
 | F2 | Grounded answers: retrieve from KB before answering, cite `file:lines`, never guess beyond context |
-| F3 | KB as durable memory: plain markdown at `silverbulletKB/` is both human-readable and vector-indexed |
+| F3 | KB as durable memory: plain markdown at `STACK_ROOT` root is both human-readable and vector-indexed |
 | F4 | Code execution: Hermes implements/researches tasks directly, writes back to KB |
-| F5 | Sync: `PERSONAL_FOLDER` (`~/Personal`) bidirectionally synced across user devices |
+| F5 | Sync: `STACK_ROOT` (`~/stack_root`) bidirectionally synced across user devices |
 | F6 | Model routing: free-first LLM with failover, ability to pin paid/pro models on demand; catalog browseable |
 | F7 | Self-hosted on one host, reproducible from scratch |
 
@@ -37,8 +37,8 @@ Tagline: **Hermes Agent + Syncthing + CodeGraph (Tailscale WireGuard)** `README.
 | **Resource** | Fit in ~4 GB RAM on Pi | Limits: `hermes 3G`, `codegraph 512M` |
 | **Latency** | Chat replies in seconds, not minutes | `auto_retrieve: true` `max_context_chunks: 8` `relevance_threshold: 0.5` + `reindex_on_change: true` `hermes/config.yaml:140` |
 | **Operability** | Full rebuild <15 min from bare SSH | Ansible `common → tailscale → docker → pai_stack` `ansible/playbook.yml:8` |
-| **Portability** | Move to new Pi without data loss | Named volumes `docker-compose.yaml:101` + bind mount `PERSONAL_FOLDER`, `make clean` is explicit `Makefile:37` |
-| **Evolvability** | Unbounded projects, no hardcoded names | `AGENTS.md` manifest `silverbulletKB/AGENTS.md:13` + `_TEMPLATE` scaffolding `silverbulletKB/Projects/_TEMPLATE/` |
+| **Portability** | Move to new Pi without data loss | Named volumes `docker-compose.yaml:101` + bind mount `STACK_ROOT`, `make clean` is explicit `Makefile:37` |
+| **Evolvability** | Unbounded projects, no hardcoded names | `AGENTS.md` manifest `AGENTS.md:13` + `_TEMPLATE` scaffolding `Projects/_TEMPLATE/` |
 
 ---
 
@@ -57,7 +57,7 @@ flowchart TB
         ST["Syncthing<br/>host systemd :8384"]
         D1[("hermes-data<br/>/opt/hermes/data")]
         D2[("codegraph-data<br/>/opt/codegraph/data")]
-        Root[("PERSONAL_FOLDER<br/>~/Personal")]
+        Root[("STACK_ROOT<br/>~/stack_root")]
     end
 
     U -- "http:// $TAILSCALE_IP:*<br/>WireGuard encryption" --> Hermes
@@ -69,7 +69,7 @@ flowchart TB
     Hermes --- D1
     CG --- D2
 
-    Root -- "/opt/data/Personal" --> Hermes
+    Root -- "/stack_root" --> Hermes
     Root -- "/codebase:ro" --> CG
     Root -- "Send&Receive<br/>:8384 :280" --> ST
 ```
@@ -84,7 +84,7 @@ flowchart TB
 |---------|-----------|-------|------|---------|----------|
 | **Hermes** | `nousresearch/hermes-agent:latest` patched `pai-stack-hermes:patched` | `9119` dash `8642` api (bound to Tailscale IP) | `HERMES_DASHBOARD_BASIC_AUTH_PASSWORD` → scrypt `hermes/entrypoint.sh:37`, `API_SERVER_KEY` bearer | Telegram bot, RAG, Kanban, fs-notifier | `hermes/config.yaml:1` |
 | **CodeGraph** | `codegraph:latest` (Debian 12 + codegraph binary + Node.js) | `20128` int (Docker bridge only) | none (internal) | Code intelligence HTTP API | `codegraph/server.js:1` |
-| **Syncthing** | host `syncthing serve --home=/var/lib/syncthing` | `8384` host (bound to Tailscale IP) | bcrypt `config.xml` | Sync `PERSONAL_FOLDER` | `ansible/playbook.yml` |
+| **Syncthing** | host `syncthing serve --home=/var/lib/syncthing` | `8384` host (bound to Tailscale IP) | bcrypt `config.xml` | Sync `STACK_ROOT` | `ansible/playbook.yml` |
 | **fs-notifier** | background process in Hermes container | n/a (IPC) | n/a | Watches `STACK_ROOT`, notifies CodeGraph of file changes for rebuild | `hermes/config.yaml` |
 
 ---
@@ -98,8 +98,8 @@ flowchart LR
         V2["codegraph-data<br/>/opt/codegraph/data<br/>SQLite graph DB"]
     end
     subgraph Binds["Bind mounts — host-coupled"]
-        B1["${PERSONAL_FOLDER}<br/>/opt/data/Personal<br/>→ hermes RAG"]
-        B2["${PERSONAL_FOLDER}<br/>/codebase:ro<br/>→ CodeGraph (read-only)"]
+        B1["${STACK_ROOT}<br/>/stack_root<br/>→ hermes RAG"]
+        B2["${STACK_ROOT}<br/>/codebase:ro<br/>→ CodeGraph (read-only)"]
         B3["./hermes/config.yaml:ro<br/>/tmp/hermes-config.yaml.host"]
     end
     B1 --> Hermes
@@ -108,7 +108,7 @@ flowchart LR
     V2 --> CG
 ```
 
-*Only host-coupled data is bind-mounted* `README.md:268`. Scaffold `silverbulletKB/` copied once `force: no` — user edits never overwritten.
+*Only host-coupled data is bind-mounted* `README.md:268`. Scaffold (`AGENTS.md`, `Projects/`, `Skills/`, `Tools/`) copied once `force: no` — user edits never overwritten.
 
 ---
 
@@ -127,7 +127,7 @@ flowchart TB
         C6["dashboard :42<br/>cyberpunk + scrypt"]
         C7["agent.system_prompt :53<br/>ECOSYSTEM MAP + KB LAYOUT<br/>7 GOLDEN RULES + LOOP A-G + SKILLS"]
         C8["context_files :121<br/>AGENTS.md always injected"]
-        C9["knowledgebase :126<br/>/opt/data/Personal<br/>local embeddings<br/>8 chunks ≥0.5 reindex_on_change"]
+        C9["knowledgebase :126<br/>/stack_root<br/>local embeddings<br/>8 chunks ≥0.5 reindex_on_change"]
         C10["platforms :137<br/>telegram enabled<br/>hints + toolsets"]
     end
     C1 & C2 & C3 & C4 & C5 & C8 & C9 & C10 --> C7
@@ -135,15 +135,15 @@ flowchart TB
 
 ### 5.1 System Prompt = Philosophy in Code `hermes/config.yaml:54`
 
-* **Ecosystem Map:** tells Hermes where everything lives (`PERSONAL_FOLDER`, `silverbulletKB`, CodeGraph, Syncthing).
+* **Ecosystem Map:** tells Hermes where everything lives (`STACK_ROOT`, `STACK_ROOT` root, CodeGraph, Syncthing).
 * **KB Layout** `hermes/config.yaml:66`:
   ```
-  /opt/data/Personal/                     ← indexed entirely
-  └── silverbulletKB/                     ← WRITE HERE (indexed + synced)
-      ├── AGENTS.md                       ← always injected `context_files:121`
-      ├── Projects/<Name>/{README, docs/architecture.md, telegram.md, config.md, issues/<slug>.md}
-      ├── References/                     ← cross-project growth
-      └── Skills/<skill-name>/SKILL.md
+  /stack_root/                     ← indexed entirely (STACK_ROOT)
+  ├── AGENTS.md                           ← always injected `context_files:121`
+  ├── Projects/<Name>/{README, docs/architecture.md, telegram.md, config.md, issues/<slug>.md}
+  ├── References/                         ← cross-project growth
+  ├── Skills/<skill-name>/SKILL.md
+  └── Tools/
   ```
 * **Golden Rules** `hermes/config.yaml:84` — see §8 Philosophy.
 
@@ -163,10 +163,10 @@ Applied via `patch -p1` with `apply-kanban-patch.py:11` regex fallback if upstre
 
 ### 5.3 RAG & Write Discipline `hermes/config.yaml:131`
 
-- Indexes **entire** `PERSONAL_FOLDER` so `~/Personal` is searchable even before KB scaffold.
+- Indexes **entire** `STACK_ROOT` so `~/stack_root` is searchable even before KB scaffold.
 - `local` embeddings (`all-MiniLM-L6-v2`, ~80 MB) — no external API.
 - `reindex_on_change: true` → immediate retrieval after write.
-- **Write rule:** Hermes writes only to `silverbulletKB` (indexed + synced). Ensures `KB FIRST, topic second` `hermes/config.yaml:82`.
+- **Write rule:** Hermes writes only to `STACK_ROOT` (indexed + synced). Ensures `KB FIRST, topic second` `hermes/config.yaml:82`.
 
 ---
 
@@ -188,7 +188,7 @@ Hermes queries CodeGraph via `http://codegraph:20128` for code-aware planning an
 
 ## 7. Execution Model — Hermes Works Directly
 
-Hermes now implements tasks directly in `/opt/data/Personal` without delegate containers. `HOW TO WORK D` `hermes/config.yaml:93` reads relevant files, makes edits, runs tests, writes result to `silverbulletKB/issues/*.md` + `References/Skills` if generic, and summarizes in **same Telegram topic only** with `file:lines` citations. No MCP, no `agent-workspace` volume, no `TASK_TIMEOUT` queue.
+Hermes now implements tasks directly in `/stack_root` without delegate containers. `HOW TO WORK D` `hermes/config.yaml:93` reads relevant files, makes edits, runs tests, writes result to `issues/*.md` + `References/Skills` if generic, and summarizes in **same Telegram topic only** with `file:lines` citations. No MCP, no `agent-workspace` volume, no `TASK_TIMEOUT` queue.
 
 ---
 
@@ -199,15 +199,15 @@ These are the **guardrails that keep Hermes from drifting** as portfolio grows. 
 | # | Principle | Statement | Enforced by |
 |---|-----------|-----------|-------------|
 | P1 | **Isolation per topic, learning across topics** `hermes/config.yaml:85` | In topic X, retrieve & answer ONLY `AGENTS.md` + `Projects/X/**` + its `issues/<slug>.md`. After completion, distill generic patterns into `References/` or `Skills/` — compound growth without leaking project data. | `system_prompt` + `AGENTS.md:29` + retrieval scoping |
-| P2 | **KB first, topic second** `hermes/config.yaml:86` | Never post decision/diff to Telegram without first writing to `silverbulletKB`. Topic is ephemeral view; KB is durable truth. Cite `file:lines`. | `system_prompt` loop A-G |
+| P2 | **KB first, topic second** `hermes/config.yaml:86` | Never post decision/diff to Telegram without first writing to `STACK_ROOT`. Topic is ephemeral view; KB is durable truth. Cite `file:lines`. | `system_prompt` loop A-G |
 | P3 | **Ask first (hybrid)** `hermes/config.yaml:87` | Mirror & propose, but never write KB from chat without explicit confirm from that topic. | `system_prompt` + `AGENTS.md:34` |
-| P4 | **Permission gate + searchable mapping** `hermes/config.yaml:88` | First message in new group/topic → record `group_id + topic_id` in `Projects/<Name>/telegram.md` + `issues/<slug>.md`. If not listed, refuse: "Not in telegram.md". | `telegram.md` `silverbulletKB/Projects/_TEMPLATE/telegram.md:1` + `AGENTS.md:24` |
-| P5 | **Evolving portfolio — no hardcoded names** `hermes/config.yaml:89` | Never invent `ProjectAlpha/Beta`. On unknown project, search `~/Personal` via RAG, create scaffold from `_TEMPLATE`, propose, wait confirm, write `Projects/<Name>/{README,docs/architecture,telegram,config}` + update `AGENTS.md`. No project limit. | `system_prompt` + `AGENTS.md:14` |
+| P4 | **Permission gate + searchable mapping** `hermes/config.yaml:88` | First message in new group/topic → record `group_id + topic_id` in `Projects/<Name>/telegram.md` + `issues/<slug>.md`. If not listed, refuse: "Not in telegram.md". | `telegram.md` `Projects/_TEMPLATE/telegram.md:1` + `AGENTS.md:24` |
+| P5 | **Evolving portfolio — no hardcoded names** `hermes/config.yaml:89` | Never invent `ProjectAlpha/Beta`. On unknown project, search `~/stack_root` via RAG, create scaffold from `_TEMPLATE`, propose, wait confirm, write `Projects/<Name>/{README,docs/architecture,telegram,config}` + update `AGENTS.md`. No project limit. | `system_prompt` + `AGENTS.md:14` |
 | P6 | **Secrets as references** `hermes/config.yaml:90` | Never write raw secrets to KB or git; use "API key in 1Password / env `X`". | `system_prompt` + `env.j2:1` (0600) |
 | P7 | **Concise per-topic, no cross-post** `hermes/config.yaml:91` | Telegram: short bullets + citations per topic; Dashboard/API may be verbose. Never duplicate content across topics/groups. | `system_prompt` + `platform_hints.telegram` `hermes/config.yaml:149` |
-| P8 | **Unified paths** | `${PERSONAL_FOLDER}` is `/opt/data/Personal` everywhere (Hermes, RAG). | `docker-compose.yaml:92` |
+| P8 | **Unified paths** | `${STACK_ROOT}` is `/stack_root` everywhere (Hermes, RAG). | `docker-compose.yaml:92` |
 | P9 | **Free-first, quality on demand** `hermes/config.yaml:7` | Default chat = free combos (`personal/free-chat`) with failover. | `discover_models: true` |
-| P10 | **Skills compound** `hermes/config.yaml:111` | After 2nd repeat or on "create a skill", draft `Skills/<name>/SKILL.md` directly, write to KB, retrieve next time. Generic skills are portfolio-wide. | `_TEMPLATE/SKILL.md` `silverbulletKB/Skills/_TEMPLATE/SKILL.md:1` |
+| P10 | **Skills compound** `hermes/config.yaml:111` | After 2nd repeat or on "create a skill", draft `Skills/<name>/SKILL.md` directly, write to KB, retrieve next time. Generic skills are portfolio-wide. | `_TEMPLATE/SKILL.md` `Skills/_TEMPLATE/SKILL.md:1` |
 
 **Mantra:** *You live in Telegram Topics, but think in markdown KB.*
 
@@ -222,11 +222,11 @@ sequenceDiagram
     participant TG as Telegram Topic<br/>group_id/topic_id
     participant H as Hermes
     participant RAG as RAG
-    participant KB as silverbulletKB
+    participant KB as STACK_ROOT
 
     TG->>H: Implement feature X
     H->>RAG: scoped retrieve<br/>AGENTS.md + Projects/X/** + issue file :93
-    H->>H: Read /opt/data/Personal/... make edits, run tests
+    H->>H: Read /stack_root/... make edits, run tests
     H->>KB: write issue changelog + References/Skills if generic
     H->>TG: diff + next step in SAME topic + citations
 ```
@@ -237,7 +237,7 @@ Hermes dashboard at `:9119` (BasicAuth `admin/$HERMES_DASHBOARD_BASIC_AUTH_PASSW
 
 ### 9.3 Syncthing
 
-`Pi ~/Personal` canonical (`path: pai_personal_dir`, `id: personal`, GUI `0.0.0.0:8384`, bcrypt). Host systemd binds Tailscale `100.x:22000` directly — peers discover via Device ID, optional explicit `tcp://rpi.burro-smelt.ts.net:22000` `README.md:192`. Bidirectional Send&Receive, deletes → `.stversions`.
+`Pi ~/stack_root` canonical (`path: pai_stack_root`, `id: stack_root`, GUI `0.0.0.0:8384`, bcrypt). Host systemd binds Tailscale `100.x:22000` directly — peers discover via Device ID, optional explicit `tcp://rpi.burro-smelt.ts.net:22000` `README.md:192`. Bidirectional Send&Receive, deletes → `.stversions`.
 
 ---
 
@@ -247,9 +247,9 @@ Hermes dashboard at `:9119` (BasicAuth `admin/$HERMES_DASHBOARD_BASIC_AUTH_PASSW
 
 **Ansible pipeline** `ansible/playbook.yml`: flat playbook (no roles). Steps: `common` (dirs), `tailscale` (install/join via `TAILSCALE_AUTH_KEY` `.env.example:46`), `docker`, `pai_stack`.
 
-**Configs are overwritten on every deploy** — templates are the source of truth. Secrets are preserved: `ansible/playbook.yml` reads existing `~/deployed-pai-stack/.env` → preserves secrets else generates `openssl rand -hex 32`. Templates `env.j2` (UID/GID resolved, `PERSONAL_FOLDER`, keys). Copies build contexts flat, seeds `silverbulletKB/` (force: no), installs Syncthing host, configures `config.xml` (telemetry `urAccepted=-1`, folder path/ID, GUI address/auth, `.stfolder`), systemd, `docker compose up -d --build --remove-orphans`, wait `:20128`, seed combos, `restart hermes`.
+**Configs are overwritten on every deploy** — templates are the source of truth. Secrets are preserved: `ansible/playbook.yml` reads existing `~/deployed-pai-stack/.env` → preserves secrets else generates `openssl rand -hex 32`. Templates `env.j2` (UID/GID resolved, `STACK_ROOT`, keys). Copies build contexts flat, seeds KB scaffold (`AGENTS.md`, `Projects/`, `Skills/`, `Tools/`; force: no), installs Syncthing host, configures `config.xml` (telemetry `urAccepted=-1`, folder path/ID, GUI address/auth, `.stfolder`), systemd, `docker compose up -d --build --remove-orphans`, wait `:20128`, seed combos, `restart hermes`.
 
-**Env forwarding contract** `README.md:92`: local `.env` never copied; only `HERMES_DASHBOARD_PASSWORD`, `PERSONAL_FOLDER` forwarded as extra vars.
+**Env forwarding contract** `README.md:92`: local `.env` never copied; only `HERMES_DASHBOARD_PASSWORD`, `STACK_ROOT` forwarded as extra vars.
 
 **Make** `Makefile:1`: `deploy`/`deploy-renew`, `logs` (`docker compose logs -f`), `status`, `stop`/`restart`, `update` (`pull && up --build`), `clean` (`down -v` — destructive, deletes volumes).
 
@@ -260,7 +260,7 @@ Hermes dashboard at `:9119` (BasicAuth `admin/$HERMES_DASHBOARD_BASIC_AUTH_PASSW
 | ADR | Decision |
 |-----|----------|
 | [ADR-001: Single Pi + Compose](adr/ADR-001-single-pi-compose.md) | Compose over K8s — operability on constrained host |
-| [ADR-004: Syncthing on host](adr/ADR-004-syncthing-host.md) | Host systemd vs container — Tailscale interface + canonical `~/Personal` |
+| [ADR-004: Syncthing on host](adr/ADR-004-syncthing-host.md) | Host systemd vs container — Tailscale interface + canonical `~/stack_root` |
 | [ADR-005: Direct execution (delegates removed)](adr/ADR-005-direct-execution.md) | Hermes implements directly; MCP delegates retired |
 | [ADR-006: Local embeddings + file RAG](adr/ADR-006-local-rag.md) | fastembed on whole `Personal` vs vector DB service — simplicity + privacy |
 | [ADR-007: Ansible provisioning](adr/ADR-007-ansible-provisioning.md) | Ansible over Terraform — bare-SSH to full stack, secret preservation |
@@ -274,7 +274,7 @@ Each ADR follows template: Status, Context, Decision, Alternatives, Consequences
 * **Simplicity > horizontal scale:** single host, no sharding; scaling = bigger Pi then split services.
 * **Consistency > write scale:** WAL SQLite for Kanban (one writer, many readers); fixed with `umask 000` `hermes/entrypoint.sh:23`.
 * **Cost > peak quality:** free-first combos; paid pin when needed.
-* **Durability > convenience:** named volumes + explicit `make clean`; KB is plain files under `PERSONAL_FOLDER/silverbulletKB`.
+* **Durability > convenience:** named volumes + explicit `make clean`; KB is plain files under `STACK_ROOT` (`STACK_ROOT`).
 
 ---
 
@@ -302,7 +302,7 @@ Each ADR follows template: Status, Context, Decision, Alternatives, Consequences
 ## 15. How to Keep Philosophy Intact — Contributor Guide
 
 1. **Edit `hermes/config.yaml:53` `system_prompt` first** — that's the constitution. Every new capability must fit Ecomap → Golden Rules → Loop.
-2. **Add a project = scaffold, not hardcode:** mention in chat → Hermes searches `Personal` → creates from `_TEMPLATE` → update `silverbulletKB/AGENTS.md` and `telegram.md`. Never add `if project==X` in code.
+2. **Add a project = scaffold, not hardcode:** mention in chat → Hermes searches `Personal` → creates from `_TEMPLATE` → update `AGENTS.md` and `telegram.md`. Never add `if project==X` in code.
 3. **New automation = Skill:** after 2nd repeat, `Skills/<name>/SKILL.md` via `_TEMPLATE/SKILL.md` — imperative `When to use / Inputs / Steps / Outputs`.
 4. **New architecture = ADR:** create `docs/adr/ADR-00N-*.md`, mark Accepted/Rejected, reference here.
 5. **Verify:** `make deploy`, `make logs`, `make status`, check `http://$TAILSCALE_IP:9119` and `http://$TAILSCALE_IP:8384`.
@@ -315,5 +315,5 @@ Each ADR follows template: Status, Context, Decision, Alternatives, Consequences
 * `hermes/config.yaml:1`, `hermes/entrypoint.sh:1`, `hermes/Dockerfile:1`, `hermes/apply-kanban-patch.py:1`
 * `docker-compose.yaml:1`, `codegraph/server.js:1`
 * `ansible/playbook.yml`, `ansible/templates/env.j2`, `ansible/group_vars/all.yml`
-* `silverbulletKB/AGENTS.md:1`, `silverbulletKB/Projects/_TEMPLATE/`, `silverbulletKB/Skills/_TEMPLATE/SKILL.md:1`
+* `AGENTS.md:1`, `Projects/_TEMPLATE/`, `Skills/_TEMPLATE/SKILL.md:1`
 * `Makefile:1`, `.env.example:1`

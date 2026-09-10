@@ -1,14 +1,14 @@
 # Stack Discovery
 
-> Auto-detect tech stack for any project under /opt/data/Personal so Hermes picks the right skill before reading code.
+> Auto-detect tech stack for any project under /stack_root so Hermes picks the right skill before reading code.
 
 ## When to use
 - Trigger: user mentions a project without stating stack, or asks "what is this built with?", or before any read/edit on unknown codebase
-- Preconditions: project path known (from `AGENTS.md` or user message or `/opt/data/Personal` search)
+- Preconditions: project path known (from `AGENTS.md` or user message or `/stack_root` search)
 - Always run first when project has no `Projects/<Name>/docs/architecture.md` or stack is ambiguous
 
 ## Inputs
-- Required: project root path(s) to scan (often `/opt/data/Personal/github.com/...` or `/opt/data/Personal/Projects/...`)
+- Required: project root path(s) to scan (often `/stack_root/github.com/...` or `/stack_root/Projects/...`)
 - Optional: depth limit (default 2 levels), language hint
 
 ## Steps
@@ -29,7 +29,7 @@
 4. Pick skills:
    - Primary stack → retrieve its `Skills/<stack>/SKILL.md` first and follow it
    - Secondary stacks → retrieve each co-skill (`docker`, `postgres`) and apply their steps where relevant
-   - If no marker → state "unknown stack — listing files in /opt/data/Personal/<project>:..." and propose scaffold from `_TEMPLATE`
+   - If no marker → state "unknown stack — listing files in /stack_root/<project>:..." and propose scaffold from `_TEMPLATE`
 5. Summarize & route:
    - Build table: `| Stack | Evidence | Skill |` with `file:lines` citations (e.g. `| Python | pyproject.toml:8 requires-python | Skills/python |`)
    - State next skill to execute (e.g. "Detected Python + Docker + Postgres → will follow Skills/python then Skills/postgres + Skills/docker")
@@ -48,7 +48,7 @@
 - `Skills/react/SKILL.md`
 - `Skills/nodejs/SKILL.md`
 - `Skills/postgres/SKILL.md`
-- `silverbulletKB/Projects/_TEMPLATE/docs/architecture.md`
+- `Projects/_TEMPLATE/docs/architecture.md`
 - `AGENTS.md`
 
 ## Notes for Hermes

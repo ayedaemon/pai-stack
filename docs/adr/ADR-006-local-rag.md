@@ -7,7 +7,7 @@ Accepted
 Hermes needs grounded recall over all user notes and projects. Options were hosted embeddings (OpenAI), or a dedicated vector DB (Qdrant/Weaviate).
 
 ## Decision
-`knowledgebase: enabled: true directories: [/opt/data/Personal] auto_retrieve: true max_context_chunks: 8 relevance_threshold: 0.5 embedding_model: local reindex_on_change: true` `hermes/config.yaml:141`, using `fastembed all-MiniLM-L6-v2` (~80 MB) with `context_files: [/opt/data/Personal/silverbulletKB/AGENTS.md]` always injected `hermes/config.yaml:136`.
+`knowledgebase: enabled: true directories: [/stack_root] auto_retrieve: true max_context_chunks: 8 relevance_threshold: 0.5 embedding_model: local reindex_on_change: true` `hermes/config.yaml:141`, using `fastembed all-MiniLM-L6-v2` (~80 MB) with `context_files: [/stack_root/AGENTS.md]` always injected `hermes/config.yaml:136`.
 
 ## Alternatives Considered
 - **OpenAI embeddings** — higher quality, but network + key + cost per reindex.
