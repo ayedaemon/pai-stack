@@ -23,6 +23,8 @@ services:
       - HERMES_DATA_DIR=/opt/data
       - HERMES_LAZY_INSTALL_TARGET=/opt/hermes/data/lazy-packages
       - PYTHONPATH=/opt/hermes/data/lazy-packages
+      - LLAMACPP_BASE_URL=${LLAMACPP_BASE_URL:-http://host.docker.internal:8080/v1}
+      - LLAMACPP_MODEL_NAME=${LLAMACPP_MODEL_NAME}
       - HERMES_UID=${UID:-1000}
       - HERMES_GID=${GID:-1000}
       - HERMES_DASHBOARD=1

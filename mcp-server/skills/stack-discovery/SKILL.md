@@ -1,14 +1,14 @@
 # Stack Discovery
 
-> Auto-detect tech stack for any project under /stack_root so Hermes picks the right skill before reading code.
+> Auto-detect tech stack for any project under /opt/data so Hermes picks the right skill before reading code.
 
 ## When to use
 - Trigger: user mentions a project without stating stack, or asks "what is this built with?", or before any read/edit on unknown codebase
-- Preconditions: project path known (from `AGENTS.md` or user message or `/stack_root` search)
+- Preconditions: project path known (from `AGENTS.md` or user message or `/opt/data` search)
 - Always run first when project has no `Projects/<Name>/docs/architecture.md` or stack is ambiguous
 
 ## Inputs
-- Required: project root path(s) to scan (often `/stack_root/github.com/...` or `/stack_root/Projects/...`)
+- Required: project root path(s) to scan (under `/opt/data/...`)
 - Optional: depth limit (default 2 levels), language hint
 
 ## Steps
@@ -27,29 +27,29 @@
    - If `postgres` image or `DATABASE_URL` or ORM config → Postgres co-applies
    - Polyglot is common — list primary (most files/entripoint) vs secondary
 4. Pick skills:
-   - Primary stack → retrieve its `Skills/<stack>/SKILL.md` first and follow it
-   - Secondary stacks → retrieve each co-skill (`docker`, `postgres`) and apply their steps where relevant
-   - If no marker → state "unknown stack — listing files in /stack_root/<project>:..." and propose scaffold from `_TEMPLATE`
+   - Primary stack → retrieve its `skill://<stack>` first and follow it
+   - Secondary stacks → retrieve each co-skill (`skill://docker`, `skill://postgres`) and apply their steps where relevant
+   - If no marker → state "unknown stack — listing files in /opt/data/<project>:..." and propose scaffold from `skill://templates/project/*`
 5. Summarize & route:
-   - Build table: `| Stack | Evidence | Skill |` with `file:lines` citations (e.g. `| Python | pyproject.toml:8 requires-python | Skills/python |`)
-   - State next skill to execute (e.g. "Detected Python + Docker + Postgres → will follow Skills/python then Skills/postgres + Skills/docker")
+   - Build table: `| Stack | Evidence | Skill |` with `file:lines` citations (e.g. `| Python | pyproject.toml:8 requires-python | skill://python |`)
+   - State next skill to execute (e.g. "Detected Python + Docker + Postgres → will follow skill://python then skill://postgres + skill://docker")
 6. Write & cite:
    - Update `Projects/<Name>/docs/architecture.md` with discovery table if KB exists, or propose new scaffold with it
-   - Post 3-bullet summary in same Telegram topic, with skill citations (`Skills/stack-discovery/SKILL.md:2`, `Skills/python/SKILL.md:1`, etc.)
+   - Post 3-bullet summary in same Telegram topic, with skill citations (`skill://stack-discovery`, `skill://python`, etc.)
 
 ## Outputs
 - Primary: discovery table (stack → evidence `file:lines` → skill) + primary/secondary ranking
-- Next skill: which `Skills/<name>/SKILL.md` to retrieve next
+- Next skill: which `skill://<name>` to retrieve next
 - KB patch: proposed `docs/architecture.md` update or scaffold preview
 
-## Related files
-- `Skills/python/SKILL.md`
-- `Skills/docker/SKILL.md`
-- `Skills/react/SKILL.md`
-- `Skills/nodejs/SKILL.md`
-- `Skills/postgres/SKILL.md`
-- `Projects/_TEMPLATE/docs/architecture.md`
-- `AGENTS.md`
+## Related skills & resources
+- `skill://python`
+- `skill://docker`
+- `skill://react`
+- `skill://nodejs`
+- `skill://postgres`
+- `skill://templates/project/docs/architecture.md`
+- `skill://agents`
 
 ## Notes for Hermes
 - This skill is the router — run it before any stack-specific skill when stack is not already in KB.

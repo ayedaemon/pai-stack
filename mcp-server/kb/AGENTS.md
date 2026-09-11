@@ -27,31 +27,31 @@ within the configured scope — never hardcode a project count.
 
 ## Ground rules for the assistant
 1. Retrieve from the knowledge base before answering — scoped to the originating topic's project (AGENTS.md + Projects/<Current>/** + its issues/<topic>.md). Never cite other projects' data in a topic.
-2. Cite the source page (file:lines) for any factual claim.
-3. If no KB exists for the mentioned project, search `~/stack_root` (`/stack_root`) for relevant folders/files, then create KB scaffold for it from `Projects/_TEMPLATE` — don't guess.
+2. Cite the source page (file:lines for KB files, skill://<name> for MCP skills) for any factual claim.
+3. If no KB exists for the mentioned project, search `/opt/data` for relevant folders/files, then create KB scaffold for it from `skill://templates/project/*` — don't guess.
 4. Stay within the configured projects; for out-of-scope in a topic, redirect to the correct project's topic.
 5. Treat `AGENTS.md` + `Projects/<Name>/telegram.md` as the source of truth for scope, group_id and topic mappings.
 6. KB first, topic second: write to KB first, then summarize in the originating topic only. Wait for confirm before writing (hybrid).
-7. Cross-project learning: distill generic patterns (planning, debugging, process) into `References/` or `Skills/` — that's how Hermes gets better across projects without leaking project data.
+7. Cross-project learning: distill generic patterns (planning, debugging, process) into `References/` or custom `Skills/` — that's how Hermes gets better across projects without leaking project data.
 
 ## Where things live
 - Per-project docs: `Projects/<Name>/README.md`, `docs/`, `telegram.md` (group_id + topics), `config.md`, `issues/<topic-slug>.md`
 - Shared references: `References/` — cross-project patterns and runbooks (portfolio growth)
-- Reusable workflows: `Skills/<name>/SKILL.md` (template: `Skills/_TEMPLATE/SKILL.md`) — generic skills are portfolio-wide
-- All notes in the knowledge base are indexed by Hermes; all files in `~/stack_root` (`/stack_root`) are searchable by Hermes.
+- Reusable workflows: Bundled in MCP (`skill://<name>`); user-defined in `Skills/<name>/SKILL.md` (template: `skill://_TEMPLATE`)
+- Notes in the knowledge base are indexed by Hermes (`knowledgebase.directories`); files in `/opt/data` are searchable by Hermes.
 
 ## Skills
 - Hermes can create and reuse skills (markdown in `Skills/<name>/SKILL.md`) for repeatable tasks.
 - When you ask it to "create a skill" or after a 2nd repeat, it will draft the skill directly and write it into the KB itself.
 - On later requests, it retrieves the skill first and follows its steps. Generic skills compound planning ability across projects.
 
-### Default skills (pre-seeded on every deploy, `force: no` — never overwrites your edits)
-- **stack-discovery** — `Skills/stack-discovery/SKILL.md` — router: scan `/stack_root/<project>` for `pyproject.toml`/`package.json`/`Dockerfile`/`postgres` markers and route to the right stack skill. **Run this first** on any unknown codebase.
-- **python** — `Skills/python/SKILL.md` — Python: `pyproject.toml`/`requirements.txt`, Poetry/uv/pip, Django/FastAPI/Flask, entrypoints, `pytest`, secret refs.
-- **docker** — `Skills/docker/SKILL.md` — Docker & Compose: multi-stage `Dockerfile`, `docker-compose.yaml` services/ports/volumes, Tailscale, `docker compose config` validation.
-- **react** — `Skills/react/SKILL.md` — React: Vite/Next/CRA, components & hooks, `react-router` vs file-based routing, Zustand/Redux/Context, Tailwind/MUI, `tsconfig.json`.
-- **nodejs** — `Skills/nodejs/SKILL.md` — Node.js: `package.json` scripts, npm/yarn/pnpm, Express/Nest/Fastify, ESM vs CJS, `tsconfig.json`, monorepos.
-- **postgres** — `Skills/postgres/SKILL.md` — Postgres: compose `postgres` service, Prisma/Drizzle/Alembic/SQLAlchemy, schema & `migrations/`, `DATABASE_URL` refs, `psql`/`pg_dump` safety.
-- **codegraph** — `Skills/codegraph/SKILL.md` — CodeGraph: query code structure, call chains, impact analysis via HTTP API. Use before editing code or when debugging/refactoring.
-- Hermes retrieves the matching skill(s) automatically before reading code — polyglot projects (e.g. React + Node + Postgres + Docker) apply each relevant skill and keep summaries separate. Cite `Skills/<name>/SKILL.md:lines`.
-- Template for new skills: `Skills/_TEMPLATE/SKILL.md`
+### Bundled skills (served via MCP server resources)
+- **stack-discovery** — `skill://stack-discovery` — router: scan `/opt/data/<project>` for `pyproject.toml`/`package.json`/`Dockerfile`/`postgres` markers and route to the right stack skill. **Run this first** on any unknown codebase.
+- **python** — `skill://python` — Python: `pyproject.toml`/`requirements.txt`, Poetry/uv/pip, Django/FastAPI/Flask, entrypoints, `pytest`, secret refs.
+- **docker** — `skill://docker` — Docker & Compose: multi-stage `Dockerfile`, `docker-compose.yaml` services/ports/volumes, Tailscale, `docker compose config` validation.
+- **react** — `skill://react` — React: Vite/Next/CRA, components & hooks, `react-router` vs file-based routing, Zustand/Redux/Context, Tailwind/MUI, `tsconfig.json`.
+- **nodejs** — `skill://nodejs` — Node.js: `package.json` scripts, npm/yarn/pnpm, Express/Nest/Fastify, ESM vs CJS, `tsconfig.json`, monorepos.
+- **postgres** — `skill://postgres` — Postgres: compose `postgres` service, Prisma/Drizzle/Alembic/SQLAlchemy, schema & `migrations/`, `DATABASE_URL` refs, `psql`/`pg_dump` safety.
+- **codegraph** — `skill://codegraph` — CodeGraph: query code structure, call chains, impact analysis via HTTP API. Use before editing code or when debugging/refactoring.
+- Hermes retrieves the matching skill(s) automatically before reading code — polyglot projects (e.g. React + Node + Postgres + Docker) apply each relevant skill and keep summaries separate. Cite `skill://<name>` (or `Skills/<name>/SKILL.md:lines` for local skills).
+- Template for new skills: `skill://_TEMPLATE`
