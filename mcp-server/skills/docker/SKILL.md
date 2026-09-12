@@ -4,7 +4,7 @@
 
 ## When to use
 - Trigger: user mentions Docker, `Dockerfile`, `docker-compose.yaml`, `compose.yaml`, `container`, `image`, or asks to containerize/debug/deploy
-- Preconditions: project under `/stack_root/...` with `Dockerfile` or `docker-compose.yaml`
+- Preconditions: project under `/opt/data/workspace/...` with `Dockerfile` or `docker-compose.yaml`
 - Auto-use: when `stack-discovery` finds `Dockerfile*` or `docker-compose*` at root or `hermes/` style subdirs
 
 ## Inputs

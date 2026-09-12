@@ -25,11 +25,11 @@ Host Machine (WORKSPACE_DIR)
  ├── Knowledge Base & Notes
  └── Skills & Tools
       │
-      ├── [mount: /opt/data (rw)]                  ──> hermes (Knowledge base & agent workspace)
-      ├── [mount: /workspace (ro)]                 ──> codegraph (Hybrid search: AST + text + semantic)
+      ├── [mount: /opt/data/workspace (rw)]        ──> hermes (Knowledge base & agent workspace)
+      ├── [mount: /opt/data/workspace (ro)]        ──> codegraph (Hybrid search: AST + text + semantic)
       │
       ├── hermes queries codegraph (:20128) & mcp-server (:8000)
-      └── hermes & codegraph generate embeddings via embeddings (:8080)
+      └── codegraph generates embeddings via embeddings (:8080)
 ```
 
 ---

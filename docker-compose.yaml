@@ -20,7 +20,7 @@ services:
           cpus: "3.0"
     environment:
       - HERMES_HOME=/opt/hermes/data
-      - HERMES_DATA_DIR=/opt/data
+      - HERMES_DATA_DIR=/opt/data/workspace
       - HERMES_LAZY_INSTALL_TARGET=/opt/hermes/data/lazy-packages
       - PYTHONPATH=/opt/hermes/data/lazy-packages
       - LLAMACPP_BASE_URL=${LLAMACPP_BASE_URL:-http://host.docker.internal:8080/v1}
@@ -38,8 +38,7 @@ services:
       - KILO_GATEWAY_API_KEY=${KILO_GATEWAY_API_KEY:-}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
       - FS_NOTIFIER_DEBOUNCE_SECONDS=${FS_NOTIFIER_DEBOUNCE_SECONDS:-30}
-      - FS_NOTIFIER_WATCH_PATH=/opt/data
-      - KB_DIRS=${KB_DIRS:-.}
+      - FS_NOTIFIER_WATCH_PATH=/opt/data/workspace
       - EMBEDDINGS_URL=http://embeddings:8080/v1
     ports:
       - "9119:9119"
@@ -49,7 +48,7 @@ services:
       - ./hermes/config.yaml:/tmp/hermes-config.yaml.host:ro
       - type: bind
         source: ${WORKSPACE_DIR}
-        target: /opt/data
+        target: /opt/data/workspace
         bind:
           create_host_path: false
     extra_hosts:
@@ -74,12 +73,12 @@ services:
           memory: 512M
           cpus: "1.0"
     environment:
-      - WORKSPACE_PATH=/workspace
+      - WORKSPACE_PATH=/opt/data/workspace
       - EMBEDDINGS_URL=http://embeddings:8080/v1
     volumes:
       - type: bind
         source: ${WORKSPACE_DIR}/${CODEGRAPH_SUBDIR:-.}
-        target: /workspace
+        target: /opt/data/workspace
         read_only: true
         bind:
           create_host_path: false
@@ -124,6 +123,11 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    environment:
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-pai-stack}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - mcp-logs:/app/logs
     deploy:
       resources:
         limits:
@@ -140,3 +144,4 @@ volumes:
   hermes-data:
   codegraph-data:
   embeddings-cache:
+  mcp-logs:

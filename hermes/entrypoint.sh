@@ -11,6 +11,10 @@ set -e
 # Ensure lazy-packages directory exists inside hermes-data volume
 mkdir -p /opt/hermes/data/lazy-packages
 
+# Ensure /opt/data directory exists and is owned by Hermes user (for helper scripts)
+mkdir -p /opt/data
+chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" /opt/data 2>/dev/null || true
+
 # Ensure the hermes runtime data dir is owned by the UID Hermes drops to
 chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" /opt/hermes/data 2>/dev/null || true
 
@@ -20,18 +24,26 @@ find /opt/hermes/data -type f \( -name '*.db' -o -name '*.db-wal' -o -name '*.db
 
 cp /tmp/hermes-config.yaml.host /opt/hermes/data/hermes-config.yaml
 
-DATA_DIR="${HERMES_DATA_DIR:-/opt/data}"
+DATA_DIR="${HERMES_DATA_DIR:-/opt/data/workspace}"
 
-# Dynamically adjust paths in config to match DATA_DIR
-sed -i "s|/opt/hermes/data/workspace|${DATA_DIR}|g" /opt/hermes/data/hermes-config.yaml
-sed -i "s|/opt/data|${DATA_DIR}|g" /opt/hermes/data/hermes-config.yaml
-sed -i "s|/stack_root|${DATA_DIR}|g" /opt/hermes/data/hermes-config.yaml
+# Dynamically normalize paths in config to match DATA_DIR
+python3 -c "
+import re
+with open('/opt/hermes/data/hermes-config.yaml', 'r') as f:
+    content = f.read()
+content = content.replace('/opt/hermes/data/workspace', '${DATA_DIR}')
+content = content.replace('/stack_root', '${DATA_DIR}')
+content = re.sub(r'(/opt/data)+/workspace', '${DATA_DIR}', content)
+content = re.sub(r'(?<!/opt/data)/workspace', '${DATA_DIR}', content)
+with open('/opt/hermes/data/hermes-config.yaml', 'w') as f:
+    f.write(content)
+"
 
 # Inject KB_DIRS into knowledgebase.directories relative to DATA_DIR
 if [ -n "${KB_DIRS:-}" ] && [ "$KB_DIRS" != "." ]; then
     KB_YAML=$(echo "$KB_DIRS" | python3 -c "
 import sys, os
-base_dir = os.environ.get('HERMES_DATA_DIR', '/opt/data').rstrip('/')
+base_dir = os.environ.get('HERMES_DATA_DIR', '/opt/data/workspace').rstrip('/')
 dirs = [d.strip() for d in sys.stdin.read().split(',') if d.strip()]
 print('\n'.join(f'    - {base_dir}/{d.lstrip(\"/\")}' for d in dirs))
 ")

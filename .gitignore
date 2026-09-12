@@ -6,3 +6,4 @@ silverbullet
 .env
 .deploy-secrets*.yml
 *.log
+.planning/

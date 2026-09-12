@@ -4,7 +4,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const app = express();
 const PORT = 20128;
-const WORKSPACE = path.normalize(process.env.WORKSPACE_PATH || '/workspace');
+const WORKSPACE = path.normalize(process.env.WORKSPACE_PATH || '/opt/data/workspace');
 const EMBEDDINGS_URL = process.env.EMBEDDINGS_URL || 'http://embeddings:8080/v1';
 const VECTOR_CACHE_FILE = '/data/vector_cache.json';
 
@@ -17,7 +17,8 @@ function toRelativePath(filePath) {
   if (filePath.startsWith(prefix)) {
     return filePath.slice(prefix.length);
   }
-  return filePath.replace(/^\/workspace\/?/, '')
+  return filePath.replace(/^\/opt\/data\/workspace\/?/, '')
+                 .replace(/^\/workspace\/?/, '')
                  .replace(/^\/opt\/hermes\/data\/workspace\/?/, '')
                  .replace(/^\/opt\/data\/?/, '')
                  .replace(/^\/stack_root\/?/, '')
@@ -89,19 +90,76 @@ function runRipgrep(query, limit = 30) {
 }
 
 // ── AST Symbol Search ─────────────────────────────────────────────────────────
+function extractCodeContext(rawFile, startLine, endLine) {
+  if (!rawFile) return '';
+  try {
+    let absPath = rawFile;
+    if (!absPath.startsWith('/')) {
+      absPath = path.join(WORKSPACE, absPath);
+    }
+    if (!fs.existsSync(absPath)) return '';
+    const stat = fs.statSync(absPath);
+    if (stat.size > 2 * 1024 * 1024) return ''; // Skip files > 2MB
+
+    const content = fs.readFileSync(absPath, 'utf-8');
+    const lines = content.split('\n');
+
+    if (!startLine || startLine < 1) {
+      return lines.slice(0, 20).join('\n').trim();
+    }
+
+    const zeroStart = startLine - 1;
+    // Look back up to 10 lines, but only include lines if they are comments, docstrings, decorators, or empty
+    let lookbackStart = zeroStart;
+    for (let i = zeroStart - 1; i >= Math.max(0, zeroStart - 10); i--) {
+      const lineTrim = lines[i].trim();
+      if (lineTrim === '' ||
+          lineTrim.startsWith('//') ||
+          lineTrim.startsWith('/*') ||
+          lineTrim.startsWith('*') ||
+          lineTrim.startsWith('#') ||
+          lineTrim.startsWith('@') ||
+          lineTrim.startsWith('///')) {
+        lookbackStart = i;
+      } else {
+        // Hit previous code block -> stop looking back
+        break;
+      }
+    }
+
+    // Look forward up to endLine or 35 lines to capture signature, docstring, and implementation
+    const forwardEnd = endLine ? Math.min(endLine, zeroStart + 35) : Math.min(lines.length, zeroStart + 25);
+
+    return lines.slice(lookbackStart, forwardEnd).join('\n').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
 function runSymbolSearch(query, limit = 30) {
   const result = runCodeGraph('codegraph_symbol_search', { query });
   const raw = Array.isArray(result) ? result : (result.results || result.symbols || []);
-  return (Array.isArray(raw) ? raw : []).slice(0, limit).map((r) => ({
-    id: String(r.node_id ?? r.nodeId ?? r.id ?? ''),
-    name: r.symbol?.name ?? r.name ?? '',
-    kind: r.symbol?.kind ?? r.kind ?? 'Symbol',
-    file: toRelativePath(r.symbol?.location?.file ?? r.location?.file ?? r.file ?? ''),
-    line: r.symbol?.location?.range?.start?.line ?? r.line ?? null,
-    snippet: r.symbol?.detail || r.match_reason || null,
-    matchType: 'symbol',
-    score: r.score ?? 1.0,
-  })).filter((x) => x.name);
+  return (Array.isArray(raw) ? raw : []).slice(0, limit).map((r) => {
+    const loc = r.symbol?.location || r.location || {};
+    const line = loc.line ?? loc.range?.start?.line ?? r.line ?? null;
+    const endLine = loc.end_line ?? loc.range?.end?.line ?? null;
+    const rawFile = loc.file ?? r.file ?? '';
+    const file = toRelativePath(rawFile);
+    return {
+      id: String(r.node_id ?? r.nodeId ?? r.id ?? ''),
+      name: r.symbol?.name ?? r.name ?? '',
+      kind: r.symbol?.kind ?? r.kind ?? 'Symbol',
+      file,
+      rawFile,
+      line,
+      endLine,
+      signature: r.symbol?.signature ?? null,
+      docstring: r.symbol?.docstring ?? null,
+      snippet: r.symbol?.detail || r.match_reason || null,
+      matchType: 'symbol',
+      score: r.score ?? 1.0,
+    };
+  }).filter((x) => x.name);
 }
 
 // ── Vector Search & Embeddings Integration ────────────────────────────────────
@@ -161,17 +219,41 @@ async function indexSymbolsForSemanticSearch(symbols) {
   for (const s of symbols) {
     const id = `${s.file}:${s.line}:${s.name}`;
     if (!vectorCache.has(id)) {
-      const textToEmbed = `${s.kind || 'symbol'} ${s.name} in ${s.file}${s.snippet ? ': ' + s.snippet : ''}`;
+      const codeContext = extractCodeContext(s.rawFile || s.file, s.line, s.endLine);
+
+      let textToEmbed = `${s.kind || 'Symbol'} ${s.name} in ${s.file}`;
+      if (s.signature) textToEmbed += `\nSignature: ${s.signature}`;
+      if (s.docstring) textToEmbed += `\nDocstring: ${s.docstring}`;
+      if (codeContext) textToEmbed += `\nContext:\n${codeContext}`;
+
       const vec = await fetchEmbedding(textToEmbed, 'search_document: ');
       if (vec) {
-        vectorCache.set(id, { ...s, vector: vec });
+        // Build clean snippet: prefer docstring, then first comment line, then signature
+        let cleanSnippet = s.docstring ? s.docstring.slice(0, 200).replace(/\s+/g, ' ').trim() : null;
+        if (!cleanSnippet && codeContext) {
+          const commentLine = codeContext.split('\n').find((l) => {
+            const t = l.trim();
+            return t.startsWith('//') || t.startsWith('#') || t.startsWith('*') || t.startsWith('"""') || t.startsWith("'''");
+          });
+          if (commentLine) {
+            cleanSnippet = commentLine.trim().replace(/^(\/\/|\*|#|\/\*+|"{3}|'{3})\s*/, '').slice(0, 150);
+          } else {
+            cleanSnippet = s.signature || codeContext.split('\n')[0].trim().slice(0, 150);
+          }
+        }
+
+        vectorCache.set(id, {
+          ...s,
+          snippet: cleanSnippet || s.snippet,
+          vector: vec,
+        });
         newIndexed++;
       }
     }
   }
   if (newIndexed > 0) {
     saveVectorCache();
-    console.log(`[embeddings] indexed ${newIndexed} new symbol(s), total=${vectorCache.size}`);
+    console.log(`[embeddings] indexed ${newIndexed} new symbol(s) with rich context, total=${vectorCache.size}`);
   }
 }
 
@@ -405,8 +487,21 @@ app.get('/map', (req, res) => {
 // POST /reindex
 app.post('/reindex', (req, res) => {
   console.log(`[codegraph] workspace reindex requested`);
+  if (req.query.clear_cache === 'true' || req.body?.clear_cache) {
+    vectorCache.clear();
+    saveVectorCache();
+    console.log(`[embeddings] vector cache cleared on reindex`);
+  }
   const result = runCodeGraph('codegraph_reindex_workspace', req.body || {});
-  res.json({ status: 'ok', result });
+  res.json({ status: 'ok', vectorCacheSize: vectorCache.size, result });
+});
+
+// Cache management
+app.post('/cache/clear', (req, res) => {
+  vectorCache.clear();
+  saveVectorCache();
+  console.log(`[embeddings] vector cache cleared via /cache/clear`);
+  res.json({ status: 'ok', message: 'Vector cache cleared', vectorCacheSize: 0 });
 });
 
 // 6. Memory Stats & Diagnostics

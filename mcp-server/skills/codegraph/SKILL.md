@@ -23,17 +23,16 @@
    - `POST /reindex` — trigger workspace reindexing
 3. Analyze results — identify affected files, test coverage needs, and risk areas
 4. Apply changes with awareness of call chain implications
-5. Write result to issue file (status: in-progress/review) with `file:lines` citations
+5. Write result to `findings.md` in the active task plan directory (status: in-progress/review) with `file:lines` citations
 
 ## Outputs
 - Context analysis with affected files and risk assessment
-- Updated issue file with codegraph findings
-- Changelog entry in originating Telegram topic
+- `findings.md` updated with codegraph results and `file:lines` citations
 
 ## Related files
-- `hermes/config.yaml:108` — codegraph.api_url configuration
+- `hermes/config.yaml:124` — codegraph.api_url configuration
 - `codegraph/server.js:1` — HTTP wrapper implementation
-- `docker-compose.yaml:54` — codegraph service definition
+- `docker-compose.yaml:60` — codegraph service definition
 
 ## Notes for Hermes
 - CodeGraph runs in hybrid mode: Tree-sitter for AST symbol graphs + ripgrep for blazing fast full-text search

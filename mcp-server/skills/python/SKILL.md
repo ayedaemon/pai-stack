@@ -4,11 +4,11 @@
 
 ## When to use
 - Trigger: user mentions Python project, `*.py`, `pyproject.toml`, `requirements.txt`, `Pipfile`, `poetry`, `uv`, or asks to read/debug/build a Python app
-- Preconditions: project path under `/stack_root/...` exists; KB may have `Projects/<Name>/README.md`
+- Preconditions: project path under `/opt/data/workspace/...` exists; KB may have `Projects/<Name>/README.md`
 - Auto-use: when `stack-discovery` detects `pyproject.toml` / `requirements*.txt` / `setup.py` / `.py` files
 
 ## Inputs
-- Required: project root path (e.g. `/stack_root/github.com/<org>/<repo>` or `Projects/<Name>` mapping)
+- Required: project root path (e.g. `/opt/data/workspace/github.com/<org>/<repo>` or `Projects/<Name>` mapping)
 - Optional: specific issue/task focus, Python version constraint, framework hint
 
 ## Steps

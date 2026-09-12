@@ -4,7 +4,7 @@
 
 ## When to use
 - Trigger: user says Postgres, PostgreSQL, `psql`, `DATABASE_URL`, `migrations`, `schema.sql`, or asks to inspect/debug/migrate a DB
-- Preconditions: project under `/stack_root/...` with `docker-compose.yaml` postgres service, `*.sql`, `migrations/`, or ORM config (`prisma`, `drizzle`, `sqlalchemy`, `alembic`, `typeorm`, `sequelize`, `knex`)
+- Preconditions: project under `/opt/data/workspace/...` with `docker-compose.yaml` postgres service, `*.sql`, `migrations/`, or ORM config (`prisma`, `drizzle`, `sqlalchemy`, `alembic`, `typeorm`, `sequelize`, `knex`)
 - Auto-use: when `stack-discovery` finds `postgres` image, `DATABASE_URL`, `prisma/schema.prisma`, `alembic/`, `migrations/`, or `pg` driver
 
 ## Inputs
