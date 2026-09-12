@@ -1,8 +1,3 @@
-model:
-  provider: office1
-  default: ${LLAMACPP_MODEL_NAME}
-  base_url: ${LLAMACPP_BASE_URL}
-
 # Primary: local or remote llama.cpp / Ollama / vLLM (OpenAI-compatible). Fallback: OpenRouter / Mistral / Kilo.
 # NOTE: provider name MUST NOT be llamacpp/llama.cpp/llama-cpp — use generic custom name.
 providers:
@@ -60,16 +55,17 @@ agent:
 
     MCP Server  (http://mcp-server:8000/mcp)
       Bundled procedural skills (fetched as MCP resources, negligible token cost):
-        skill://stack-discovery  → detect tech stack before any unknown codebase work
-        skill://python           → Python project conventions and tooling
-        skill://docker           → Docker/Compose conventions
-        skill://react            → React/Next.js conventions
-        skill://nodejs           → Node.js conventions
-        skill://postgres         → Postgres conventions
-        skill://codegraph        → CodeGraph query procedures and endpoint reference
-        skill://planning         → planning-with-files discipline (task_plan.md etc.)
-        skill://_TEMPLATE        → template for creating new custom skills
-        skill://agents           → this assistant's ground rules and scope
+        skill://stack-discovery   → detect tech stack before any unknown codebase work
+        skill://python            → Python project conventions and tooling
+        skill://docker            → Docker/Compose conventions
+        skill://react             → React/Next.js conventions
+        skill://nodejs            → Node.js conventions
+        skill://postgres          → Postgres conventions
+        skill://codegraph         → CodeGraph query procedures and endpoint reference
+        skill://planning          → planning-with-files discipline (task_plan.md etc.)
+        skill://open-notebook     → when/how to use the Open Notebook research brain
+        skill://_TEMPLATE         → template for creating new custom skills
+        skill://agents            → this assistant's ground rules and scope
 
       Tools:
         docker_ops  → manage pai-stack containers via Docker socket.
@@ -80,12 +76,35 @@ agent:
           start   <service>             → start stopped container
           stop    <service>             → stop container
           exec    <service> cmd="..."   → run command inside container
-          Services: hermes, codegraph, embeddings, mcp-server
+          Services: hermes, codegraph, embeddings, mcp-server, open-notebook, surrealdb
           All actions are audited to /app/logs/docker-ops.log.
+
+        notebook_ops  → query Open Notebook research knowledge base.
+          list_notebooks                → discover all notebooks
+          create_notebook name="..."    → create a notebook for a project
+          search query="..." [type=vector|text] → semantic or keyword search
+          add_note title="..." content="..."    → save findings as a permanent note
+          add_source_url url="..."              → ingest a URL for background processing
+          Fetch skill://open-notebook before using this tool.
+
+    Open Notebook  (http://open-notebook:5055)
+      Research Brain. External knowledge store: RFCs, API docs, papers, web articles.
+      Accessed exclusively via notebook_ops MCP tool — do NOT call the API directly.
+      Only available when the extended stack is running (make up-all).
+      If the tool returns {"available":false}, fall back to CodeGraph semantic search.
 
     Embeddings  (http://embeddings:8080)
       Provides the embedding model used by CodeGraph's semantic search.
       Do NOT call this directly — CodeGraph uses it automatically.
+
+    Mnemosyne  (Local-first agent memory layer)
+      Persistent SQLite memory for working/episodic context, decisions, and knowledge graph.
+      Automatically captures turn outcomes and injects relevant context before model turns.
+      Tools:
+        mnemosyne_remember  → record durable lessons, constraints, and project facts
+        mnemosyne_recall    → search past decisions, solutions, and context
+        mnemosyne_sleep     → trigger episodic memory consolidation
+        mnemosyne_stats     → view memory statistics
 
     ═══ SESSION SCOPE ══════════════════════════════════════════════════
 
@@ -109,10 +128,14 @@ agent:
     For each message:
 
     A) Retrieve before reading
-       Code/symbol question → GET codegraph:20128/symbols/<name> or /search?type=hybrid
-       Doc/notes/decision   → GET codegraph:20128/search?type=semantic
-       Stack unknown        → fetch skill://stack-discovery first, scan /opt/data/workspace/<project>/
-       Relevant procedure   → fetch skill://<name> (python, docker, react, nodejs, postgres, codegraph)
+       Prior lesson/decision → mnemosyne_recall(query=...) to check known solutions
+       Code/symbol question  → GET codegraph:20128/symbols/<name> or /search?type=hybrid
+       Doc/notes/decision    → GET codegraph:20128/search?type=semantic
+       External RFC/spec/doc → notebook_ops(action=search, search_type=vector)
+                               Falls back to CodeGraph if notebook_ops returns {"available":false}
+       Stack unknown         → fetch skill://stack-discovery first, scan /opt/data/workspace/<project>/
+       Relevant procedure    → fetch skill://<name> (python, docker, react, nodejs, postgres, codegraph)
+       Open Notebook usage   → fetch skill://open-notebook before any notebook_ops calls
        After every 2 read/search operations → write key findings to findings.md
 
     B) Read files surgically
@@ -125,6 +148,7 @@ agent:
        Then write to /opt/data/workspace/<project>/<file>.
        After any write → update progress.md with what changed.
        After writing → POST codegraph:20128/reindex if new files were added.
+       Durable insight/lesson→ mnemosyne_remember(content=...) to persist fixes/conventions.
 
     D) Update the plan
        After completing any phase → mark it complete in task_plan.md.
@@ -151,6 +175,17 @@ agent:
 # ── Knowledge Base (disabled — CodeGraph owns all retrieval) ───────────────
 knowledgebase:
   enabled: false
+
+# ── Memory (Mnemosyne: local-first episodic & associative memory) ───────────
+memory:
+  provider: mnemosyne
+  memory_enabled: false
+  write_approval: false
+  mnemosyne:
+    auto_sleep: true
+    sleep_threshold: 30
+
+user_profile_enabled: false
 
 # ── Platforms ────────────────────────────────────────────────────────────
 platforms:

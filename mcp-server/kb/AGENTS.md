@@ -15,6 +15,7 @@ and builds planning artifacts — working like a developer, not a separate knowl
 |---|---|---|
 | /opt/data/workspace | (bind mount) | All user code, docs, configs — read-write |
 | /opt/data | (local dir) | Scratch tools, helper scripts, and agent utilities |
+| Mnemosyne | (internal SQLite) | Local agent memory: decisions, prior fixes, session continuity |
 | CodeGraph | http://codegraph:20128 | Primary retrieval: AST + text + semantic search |
 | MCP Server | http://mcp-server:8000/mcp | Bundled skills and tools |
 | Embeddings | http://embeddings:8080 | Used by CodeGraph — not called directly |
@@ -27,10 +28,11 @@ Stay scoped unless user explicitly redirects.
 
 ## Retrieval Strategy
 
-1. **Code/symbol questions** → CodeGraph first (`/symbols/<name>`, `/search?type=hybrid`)
-2. **Doc/note questions** → CodeGraph semantic search (`/search?type=semantic`)
-3. **Unknown stack** → `skill://stack-discovery` before reading any files
-4. **Procedure needed** → fetch the relevant `skill://<name>` resource
+1. **Prior lessons/decisions** → `mnemosyne_recall` first to check known solutions and constraints
+2. **Code/symbol questions** → CodeGraph first (`/symbols/<name>`, `/search?type=hybrid`)
+3. **Doc/note questions** → CodeGraph semantic search (`/search?type=semantic`)
+4. **Unknown stack** → `skill://stack-discovery` before reading any files
+5. **Procedure needed** → fetch the relevant `skill://<name>` resource
 
 Never bulk-read a directory without a prior CodeGraph search.
 
@@ -69,6 +71,7 @@ Planning files live in the project like developer artifacts:
 | `skill://postgres` | Postgres conventions (ORM, migrations, schema, DATABASE_URL) |
 | `skill://codegraph` | CodeGraph query procedures and endpoint reference |
 | `skill://planning` | planning-with-files discipline (task_plan.md, findings.md, progress.md) |
+| `skill://open-notebook` | When/how to use the Open Notebook research brain and notebook_ops tool |
 | `skill://_TEMPLATE` | Template for creating new custom skills |
 | `skill://agents` | This file (ground rules, injected at session start) |
 
@@ -77,8 +80,10 @@ Planning files live in the project like developer artifacts:
 | Tool | Purpose | Allowed actions |
 |---|---|---|
 | `docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
+| `notebook_ops` | Query Open Notebook research knowledge base (opt-in; returns `{"available":false}` when offline) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url` |
 
 All `docker_ops` actions are recorded in `/app/logs/docker-ops.log` on `mcp-server`.
+Fetch `skill://open-notebook` before using `notebook_ops`.
 
 ## Ground Rules
 

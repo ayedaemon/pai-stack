@@ -7,6 +7,9 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends inotify-tools curl && \
     rm -rf /var/lib/apt/lists/*
 
+# Install Mnemosyne memory provider
+RUN uv pip install --python /opt/hermes/.venv/bin/python mnemosyne-hermes
+
 # Patch kanban default_model support
 COPY apply-kanban-patch.py /tmp/apply-kanban-patch.py
 RUN cd /opt/hermes \

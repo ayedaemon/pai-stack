@@ -1,0 +1,155 @@
+# docker-compose.open-notebook.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Opt-in overlay: adds Open Notebook + SurrealDB to the pai-stack.
+#
+# Usage:
+#   make up-all             — start everything including Open Notebook
+#   make down-all           — stop everything including Open Notebook
+#   make clean-all          — stop and remove all volumes (DESTRUCTIVE)
+#
+# Design decisions:
+#   • surrealdb has NO host port — avoids conflict with mcp-server:8000.
+#     open_notebook reaches it via ws://surrealdb:8000/rpc over the internal
+#     Docker network. Uncomment the debug port below if you need Surrealist access.
+#   • open-notebook shares pai-stack's existing 'embeddings' service — no
+#     second embedding model download, ~500 MB RAM saved, consistent vector space.
+#   • open-notebook uses ONLY named Docker volumes — never a bind mount into
+#     WORKSPACE_DIR. This is critical: Hermes's inotifywait watcher monitors
+#     WORKSPACE_DIR; writing notebook blobs there would cause constant spurious
+#     CodeGraph reindexes and pollute code-search results.
+#   • mcp-server gets OPEN_NOTEBOOK_URL injected via this overlay.
+#     When unset (base stack), notebook_ops returns {"available":false} instead
+#     of crashing — keeping it safe in base-only deployments.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  surrealdb:
+    image: surrealdb/surrealdb:v2
+    container_name: surrealdb
+    restart: unless-stopped
+    # Exec-form so each interpolated value stays a single shell token.
+    # A password containing spaces would otherwise be word-split.
+    command:
+      - "start"
+      - "--log"
+      - "info"
+      - "--user"
+      - "${SURREAL_USER:-root}"
+      - "--pass"
+      - "${SURREAL_PASSWORD:-root}"
+      - "rocksdb:/mydata/mydatabase.db"
+    user: root
+    # NO host ports. open_notebook reaches SurrealDB over the internal network.
+    # Uncomment only for DBA debugging (Surrealist, `surreal sql`, etc.):
+    # ports:
+    #   - "127.0.0.1:8001:8000"
+    volumes:
+      - surreal-data:/mydata
+    environment:
+      - SURREAL_EXPERIMENTAL_GRAPHQL=true
+    healthcheck:
+      # `surreal is-ready` is the official readiness probe.
+      # Note: surrealdb is a distroless/scratch image with the binary at /surreal (not in default $PATH).
+      test: ["CMD", "/surreal", "is-ready", "--endpoint", "http://localhost:8000"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  open-notebook:
+    image: lfnovo/open_notebook:v1-latest
+    container_name: open-notebook
+    restart: unless-stopped
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      embeddings:
+        condition: service_healthy
+    ports:
+      - "8502:8502"   # Web UI (Streamlit)
+      - "5055:5055"   # FastAPI REST API (used by notebook_ops MCP tool)
+    environment:
+      # ── Required ─────────────────────────────────────────────────────────
+      # Encrypts API keys stored in SurrealDB. Must be set before first run.
+      # Generate: openssl rand -hex 32
+      - OPEN_NOTEBOOK_ENCRYPTION_KEY=${OPEN_NOTEBOOK_ENCRYPTION_KEY:-CHANGE-ME-before-first-run}
+
+      # ── SurrealDB (internal) ──────────────────────────────────────────────
+      # open_notebook reaches SurrealDB over the Docker internal network.
+      # ws:// not http:// — SurrealDB uses WebSocket RPC for its API.
+      - SURREAL_URL=ws://surrealdb:8000/rpc
+      - SURREAL_USER=${SURREAL_USER:-root}
+      - SURREAL_PASSWORD=${SURREAL_PASSWORD:-root}
+      - SURREAL_NAMESPACE=open_notebook
+      - SURREAL_DATABASE=open_notebook
+
+      # ── Embeddings — share pai-stack's existing container ─────────────────
+      # Saves ~500 MB RAM. Keeps the vector space consistent with CodeGraph.
+      # The model name must match EMBEDDING_MODEL in the base .env.
+      - OPENAI_EMBEDDING_BASE_URL=http://embeddings:8080/v1
+      - OPENAI_EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-ai/nomic-embed-text-v1.5}
+      - OPENAI_COMPATIBLE_BASE_URL=http://embeddings:8080/v1
+      - OPENAI_COMPATIBLE_API_KEY=not-needed
+
+      # ── Fallback Cloud Keys ───────────────────────────────────────────────
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - KILO_GATEWAY_API_KEY=${KILO_GATEWAY_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+
+      # ── LLM — defaults to the same provider as Hermes ─────────────────────
+      # Override OPEN_NOTEBOOK_LLM_BASE_URL in .env if you want a different model.
+      - OPENAI_BASE_URL=${OPEN_NOTEBOOK_LLM_BASE_URL:-${LLAMACPP_BASE_URL:-http://host.docker.internal:8080/v1}}
+      - OPENAI_DEFAULT_MODEL=${OPEN_NOTEBOOK_LLM_MODEL:-${LLAMACPP_MODEL_NAME:-}}
+
+      # ── Authentication (optional) ─────────────────────────────────────────
+      # Set OPEN_NOTEBOOK_PASSWORD to require a password for the UI and REST API.
+      # Omit or leave empty for local-only use (web UI is open).
+      - OPEN_NOTEBOOK_PASSWORD=${OPEN_NOTEBOOK_PASSWORD:-}
+
+    volumes:
+      - open-notebook-data:/app/data
+      - ./open-notebook/entrypoint.sh:/entrypoint-pai.sh:ro
+      - ./open-notebook/provision.py:/app/provision.py:ro
+      #
+      # ── Optional: export AI notes to workspace (disabled by default) ───────
+      # Enables git-tracking of AI-generated research notes alongside code.
+      # Creates a .open-notebook-exports/ dir inside WORKSPACE_DIR.
+      # Enabling this is SAFE: it binds a prefixed subdirectory only, not the
+      # whole workspace. inotifywait will see exports written here and trigger
+      # a CodeGraph reindex, making them searchable as semantic notes.
+      # Uncomment both lines below to enable:
+      # - type: bind
+      #   source: ${WORKSPACE_DIR}/.open-notebook-exports
+      #   target: /app/exports
+      #   bind:
+      #     create_host_path: true
+
+    entrypoint: [ "/bin/sh", "/entrypoint-pai.sh" ]
+    command: [ "/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf" ]
+
+    extra_hosts:
+      # Allows open-notebook to reach host services (e.g. a local Ollama).
+      - "host.docker.internal:host-gateway"
+
+  # ── Service overrides ──────────────────────────────────────────────────────
+  # These blocks extend services defined in docker-compose.yaml.
+
+  mcp-server:
+    # Inject OPEN_NOTEBOOK_URL so notebook_ops MCP tool activates.
+    # In the base stack (without this overlay), OPEN_NOTEBOOK_URL is unset
+    # and notebook_ops returns {"available":false} — graceful no-op.
+    environment:
+      - OPEN_NOTEBOOK_URL=http://open-notebook:5055
+
+  # Bump embeddings memory ceiling: now serves both CodeGraph and Open Notebook.
+  embeddings:
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "1.0"
+
+volumes:
+  surreal-data:
+  open-notebook-data:

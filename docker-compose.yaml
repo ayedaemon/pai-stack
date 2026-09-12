@@ -40,6 +40,10 @@ services:
       - FS_NOTIFIER_DEBOUNCE_SECONDS=${FS_NOTIFIER_DEBOUNCE_SECONDS:-30}
       - FS_NOTIFIER_WATCH_PATH=/opt/data/workspace
       - EMBEDDINGS_URL=http://embeddings:8080/v1
+      - MNEMOSYNE_DATA_DIR=/opt/hermes/data/mnemosyne/data
+      - MNEMOSYNE_AUTO_SLEEP_ENABLED=true
+      - MNEMOSYNE_AUTO_SLEEP_THRESHOLD=30
+      - MNEMOSYNE_SELF_ECHO_ENABLED=1
     ports:
       - "9119:9119"
       - "8642:8642"

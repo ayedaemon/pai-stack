@@ -45,3 +45,22 @@ build:  ## Build container images
 
 clean:  ## Stop containers and remove persisted volumes (destroys hermes & codegraph state)
 	docker compose down -v
+
+# ── Open Notebook (optional extended stack) ───────────────────────────────────
+# Targets below use both compose files. Run `make up` for the base stack only.
+NOTEBOOK_COMPOSE_FILE := docker-compose.yaml:docker-compose.open-notebook.yml
+
+up-all: check-workspace  ## Start base stack + Open Notebook research stack
+	COMPOSE_FILE=$(NOTEBOOK_COMPOSE_FILE) docker compose up -d
+
+down-all:  ## Stop base stack + Open Notebook
+	COMPOSE_FILE=$(NOTEBOOK_COMPOSE_FILE) docker compose down
+
+logs-all:  ## Tail logs for all services including Open Notebook
+	COMPOSE_FILE=$(NOTEBOOK_COMPOSE_FILE) docker compose logs -f
+
+status-all:  ## Show status of all services including Open Notebook
+	COMPOSE_FILE=$(NOTEBOOK_COMPOSE_FILE) docker compose ps
+
+clean-all:  ## Stop and remove ALL volumes including Open Notebook data (DESTRUCTIVE)
+	COMPOSE_FILE=$(NOTEBOOK_COMPOSE_FILE) docker compose down -v

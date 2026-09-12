@@ -55,12 +55,34 @@ class EmbeddingResponse(BaseModel):
     usage: UsageInfo
 
 
+class ModelItem(BaseModel):
+    id: str
+    object: str = "model"
+    created: int = Field(default_factory=lambda: int(time.time()))
+    owned_by: str = "pai-stack"
+
+
+class ModelListResponse(BaseModel):
+    object: str = "list"
+    data: List[ModelItem]
+
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
         "model": MODEL_NAME,
     }
+
+
+@app.get("/v1/models", response_model=ModelListResponse)
+@app.get("/models", response_model=ModelListResponse)
+def list_models():
+    return ModelListResponse(
+        data=[
+            ModelItem(id=MODEL_NAME)
+        ]
+    )
 
 
 @app.post("/v1/embeddings", response_model=EmbeddingResponse)

@@ -1,0 +1,51 @@
+{
+  "name": "notebook_ops",
+  "description": "Query and manage the Open Notebook research knowledge base. Use for external knowledge: RFCs, papers, API docs, web articles — anything NOT in the codebase. Falls back gracefully with {\"available\":false} when Open Notebook is not running (base stack without overlay).",
+  "command": ["sh", "run.sh"],
+  "timeout": 30,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["list_notebooks", "create_notebook", "search", "add_note", "add_source_url"],
+        "description": "Operation to perform. list_notebooks: list all notebooks. create_notebook: create a new notebook by name. search: full-text or vector search across notebook content. add_note: save text content as a permanent note. add_source_url: ingest a URL (article, doc, RFC) into a notebook."
+      },
+      "notebook_id": {
+        "type": "string",
+        "description": "Target notebook ID (SurrealDB record ID, e.g. 'notebook:abc123'). Required for search, add_note, add_source_url."
+      },
+      "notebook_name": {
+        "type": "string",
+        "description": "Notebook name for create_notebook action."
+      },
+      "notebook_description": {
+        "type": "string",
+        "description": "Optional description for create_notebook action."
+      },
+      "query": {
+        "type": "string",
+        "description": "Search query string (for search action)."
+      },
+      "search_type": {
+        "type": "string",
+        "enum": ["text", "vector"],
+        "default": "vector",
+        "description": "Search mode: vector=semantic similarity, text=keyword. Default: vector."
+      },
+      "title": {
+        "type": "string",
+        "description": "Title for add_note or add_source_url actions."
+      },
+      "content": {
+        "type": "string",
+        "description": "Text content to save as a note (for add_note action)."
+      },
+      "url": {
+        "type": "string",
+        "description": "URL to ingest as a source (for add_source_url action)."
+      }
+    },
+    "required": ["action"]
+  }
+}

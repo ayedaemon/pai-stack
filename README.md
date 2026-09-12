@@ -15,6 +15,15 @@ All services operate directly on your local workspace directory mounted from the
 | **Embeddings** | `8088` | Lightweight FastEmbed ONNX server (`nomic-embed-text-v1.5`) providing OpenAI-compatible embeddings for CodeGraph and Hermes KB. |
 | **MCP Server** | `8000` | Model Context Protocol server exposing bundled development tools and skills to Hermes. |
 
+### Extended Stack (opt-in)
+
+Activate with `make up-all`. Adds a research knowledge base layer. No impact on the base stack.
+
+| Service | Port | Description |
+|---|---|---|
+| **SurrealDB** | internal only | Database backend for Open Notebook. No host port (avoids conflict with MCP Server on 8000). |
+| **Open Notebook** | `8502` (UI), `5055` (API) | Self-hosted research knowledge base. Ingest URLs, PDFs, and text; search and query with AI. Shares the `embeddings` container (no extra RAM for a second model). |
+
 ---
 
 ## Architecture
@@ -84,12 +93,29 @@ Host Machine (WORKSPACE_DIR)
 | `make build` | Build / rebuild container images |
 | `make clean` | Stop containers and remove persisted volumes (`hermes-data`, `codegraph-data`) |
 
+### Extended Stack Commands
+
+| Command | Action |
+|---|---|
+| `make up-all` | Start base stack **+ Open Notebook** (surrealdb + open-notebook) |
+| `make down-all` | Stop base stack + Open Notebook |
+| `make logs-all` | Tail logs for all services including Open Notebook |
+| `make status-all` | View all containers including Open Notebook |
+| `make clean-all` | Stop and remove ALL volumes including Open Notebook data (**DESTRUCTIVE**) |
+
 ---
 
 ## Accessing Services
+
+### Base Stack
 
 - **Hermes Gateway & Dashboard**: [http://localhost:9119](http://localhost:9119) (or port `8642`)
 - **CodeGraph Visualizer**: [http://localhost:20128/viz/](http://localhost:20128/viz/)
 - **CodeGraph API**: [http://localhost:20128/search?q=query&type=hybrid](http://localhost:20128/search?q=query&type=hybrid)
 - **Embeddings API**: [http://localhost:8088/v1/embeddings](http://localhost:8088/v1/embeddings) (`GET /health`)
 - **MCP Server**: [http://localhost:8000/mcp](http://localhost:8000/mcp)
+
+### Extended Stack (`make up-all`)
+
+- **Open Notebook UI**: [http://localhost:8502](http://localhost:8502)
+- **Open Notebook API**: [http://localhost:5055](http://localhost:5055) (used by `notebook_ops` MCP tool)
