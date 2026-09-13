@@ -13,8 +13,7 @@ code intelligence, semantic search, read-write workspace access, and procedural 
 | Service | Port | Role |
 |---|---|---|
 | **hermes** | 9119 / 8642 | AI agent gateway + web dashboard (with native Mnemosyne memory) |
-| **codegraph** | 20128 | Code intelligence: AST (Tree-sitter) + ripgrep full-text + semantic vector search |
-| **embeddings** | 8080 (internal), 8088 (host) | Embedding model server (nomic-embed-text-v1.5, OpenAI-compatible API) |
+| **graft** | 20128 | Code intelligence: AST + semantic search (via MCP) |
 | **mcp-server** | 8000 | MCP server: bundled skills (resources) and tools |
 | **surrealdb** | 8000 (internal only) | Database for Open Notebook — **opt-in**, only with `make up-all` |
 | **open-notebook** | 8502 (UI), 5055 (API) | Research Brain: external knowledge store — **opt-in**, only with `make up-all` |
@@ -24,48 +23,46 @@ code intelligence, semantic search, read-write workspace access, and procedural 
 | Host path | Container path | Service | Access |
 |---|---|---|---|
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | hermes | **read-write** |
-| `$WORKSPACE_DIR/$CODEGRAPH_SUBDIR` | `/opt/data/workspace` | codegraph | read-only |
+| `$WORKSPACE_DIR` | `/opt/data/workspace` | graft | read-only (or read-write for cache) |
 
-Both hermes and codegraph mount the same workspace path (`/opt/data/workspace`), so path references
-are consistent across containers. Hermes writes files → codegraph indexes them on next reindex.
+Both hermes and graft mount the same workspace path (`/opt/data/workspace`), so path references
+are consistent across containers. Graft natively detects file changes (drift) in real-time.
 Hermes can also write helper scripts and scratch tools to `/opt/data`.
 
 > Open Notebook and SurrealDB use **only named Docker volumes** (`surreal-data`, `open-notebook-data`).
-> They do NOT bind-mount `WORKSPACE_DIR`. This is intentional: Hermes's `fs-notifier.sh` watches
-> `WORKSPACE_DIR` and triggers CodeGraph reindexes on changes. Notebook blobs in the workspace
-> would cause constant spurious reindexes and pollute code-search results.
+> They do NOT bind-mount `WORKSPACE_DIR`. This is intentional: writing notebook blobs in the workspace
+> would cause constant spurious Graft graph rebuilds and pollute code-search results.
 
 ## Service Interconnection
 
 ```
 hermes ──→ [Mnemosyne: SQLite]  local persistent memory (working/episodic memory, knowledge graph)
-hermes ──→ codegraph:20128      code intelligence queries (symbols, search, impact, map)
+hermes ──→ graft:20128          code intelligence via MCP (streamable-http)
 hermes ──→ mcp-server:8000      skills + tools via MCP protocol (streamable-http)
-codegraph ──→ embeddings:8080   vector embeddings for semantic search
 
 ── opt-in (make up-all) ──────────────────────────────────────────────────────
 open-notebook ──→ surrealdb:8000    database (internal network, no host port)
-open-notebook ──→ embeddings:8080   shared embedding model (same as CodeGraph)
+open-notebook ──→ embeddings:8080   dedicated embedding model server (nomic-embed)
 hermes ──→ mcp-server ──→ notebook_ops ──→ open-notebook:5055   research queries
 ```
 
-Hermes does NOT call `embeddings:8080` directly. CodeGraph handles semantic search internally.
+Hermes does NOT call `embeddings:8080` directly. Open Notebook uses it for vector search.
 Hermes does NOT call `open-notebook:5055` directly. `notebook_ops` MCP tool handles it.
 Mnemosyne runs embedded inside Hermes using local ONNX fastembed and SQLite (`hermes-data` volume).
 
 ## How Hermes Uses Each Service
 
-### CodeGraph — primary retrieval (use before reading raw files)
+### Graft — primary retrieval (use before reading raw files)
 
-The main token-efficiency mechanism. Converts "read 200 files" into "query 2 endpoints".
+The main token-efficiency mechanism. Converts "read 200 files" into "query via MCP".
 
 ```
-GET /search?q=<term>&type=hybrid   → AST symbols + ripgrep text + semantic (one call)
-GET /search?q=<term>&type=semantic → pure semantic/doc/notes search
-GET /symbols/<name>                → definition + callers + callees in one call
-GET /impact/<path>                 → blast radius of a file change
-GET /map                           → most-connected files overview
-POST /reindex                      → trigger reindex after writing files
+graft_find_code        → find implementation details and explanations
+graft_file_api         → inspect file method/type signatures without bodies
+graft_trace_calls      → inspect callers/callees and blast radius
+graft_find_all         → regex search grouped by symbol
+graft_repo_map         → high-level repo orientation and hubs
+graft_check_freshness  → verify index freshness
 ```
 
 ### MCP Server — procedural knowledge (skills as MCP resources)
@@ -81,7 +78,7 @@ Skills are markdown files baked into the mcp-server image — zero model tokens 
 | `skill://react` | React/Next.js conventions |
 | `skill://nodejs` | Node.js conventions |
 | `skill://postgres` | Postgres conventions |
-| `skill://codegraph` | CodeGraph query procedures |
+| `skill://graft` | Graft query procedures and tools reference |
 | `skill://planning` | planning-with-files discipline (task_plan.md etc.) |
 | `skill://_TEMPLATE` | Template for new custom skills |
 | `skill://agents` | Ground rules injected at session start |
@@ -94,11 +91,10 @@ Skills are markdown files baked into the mcp-server image — zero model tokens 
 
 All container actions are audited to `/app/logs/docker-ops.log` on the persistent `mcp-logs` volume.
 
-### Embeddings — indirect (via CodeGraph only)
+### Embeddings — Open Notebook only
 
 Hermes does NOT call the embeddings service directly.
-CodeGraph uses it for `/search?type=semantic` and `/search?type=hybrid`.
-Semantic search over workspace files is available through CodeGraph at no extra cost.
+It is primarily used by the `open-notebook` service.
 
 ### Mnemosyne — agent memory (decisions, execution outcomes, lessons learned)
 
@@ -112,7 +108,7 @@ using embedded SQLite (`/opt/hermes/data/mnemosyne/data/mnemosyne.db`) and local
 
 | Retrieval System | Scope | Storage | Role |
 |---|---|---|---|
-| **CodeGraph** | Workspace code & files | `/data` on codegraph-data | AST symbols, full-text grep, code embeddings |
+| **Graft** | Workspace code & files | `/data` on graft-cache | AST symbols, semantic search (via MCP) |
 | **Open Notebook** | External knowledge | SurrealDB & Open Notebook volumes | RFCs, API docs, papers, research notes |
 | **Mnemosyne** | Agent experience | `/opt/hermes/data/mnemosyne` | Decisions, prior fixes, session continuity, user preferences |
 
@@ -127,7 +123,7 @@ using embedded SQLite (`/opt/hermes/data/mnemosyne/data/mnemosyne.db`) and local
 | App state (DB, sessions) | `hermes-data` Docker volume | Automatically — never touches workspace |
 
 Planning files (`task_plan.md`, `findings.md`, `progress.md`) are developer artifacts.
-They live in the project, get indexed by CodeGraph, and are searchable in future sessions.
+They live in the project, get indexed by Graft, and are searchable in future sessions.
 
 ## Planning Discipline (planning-with-files)
 
@@ -164,4 +160,4 @@ See `skill://planning` for the full discipline.
 2. Read [`mcp-server/kb/AGENTS.md`](mcp-server/kb/AGENTS.md) for operational ground rules
 3. Read [`hermes/config.yaml`](hermes/config.yaml) for the full system prompt
 4. Check [`docker-compose.yaml`](docker-compose.yaml) for current mount paths and port bindings
-5. For code questions: query `http://codegraph:20128/search?type=hybrid` (if running inside stack) or inspect `codegraph/server.js` for the API surface
+5. For code questions: query `graft` tools via Hermes directly (e.g. `graft_find_code`, `graft_trace_calls`)

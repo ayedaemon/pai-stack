@@ -6,9 +6,13 @@ import logging
 import os
 import subprocess
 import sys
+from typing import Any
 from pathlib import Path
 
+from pydantic import ConfigDict
 from mcp.server import MCPServer
+from mcp.server.mcpserver.tools.base import Tool
+from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase, FuncMetadata
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -20,6 +24,14 @@ SKILLS_DIR = Path("/app/skills")
 KB_DIR = Path("/app/kb")
 
 mcp = MCPServer("pai-tools")
+
+
+class DynamicArgsModel(ArgModelBase):
+    """Flexible model that accepts arbitrary arguments from tool.json schemas."""
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    def model_dump_one_level(self) -> dict[str, Any]:
+        return dict(self)
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -55,7 +67,7 @@ def _register_tool(config: dict, tool_dir: Path):
     timeout = config.get("timeout", 60)
     input_schema = config.get("inputSchema", {"type": "object", "properties": {}})
 
-    async def handler(arguments: dict) -> str:
+    async def handler(**arguments) -> str:
         env = {**os.environ, "TOOL_INPUT": json.dumps(arguments)}
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -75,11 +87,20 @@ def _register_tool(config: dict, tool_dir: Path):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-    mcp.tool(
+    tool = Tool(
+        fn=handler,
         name=name,
         description=description,
-        input_schema=input_schema,
-    )(handler)
+        parameters=input_schema,
+        fn_metadata=FuncMetadata(
+            arg_model=DynamicArgsModel,
+            output_schema=None,
+            output_model=None,
+            wrap_output=False,
+        ),
+        is_async=True,
+    )
+    mcp._tool_manager._tools[name] = tool
 
 
 def discover_skills():

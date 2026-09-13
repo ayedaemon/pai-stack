@@ -1,7 +1,7 @@
 # Primary: local or remote llama.cpp / Ollama / vLLM (OpenAI-compatible). Fallback: OpenRouter / Mistral / Kilo.
 # NOTE: provider name MUST NOT be llamacpp/llama.cpp/llama-cpp — use generic custom name.
 providers:
-  office1:
+  local:
     api: ${LLAMACPP_BASE_URL}
     key_env: OPENAI_API_KEY
 
@@ -18,6 +18,11 @@ fallback_providers:
 
 database:
   journal_mode: wal
+
+# ── Model & Provider ───────────────────────────────────────────────────────
+model:
+  default: ${LLAMACPP_MODEL_NAME}
+  provider: local
 
 # ── Kanban: board-wide default model for spawned workers ───────────────────
 kanban:
@@ -43,15 +48,14 @@ agent:
       Hermes writes project files to this path after user confirmation.
       Extra helper scripts, custom tools, and temporary files live in /opt/data.
 
-    CodeGraph  (http://codegraph:20128)
-      Primary retrieval layer. Query BEFORE reading raw files.
-      Endpoints:
-        GET /search?q=<term>&type=hybrid    → AST + ripgrep + semantic (one call covers all)
-        GET /search?q=<term>&type=semantic  → pure semantic/doc/notes search
-        GET /symbols/<name>                 → symbol definition + callers + callees
-        GET /impact/<path>                  → blast radius of a file change
-        GET /map                            → most-connected files overview
-        POST /reindex                       → trigger reindex after writing files
+    Graft  (Code Intelligence via MCP)
+      Primary retrieval layer. Use these tools BEFORE reading raw files:
+        graft_find_code        → find implementation details and explanations
+        graft_file_api         → inspect file method/type signatures without bodies
+        graft_trace_calls      → inspect callers/callees and blast radius
+        graft_find_all         → regex search grouped by symbol
+        graft_repo_map         → high-level repo orientation and hubs
+        graft_check_freshness  → verify index freshness
 
     MCP Server  (http://mcp-server:8000/mcp)
       Bundled procedural skills (fetched as MCP resources, negligible token cost):
@@ -129,12 +133,12 @@ agent:
 
     A) Retrieve before reading
        Prior lesson/decision → mnemosyne_recall(query=...) to check known solutions
-       Code/symbol question  → GET codegraph:20128/symbols/<name> or /search?type=hybrid
-       Doc/notes/decision    → GET codegraph:20128/search?type=semantic
+       Code/symbol question  → graft_trace_calls(symbol=...) or graft_find_code(question=...)
+       Doc/notes/decision    → graft_find_code(question=...)
        External RFC/spec/doc → notebook_ops(action=search, search_type=vector)
-                               Falls back to CodeGraph if notebook_ops returns {"available":false}
+                               Falls back to Graft if notebook_ops returns {"available":false}
        Stack unknown         → fetch skill://stack-discovery first, scan /opt/data/workspace/<project>/
-       Relevant procedure    → fetch skill://<name> (python, docker, react, nodejs, postgres, codegraph)
+       Relevant procedure    → fetch skill://<name> (python, docker, react, nodejs, postgres, graft)
        Open Notebook usage   → fetch skill://open-notebook before any notebook_ops calls
        After every 2 read/search operations → write key findings to findings.md
 
@@ -147,7 +151,7 @@ agent:
        Wait for explicit confirmation.
        Then write to /opt/data/workspace/<project>/<file>.
        After any write → update progress.md with what changed.
-       After writing → POST codegraph:20128/reindex if new files were added.
+       After writing → call graft_check_freshness to ensure index is updated if needed.
        Durable insight/lesson→ mnemosyne_remember(content=...) to persist fixes/conventions.
 
     D) Update the plan
@@ -157,7 +161,7 @@ agent:
     E) Cite sources in every response
        /opt/data/workspace files: path:line  (e.g. auth/views.py:55)
        MCP skills: skill://<name>
-       CodeGraph results: include endpoint  (e.g. codegraph:/symbols/login_handler)
+       Graft results: include tool used  (e.g. graft_trace_calls)
 
     F) 3-strike error protocol
        Attempt 1: diagnose and apply targeted fix
@@ -165,14 +169,15 @@ agent:
        Attempt 3: question assumptions, search for solutions, consider updating the plan
        After 3 failures: escalate to user — explain what was tried, share the exact error
 
-    ═══ CONSTRAINTS ════════════════════════════════════════════════════
+    # ── CONSTRAINTS ════════════════════════════════════════════════════════
 
-    Never write raw secrets to any file. Use references (env var name, vault path).
-    Never guess beyond retrieved context. Name the knowledge gap explicitly.
-    Never skip planning for complex tasks. task_plan.md is non-negotiable for 3+ step work.
-    Never bulk-read a directory without first querying CodeGraph.
+        Never write raw secrets to any file. Use references (env var name, vault path).
+        Never guess beyond retrieved context. Name the knowledge gap explicitly.
+        Never skip planning for complex tasks. task_plan.md is non-negotiable for 3+ step work.
+        Never bulk-read a directory without first querying Graft.
+        Graft empty + no session context → scan /opt/data/workspace/ to discover projects before concluding none exist.
 
-# ── Knowledge Base (disabled — CodeGraph owns all retrieval) ───────────────
+# ── Knowledge Base (disabled — Graft owns all retrieval) ───────────────
 knowledgebase:
   enabled: false
 
@@ -180,12 +185,11 @@ knowledgebase:
 memory:
   provider: mnemosyne
   memory_enabled: false
+  user_profile_enabled: false
   write_approval: false
   mnemosyne:
     auto_sleep: true
     sleep_threshold: 30
-
-user_profile_enabled: false
 
 # ── Platforms ────────────────────────────────────────────────────────────
 platforms:
@@ -197,11 +201,7 @@ platform_hints:
   tui: "You are in a TUI session. Verbose, structured output is acceptable. Always cite sources for factual claims."
   api: "You are serving an API caller. Return structured, complete responses with full citations."
 
-# ── CodeGraph (code intelligence) ─────────────────────────────────────────
-codegraph:
-  api_url: http://codegraph:20128
-
-_config_version: 42
+_config_version: 43
 
 # ── MCP Server (tools + skills + AGENTS.md) ────────────────────────────────
 mcp_servers:
@@ -211,3 +211,7 @@ mcp_servers:
     timeout: 30
     tools:
       resources: true
+  graft:
+    url: "http://graft:20128/mcp"
+    transport: sse
+    timeout: 30

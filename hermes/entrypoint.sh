@@ -81,17 +81,5 @@ print(hash_password(os.environ[\"HERMES_DASHBOARD_BASIC_AUTH_PASSWORD\"]))
 fi
 
 export HERMES_CONFIG=/opt/hermes/data/hermes-config.yaml
-export FS_NOTIFIER_WATCH_PATH="${FS_NOTIFIER_WATCH_PATH:-${DATA_DIR}}"
-
-# Start fs-notifier in background
-if [ "${FS_NOTIFIER_ENABLED:-true}" = "true" ]; then
-    if [ -f /fs-notifier.sh ]; then
-        /bin/sh /fs-notifier.sh &
-    elif [ -f /hermes/fs-notifier.sh ]; then
-        /bin/sh /hermes/fs-notifier.sh &
-    else
-        echo "[WARN] fs-notifier.sh not found, file watching disabled"
-    fi
-fi
 
 exec /opt/hermes/docker/entrypoint-dispatch.sh "$@"

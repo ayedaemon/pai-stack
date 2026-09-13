@@ -1,10 +1,29 @@
 # pai-stack Makefile
-# Manages the 4 core services: hermes, codegraph, embeddings, and mcp-server
+# Manages base services: hermes, graft, mcp-server
+# and optional extended stack: surrealdb and open-notebook
 
-.PHONY: help check-workspace up down restart logs status build clean
+.PHONY: help check-workspace \
+	up down restart logs status build clean config \
+	up-all down-all restart-all logs-all status-all build-all clean-all config-all
 
 WORKSPACE_DIR ?= $(shell grep -E '^WORKSPACE_DIR=' .env 2>/dev/null | cut -d= -f2- | tr -d '\"' | tr -d "'")
-CODEGRAPH_SUBDIR ?= $(shell grep -E '^CODEGRAPH_SUBDIR=' .env 2>/dev/null | cut -d= -f2- | tr -d '\"' | tr -d "'")
+
+# Compose file definitions
+COMPOSE_BASE := -f docker-compose.yaml
+COMPOSE_NOTEBOOK := -f docker-compose.open-notebook.yml
+COMPOSE_ALL := $(COMPOSE_BASE) $(COMPOSE_NOTEBOOK)
+
+DOCKER_COMPOSE_BASE := docker compose $(COMPOSE_BASE)
+DOCKER_COMPOSE_ALL := docker compose $(COMPOSE_ALL)
+
+# Dynamic stack selector: pass ALL=1 or STACK=all to any base command
+ifeq ($(ALL),1)
+  COMPOSE := $(DOCKER_COMPOSE_ALL)
+else ifeq ($(STACK),all)
+  COMPOSE := $(DOCKER_COMPOSE_ALL)
+else
+  COMPOSE := $(DOCKER_COMPOSE_BASE)
+endif
 
 help:  ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -20,47 +39,56 @@ check-workspace:  ## Verify that WORKSPACE_DIR exists on the host
 		echo "Please create the directory on your host machine or configure a valid path in .env."; \
 		exit 1; \
 	fi
-	@if [ -n "$(CODEGRAPH_SUBDIR)" ] && [ "$(CODEGRAPH_SUBDIR)" != "." ] && [ ! -d "$(WORKSPACE_DIR)/$(CODEGRAPH_SUBDIR)" ]; then \
-		echo "\033[31m[ERROR]\033[0m CODEGRAPH_SUBDIR '$(WORKSPACE_DIR)/$(CODEGRAPH_SUBDIR)' does not exist on the host."; \
-		exit 1; \
-	fi
 
-up: check-workspace  ## Start all services in the background
-	docker compose up -d
+# ── Base Stack (or Dynamic via ALL=1) ─────────────────────────────────────────
 
-down:  ## Stop all services
-	docker compose down
+up: check-workspace  ## Start services in background (use ALL=1 for full stack, s=<service>)
+	$(COMPOSE) up -d $(s)
 
-restart:  ## Restart all services
-	docker compose restart
+down:  ## Stop services (use ALL=1 for full stack)
+	$(COMPOSE) down
 
-logs:  ## Tail logs for all services
-	docker compose logs -f
+restart:  ## Restart services (optional: s=<service>, ALL=1)
+	$(COMPOSE) restart $(s)
 
-status:  ## Show running containers and health status
-	docker compose ps
+logs:  ## Tail logs for services (optional: s=<service>, ALL=1)
+	$(COMPOSE) logs -f $(s)
 
-build:  ## Build container images
-	docker compose build
+status:  ## Show running containers and health status (optional: s=<service>, ALL=1)
+	$(COMPOSE) ps $(s)
 
-clean:  ## Stop containers and remove persisted volumes (destroys hermes & codegraph state)
-	docker compose down -v
+build:  ## Build container images (optional: s=<service>, ALL=1)
+	$(COMPOSE) build $(s)
+
+clean:  ## Stop containers and remove persisted base volumes (destroys hermes & graft state)
+	$(COMPOSE) down -v
+
+config:  ## Validate and view compose config (use ALL=1 for full stack)
+	$(COMPOSE) config
 
 # ── Open Notebook (optional extended stack) ───────────────────────────────────
-# Targets below use both compose files. Run `make up` for the base stack only.
-NOTEBOOK_COMPOSE_FILE := docker-compose.yaml:docker-compose.open-notebook.yml
+# Explicit targets for base stack + Open Notebook research stack
 
-up-all: check-workspace  ## Start base stack + Open Notebook research stack
-	COMPOSE_FILE=$(NOTEBOOK_COMPOSE_FILE) docker compose up -d
+up-all: check-workspace  ## Start base stack + Open Notebook research stack (optional: s=<service>)
+	$(DOCKER_COMPOSE_ALL) up -d $(s)
 
 down-all:  ## Stop base stack + Open Notebook
-	COMPOSE_FILE=$(NOTEBOOK_COMPOSE_FILE) docker compose down
+	$(DOCKER_COMPOSE_ALL) down
 
-logs-all:  ## Tail logs for all services including Open Notebook
-	COMPOSE_FILE=$(NOTEBOOK_COMPOSE_FILE) docker compose logs -f
+restart-all:  ## Restart all services including Open Notebook (optional: s=<service>)
+	$(DOCKER_COMPOSE_ALL) restart $(s)
 
-status-all:  ## Show status of all services including Open Notebook
-	COMPOSE_FILE=$(NOTEBOOK_COMPOSE_FILE) docker compose ps
+logs-all:  ## Tail logs for all services including Open Notebook (optional: s=<service>)
+	$(DOCKER_COMPOSE_ALL) logs -f $(s)
+
+status-all:  ## Show status of all services including Open Notebook (optional: s=<service>)
+	$(DOCKER_COMPOSE_ALL) ps $(s)
+
+build-all:  ## Build images for all services (optional: s=<service>)
+	$(DOCKER_COMPOSE_ALL) build $(s)
 
 clean-all:  ## Stop and remove ALL volumes including Open Notebook data (DESTRUCTIVE)
-	COMPOSE_FILE=$(NOTEBOOK_COMPOSE_FILE) docker compose down -v
+	$(DOCKER_COMPOSE_ALL) down -v
+
+config-all:  ## Validate and view merged compose config for all services
+	$(DOCKER_COMPOSE_ALL) config

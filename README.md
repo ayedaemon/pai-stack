@@ -85,23 +85,27 @@ Host Machine (WORKSPACE_DIR)
 
 | Command | Action |
 |---|---|
-| `make up` | Validate workspace existence and start services in background |
-| `make down` | Stop running services |
-| `make restart` | Restart all services |
-| `make logs` | Tail logs for all containers |
-| `make status` | View running containers and health status |
-| `make build` | Build / rebuild container images |
+| `make up` | Validate workspace existence and start services in background (supports `ALL=1`, `s=<service>`) |
+| `make down` | Stop running services (supports `ALL=1`) |
+| `make restart` | Restart services (supports `ALL=1`, `s=<service>`) |
+| `make logs` | Tail logs for containers (supports `ALL=1`, `s=<service>`) |
+| `make status` | View running containers and health status (supports `ALL=1`, `s=<service>`) |
+| `make build` | Build / rebuild container images (supports `ALL=1`, `s=<service>`) |
 | `make clean` | Stop containers and remove persisted volumes (`hermes-data`, `codegraph-data`) |
+| `make config` | Validate and resolve Docker Compose configuration (supports `ALL=1`) |
 
 ### Extended Stack Commands
 
 | Command | Action |
 |---|---|
-| `make up-all` | Start base stack **+ Open Notebook** (surrealdb + open-notebook) |
+| `make up-all` | Start base stack **+ Open Notebook** (surrealdb + open-notebook; optional `s=<service>`) |
 | `make down-all` | Stop base stack + Open Notebook |
-| `make logs-all` | Tail logs for all services including Open Notebook |
-| `make status-all` | View all containers including Open Notebook |
+| `make restart-all` | Restart all services including Open Notebook (optional `s=<service>`) |
+| `make logs-all` | Tail logs for all services including Open Notebook (optional `s=<service>`) |
+| `make status-all` | View all containers including Open Notebook (optional `s=<service>`) |
+| `make build-all` | Build images for all services (optional `s=<service>`) |
 | `make clean-all` | Stop and remove ALL volumes including Open Notebook data (**DESTRUCTIVE**) |
+| `make config-all` | Validate and view merged compose config for all services |
 
 ---
 

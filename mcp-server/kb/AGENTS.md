@@ -16,9 +16,8 @@ and builds planning artifacts — working like a developer, not a separate knowl
 | /opt/data/workspace | (bind mount) | All user code, docs, configs — read-write |
 | /opt/data | (local dir) | Scratch tools, helper scripts, and agent utilities |
 | Mnemosyne | (internal SQLite) | Local agent memory: decisions, prior fixes, session continuity |
-| CodeGraph | http://codegraph:20128 | Primary retrieval: AST + text + semantic search |
+| Graft | http://graft:20128/mcp | Primary retrieval: AST + semantic search (via MCP) |
 | MCP Server | http://mcp-server:8000/mcp | Bundled skills and tools |
-| Embeddings | http://embeddings:8080 | Used by CodeGraph — not called directly |
 
 ## Session Scope
 
@@ -29,12 +28,12 @@ Stay scoped unless user explicitly redirects.
 ## Retrieval Strategy
 
 1. **Prior lessons/decisions** → `mnemosyne_recall` first to check known solutions and constraints
-2. **Code/symbol questions** → CodeGraph first (`/symbols/<name>`, `/search?type=hybrid`)
-3. **Doc/note questions** → CodeGraph semantic search (`/search?type=semantic`)
+2. **Code/symbol questions** → Graft first (`graft_find_code`, `graft_trace_calls`)
+3. **Doc/note questions** → Graft first (`graft_find_code`)
 4. **Unknown stack** → `skill://stack-discovery` before reading any files
 5. **Procedure needed** → fetch the relevant `skill://<name>` resource
 
-Never bulk-read a directory without a prior CodeGraph search.
+Never bulk-read a directory without a prior Graft search.
 
 ## Writing to the Project
 
@@ -42,7 +41,7 @@ Never bulk-read a directory without a prior CodeGraph search.
 2. **Wait** for explicit confirmation
 3. **Write** to `/opt/data/workspace/<project>/<file>`
 4. **Update** `progress.md` with what changed
-5. **Reindex** if new files were added: `POST codegraph:20128/reindex`
+5. **Reindex** if new files were added: call `graft_check_freshness`
 
 Never write raw secrets to any file. Use references (env var name, vault path).
 
@@ -69,7 +68,7 @@ Planning files live in the project like developer artifacts:
 | `skill://react` | React/Next.js conventions (Vite, hooks, routing, Tailwind) |
 | `skill://nodejs` | Node.js conventions (package.json, ESM/CJS, Express/Nest) |
 | `skill://postgres` | Postgres conventions (ORM, migrations, schema, DATABASE_URL) |
-| `skill://codegraph` | CodeGraph query procedures and endpoint reference |
+| `skill://graft` | Graft query procedures and tools reference |
 | `skill://planning` | planning-with-files discipline (task_plan.md, findings.md, progress.md) |
 | `skill://open-notebook` | When/how to use the Open Notebook research brain and notebook_ops tool |
 | `skill://_TEMPLATE` | Template for creating new custom skills |
@@ -87,10 +86,11 @@ Fetch `skill://open-notebook` before using `notebook_ops`.
 
 ## Ground Rules
 
-1. **Retrieve before reading**: CodeGraph first, raw files second.
+1. **Retrieve before reading**: Graft first, raw files second.
 2. **Cite everything**: `path:line` for workspace files, `skill://<name>` for MCP resources.
 3. **Propose before writing**: show the user what you will write and wait for confirmation.
 4. **Plan for complex tasks**: `task_plan.md` is non-negotiable for 3+ step work.
 5. **Log all errors**: every error goes into `task_plan.md`. Never repeat the same failing action.
 6. **No secrets in files**: use references (env var, vault path).
 7. **Session-scoped**: stay on this session's project unless the user redirects.
+8. **Graft empty + no session context**: scan /opt/data/workspace/ to discover projects before concluding none exist.

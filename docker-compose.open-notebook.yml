@@ -142,14 +142,32 @@ services:
     environment:
       - OPEN_NOTEBOOK_URL=http://open-notebook:5055
 
-  # Bump embeddings memory ceiling: now serves both CodeGraph and Open Notebook.
   embeddings:
+    build:
+      context: ./embeddings
+      dockerfile: Dockerfile
+    container_name: embeddings
+    restart: unless-stopped
+    ports:
+      - "8088:8080"
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 512M
           cpus: "1.0"
+    environment:
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-ai/nomic-embed-text-v1.5}
+      - PORT=8080
+    volumes:
+      - embeddings-cache:/root/.cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 volumes:
   surreal-data:
   open-notebook-data:
+  embeddings-cache:

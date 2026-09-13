@@ -9,9 +9,7 @@ services:
     depends_on:
       mcp-server:
         condition: service_healthy
-      codegraph:
-        condition: service_healthy
-      embeddings:
+      graft:
         condition: service_healthy
     deploy:
       resources:
@@ -34,12 +32,10 @@ services:
       - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-admin}
       - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}
       - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - KILO_GATEWAY_API_KEY=${KILO_GATEWAY_API_KEY:-}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
-      - FS_NOTIFIER_DEBOUNCE_SECONDS=${FS_NOTIFIER_DEBOUNCE_SECONDS:-30}
-      - FS_NOTIFIER_WATCH_PATH=/opt/data/workspace
-      - EMBEDDINGS_URL=http://embeddings:8080/v1
       - MNEMOSYNE_DATA_DIR=/opt/hermes/data/mnemosyne/data
       - MNEMOSYNE_AUTO_SLEEP_ENABLED=true
       - MNEMOSYNE_AUTO_SLEEP_THRESHOLD=30
@@ -60,64 +56,34 @@ services:
     entrypoint: [ "/bin/sh", "/hermes-entrypoint.sh" ]
     command: gateway run
 
-  codegraph:
+  graft:
     build:
-      context: ./codegraph
+      context: ./graft
       dockerfile: Dockerfile
-    container_name: codegraph
+    container_name: graft
     restart: unless-stopped
-    depends_on:
-      embeddings:
-        condition: service_healthy
     ports:
       - "20128:20128"
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 2048M
           cpus: "1.0"
     environment:
       - WORKSPACE_PATH=/opt/data/workspace
-      - EMBEDDINGS_URL=http://embeddings:8080/v1
     volumes:
       - type: bind
-        source: ${WORKSPACE_DIR}/${CODEGRAPH_SUBDIR:-.}
+        source: ${WORKSPACE_DIR}
         target: /opt/data/workspace
-        read_only: true
         bind:
           create_host_path: false
-      - codegraph-data:/data
+      - graft-cache:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:20128/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-
-  embeddings:
-    build:
-      context: ./embeddings
-      dockerfile: Dockerfile
-    container_name: embeddings
-    restart: unless-stopped
-    ports:
-      - "8088:8080"
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "1.0"
-    environment:
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-ai/nomic-embed-text-v1.5}
-      - PORT=8080
-    volumes:
-      - embeddings-cache:/root/.cache
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
 
   mcp-server:
     build:
@@ -146,6 +112,5 @@ services:
 
 volumes:
   hermes-data:
-  codegraph-data:
-  embeddings-cache:
+  graft-cache:
   mcp-logs:
