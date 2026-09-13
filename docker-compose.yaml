@@ -72,6 +72,8 @@ services:
     environment:
       - WORKSPACE_PATH=/opt/data/workspace
     volumes:
+      - ./graft:/app
+      - /app/node_modules
       - type: bind
         source: ${WORKSPACE_DIR}
         target: /opt/data/workspace

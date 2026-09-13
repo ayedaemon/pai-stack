@@ -12,14 +12,17 @@ app.use(express.json({ limit: '50mb' }));
 
 // Start the graft MCP server via stdio
 const workspacePath = process.env.WORKSPACE_PATH || '/opt/data/workspace';
-const graftMcpProc = spawn('npx', ['graft', 'mcp', workspacePath], {
-    stdio: ['pipe', 'pipe', 'inherit'],
+// Store the index in the graft-cache volume, NOT in WORKSPACE_DIR
+const graftIndexDir = process.env.GRAFT_INDEX_DIR || '/data/graft-index';
+
+const graftMcpProc = spawn('npx', ['graft', 'mcp', workspacePath, '--dir', graftIndexDir], {
+    stdio: ['pipe', 'pipe', 'pipe'],
     env: process.env
 });
 
 // Start the graft interactive visualizer on port 20129
-const graftVizProc = spawn('npx', ['graft', 'viz', workspacePath, '--port', '20129', '--no-open'], {
-    stdio: 'inherit',
+const graftVizProc = spawn('npx', ['graft', 'viz', workspacePath, '--port', '20129', '--no-open', '--dir', graftIndexDir], {
+    stdio: 'ignore',
     env: process.env
 });
 
@@ -64,10 +67,10 @@ app.post('*', (req, res) => {
 });
 
 // Proxy everything else to the interactive visualizer
-app.use('*', createProxyMiddleware({
+app.use(createProxyMiddleware({
     target: 'http://127.0.0.1:20129',
     changeOrigin: true,
-    ws: true // proxy websockets if any
+    ws: true
 }));
 
 // Read responses from Graft MCP and forward them to the correct SSE client
