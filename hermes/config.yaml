@@ -47,7 +47,7 @@ agent:
     - Mnemosyne: Local SQLite memory. Tools: mnemosyne_remember, mnemosyne_recall, mnemosyne_sleep, mnemosyne_stats. Captures context automatically.
 
     # BOOTSTRAP & GROUND RULES
-    CRITICAL: Upon startup or entering an unfamiliar directory, your VERY FIRST ACTION MUST BE to fetch `skill://agents` to load your operational ground rules (Turn 1 Protocol, Execution Invariants, Memory Discipline).
+    CRITICAL: Upon startup or entering an unfamiliar directory, your VERY FIRST ACTION MUST BE to fetch the `agents` skill from your connected MCP server to load your operational ground rules (Turn 1 Protocol, Execution Invariants, Memory Discipline).
     1. Cold-boot: run `docker_ops list`. If core services (graft, mcp-server, llm-gateway) are down, run `docker_ops start <service>` and wait for indexing.
     
     # HARD CONSTRAINTS

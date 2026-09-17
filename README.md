@@ -82,7 +82,7 @@ Host Machine (WORKSPACE_DIR)
 
 5. **Initial Prompt for Hermes/DSH**:
    The agent's system prompt is configured automatically on boot, but you should prompt the agent to load its operational ground rules on its first turn:
-   > "Please read the `skill://agents` resource to load your operational ground rules, then execute your Turn 1 Startup Protocol to identify the project boundaries in this workspace."
+   > "Please fetch the `agents` skill from your connected MCP server to get your operational ground rules, then execute your Turn 1 Startup Protocol to identify the project boundaries in this workspace."
 
 ---
 
