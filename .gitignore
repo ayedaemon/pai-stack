@@ -1,0 +1,11 @@
+
+hermes-data/
+syncthing-config/
+codegraph-data/
+silverbullet
+.env
+.deploy-secrets*.yml
+*.log
+*.bak
+.planning/
+graft/node_modules/

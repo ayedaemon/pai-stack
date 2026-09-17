@@ -1,0 +1,28 @@
+{
+  "name": "opencode_delegate",
+  "description": "Delegate a task to the OpenCode CLI running in a dedicated container. Always provide the worktree_dir (from Hermes EXECUTION_DIR) and a pragmatic session_id (which you should explicitly commit to memory using mnemosyne_remember).",
+  "command": ["/bin/sh", "run.sh"],
+  "timeout": 3600,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "task_prompt": {
+        "type": "string",
+        "description": "The task prompt to execute."
+      },
+      "worktree_dir": {
+        "type": "string",
+        "description": "The absolute path to the project directory to isolate operations to (e.g. /opt/data/workspace/my-project)."
+      },
+      "session_id": {
+        "type": "string",
+        "description": "A semantic session ID (e.g., 'my-project-auth-refactor')."
+      },
+      "is_resume": {
+        "type": "boolean",
+        "description": "Set to true if resuming an existing session ID, false if starting a new one."
+      }
+    },
+    "required": ["task_prompt", "worktree_dir", "session_id"]
+  }
+}

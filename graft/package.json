@@ -1,0 +1,16 @@
+{
+  "name": "graft-service",
+  "version": "1.0.0",
+  "description": "Code intelligence service using Graft via MCP",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.6.0",
+    "@nanonets/graft": "latest",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "http-proxy-middleware": "^4.2.0"
+  }
+}

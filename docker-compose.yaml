@@ -1,0 +1,238 @@
+services:
+  dsh:
+    build:
+      context: ./dsh
+      dockerfile: Dockerfile
+    image: pai-stack-dsh:latest
+    container_name: dsh
+    profiles:
+      - dsh # Deactivated by default. Use `docker compose --profile dsh up -d` to run.
+    restart: unless-stopped
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+      graft:
+        condition: service_healthy
+      llm-gateway:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 3072M
+          cpus: "3.0"
+    environment:
+      - WORKSPACE_DIR=${WORKSPACE_DIR}
+    ports:
+      - "9120:9119" # Changed to 9120 to avoid conflict with Hermes
+    volumes:
+      - hermes-data:/opt/dsh/data
+      - type: bind
+        source: ${WORKSPACE_DIR}
+        target: /opt/data/workspace
+        bind:
+          create_host_path: false
+      - ./mcp-server/skills:/app/skills:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  hermes:
+    build:
+      context: ./hermes
+      dockerfile: Dockerfile
+    image: pai-stack-hermes:latest
+    container_name: hermes
+    restart: unless-stopped
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+      graft:
+        condition: service_healthy
+      llm-gateway:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 3072M
+          cpus: "3.0"
+    environment:
+      - HERMES_HOME=/opt/hermes/data
+      - HERMES_DATA_DIR=/opt/data/workspace
+      - HERMES_LAZY_INSTALL_TARGET=/opt/hermes/data/lazy-packages
+      - PYTHONPATH=/opt/hermes/data/lazy-packages
+      - LLM_GATEWAY_BASE_URL=http://llm-gateway:4000/v1
+      - HERMES_UID=${UID:-1000}
+      - HERMES_GID=${GID:-1000}
+      - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_HOST=0.0.0.0
+      - API_SERVER_HOST=0.0.0.0
+      - API_SERVER_KEY=${API_SERVER_KEY}
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-admin}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}
+      - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET}
+      - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-not-needed}
+      - HERMES_API_TIMEOUT=1800
+      - HERMES_STREAM_READ_TIMEOUT=1800
+      - HERMES_LOCAL_STREAM_STALE_TIMEOUT=1800
+      - HERMES_STREAM_STALE_TIMEOUT=1800
+      - MNEMOSYNE_DATA_DIR=/opt/hermes/data/mnemosyne/data
+      - MNEMOSYNE_AUTO_SLEEP_ENABLED=true
+      - MNEMOSYNE_AUTO_SLEEP_THRESHOLD=30
+      - MNEMOSYNE_SELF_ECHO_ENABLED=1
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+    ports:
+      - "9119:9119" 
+      - "8642:8642"
+    volumes:
+      - hermes-data:/opt/hermes/data
+      - ./hermes/config.yaml:/tmp/hermes-config.yaml.host:ro
+      - type: bind
+        source: ${WORKSPACE_DIR}
+        target: /opt/data/workspace
+        bind:
+          create_host_path: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: [ "/bin/sh", "/hermes-entrypoint.sh" ]
+    command: gateway run
+
+  graft:
+    build:
+      context: ./graft
+      dockerfile: Dockerfile
+    container_name: graft
+    restart: unless-stopped
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
+    ports:
+      - "20128:20128"
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+          cpus: "1.0"
+    environment:
+      - WORKSPACE_PATH=/opt/data/workspace
+      - GRAFT_PROVIDER=litellm
+      - GRAFT_BASE_URL=http://llm-gateway:4000
+      - GRAFT_API_KEY=${LITELLM_MASTER_KEY:-not-needed}
+      - GRAFT_MODEL=${GRAFT_MODEL:-default}
+    volumes:
+      - ./graft:/app
+      - /app/node_modules
+      - type: bind
+        source: ${WORKSPACE_DIR}
+        target: /opt/data/workspace
+        bind:
+          create_host_path: false
+      - graft-cache:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:20128/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: mcp-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-pai-stack}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - mcp-logs:/app/logs
+      - ./mcp-server/skills:/app/skills:ro
+      - ./mcp-server/kb:/app/kb:ro
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  llm-gateway:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: llm-gateway
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    command: [ "--config", "/app/config.yaml", "--port", "4000" ]
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: "1.0"
+    environment:
+      - PORT=4000
+      - STORE_MODEL_IN_DB=False
+      - OPENAI_COMPATIBLE_BASE_URL=${OPENAI_COMPATIBLE_BASE_URL:-${PRIMARY_LLM_BASE_URL:-${LLM_BASE_URL:-${LLAMACPP_BASE_URL:-http://host.docker.internal:8080/v1}}}}
+      - OPENAI_COMPATIBLE_MODEL=${OPENAI_COMPATIBLE_MODEL:-${PRIMARY_LLM_MODEL:-${LLM_MODEL:-${LLAMACPP_MODEL_NAME:-default}}}}
+      - OPENAI_COMPATIBLE_API_KEY=${OPENAI_COMPATIBLE_API_KEY:-${PRIMARY_LLM_API_KEY:-${LLM_API_KEY:-${OPENAI_API_KEY:-not-needed}}}}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - KILO_GATEWAY_API_KEY=${KILO_GATEWAY_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - LITELLM_MASTER_KEY
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+    volumes:
+      - ./llm-gateway/config.yaml:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      default:
+        aliases:
+          - litellm
+
+  opencode:
+    build:
+      context: ./opencode
+      dockerfile: Dockerfile
+    container_name: opencode
+    restart: unless-stopped
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: "1.0"
+    environment:
+      - OPENAI_API_BASE=http://llm-gateway:4000/v1
+      - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-not-needed}
+    volumes:
+      - type: bind
+        source: ${WORKSPACE_DIR}
+        target: /opt/data/workspace
+        bind:
+          create_host_path: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  hermes-data:
+  graft-cache:
+  mcp-logs:

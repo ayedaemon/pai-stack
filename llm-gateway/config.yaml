@@ -1,0 +1,325 @@
+# LiteLLM Proxy Configuration for pai-stack
+# Centralized LLM gateway managing all model routing, fallbacks, and provider credentials.
+
+model_list:
+  # ── Primary Default Routing ───────────────────────────────────────────
+  - model_name: default
+    litellm_params:
+      model: openai//Users/rishabh.umrao/.lmstudio/models/prism-ml/Ternary-Bonsai-27B-mlx-2bit/
+      api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL
+      api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
+      timeout: 1800
+      drop_params: true
+
+  # ── Upstream Language Models (Clean Canonical Names) ──────────────────
+  - model_name: Ternary-Bonsai-27B-mlx-2bit
+    litellm_params:
+      model: openai//Users/rishabh.umrao/.lmstudio/models/prism-ml/Ternary-Bonsai-27B-mlx-2bit/
+      api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL
+      api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
+      timeout: 1800
+      drop_params: true
+
+  # ── Kilo Gateway ───────────────────────────────────────────────────
+  - model_name: kilo/kilo-auto/free
+    litellm_params:
+      model: openai/kilo-auto/free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/nvidia/nemotron-3-ultra-550b-a55b:free
+    litellm_params:
+      model: openai/nvidia/nemotron-3-ultra-550b-a55b:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/dots-studio/dots-3-note-preview:free
+    litellm_params:
+      model: openai/dots-studio/dots-3-note-preview:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/nex-agi/nex-n2.5-pro:free
+    litellm_params:
+      model: openai/nex-agi/nex-n2.5-pro:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/inclusionai/ling-3.0-flash-vl:free
+    litellm_params:
+      model: openai/inclusionai/ling-3.0-flash-vl:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/nex-agi/nex-n2.5-mini:free
+    litellm_params:
+      model: openai/nex-agi/nex-n2.5-mini:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/inclusionai/ling-3.0-flash-sante:free
+    litellm_params:
+      model: openai/inclusionai/ling-3.0-flash-sante:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/inclusionai/ling-3.0-flash-fin:free
+    litellm_params:
+      model: openai/inclusionai/ling-3.0-flash-fin:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/liquid/lfm-2.5-2.6b:free
+    litellm_params:
+      model: openai/liquid/lfm-2.5-2.6b:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/nvidia/nemotron-3.5-lightning:free
+    litellm_params:
+      model: openai/nvidia/nemotron-3.5-lightning:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/cohere/north-mini-code:free
+    litellm_params:
+      model: openai/cohere/north-mini-code:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/nvidia/nemotron-3.5-content-safety:free
+    litellm_params:
+      model: openai/nvidia/nemotron-3.5-content-safety:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+    litellm_params:
+      model: openai/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/nvidia/nemotron-3-super-120b-a12b:free
+    litellm_params:
+      model: openai/nvidia/nemotron-3-super-120b-a12b:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/stepfun/step-3.7-flash:free
+    litellm_params:
+      model: openai/stepfun/step-3.7-flash:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/kilo-auto/small
+    litellm_params:
+      model: openai/kilo-auto/small
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  # ── Mistral AI ───────────────────────────────────────────────────
+  - model_name: mistral/codestral-2508
+    litellm_params:
+      model: mistral/codestral-2508
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/codestral-latest
+    litellm_params:
+      model: mistral/codestral-latest
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/mistral-code-latest
+    litellm_params:
+      model: mistral/mistral-code-latest
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/mistral-code-fim-latest
+    litellm_params:
+      model: mistral/mistral-code-fim-latest
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/voxtral-small-2507
+    litellm_params:
+      model: mistral/voxtral-small-2507
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/voxtral-small-latest
+    litellm_params:
+      model: mistral/voxtral-small-latest
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/ministral-3b-2512
+    litellm_params:
+      model: mistral/ministral-3b-2512
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/ministral-3b-latest
+    litellm_params:
+      model: mistral/ministral-3b-latest
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/ministral-8b-2512
+    litellm_params:
+      model: mistral/ministral-8b-2512
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/ministral-8b-latest
+    litellm_params:
+      model: mistral/ministral-8b-latest
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/ministral-14b-2512
+    litellm_params:
+      model: mistral/ministral-14b-2512
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/ministral-14b-latest
+    litellm_params:
+      model: mistral/ministral-14b-latest
+      api_key: os.environ/MISTRAL_API_KEY
+      timeout: 1800
+
+  - model_name: mistral/mistral-embed-2312
+    litellm_params:
+      model: mistral/mistral-embed-2312
+      api_key: os.environ/MISTRAL_API_KEY
+      mode: embedding
+      timeout: 1800
+
+  - model_name: mistral/mistral-embed
+    litellm_params:
+      model: mistral/mistral-embed
+      api_key: os.environ/MISTRAL_API_KEY
+      mode: embedding
+      timeout: 1800
+
+  - model_name: mistral/codestral-embed
+    litellm_params:
+      model: mistral/codestral-embed
+      api_key: os.environ/MISTRAL_API_KEY
+      mode: embedding
+      timeout: 1800
+
+  - model_name: mistral/codestral-embed-2505
+    litellm_params:
+      model: mistral/codestral-embed-2505
+      api_key: os.environ/MISTRAL_API_KEY
+      mode: embedding
+      timeout: 1800
+
+  # ── Google Gemini ───────────────────────────────────────────────────
+  - model_name: gemini/gemma-4-26b-a4b-it
+    litellm_params:
+      model: gemini/gemma-4-26b-a4b-it
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-flash-lite-latest
+    litellm_params:
+      model: gemini/gemini-flash-lite-latest
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-3-flash-preview
+    litellm_params:
+      model: gemini/gemini-3-flash-preview
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-3.1-flash-lite-preview
+    litellm_params:
+      model: gemini/gemini-3.1-flash-lite-preview
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-3.1-flash-lite
+    litellm_params:
+      model: gemini/gemini-3.1-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-3.5-flash
+    litellm_params:
+      model: gemini/gemini-3.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-3.5-flash-lite
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-3.5-transcribe
+    litellm_params:
+      model: gemini/gemini-3.5-transcribe
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-3.6-flash
+    litellm_params:
+      model: gemini/gemini-3.6-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-3.8-flash
+    litellm_params:
+      model: gemini/gemini-3.8-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-robotics-er-2-preview
+    litellm_params:
+      model: gemini/gemini-robotics-er-2-preview
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  # ── Cluster Embeddings ────────────────────────────────────────────────
+  - model_name: nomic-ai/nomic-embed-text-v1.5
+    litellm_params:
+      model: openai/nomic-ai/nomic-embed-text-v1.5
+      api_base: http://embeddings:8080/v1
+      api_key: not-needed
+      mode: embedding
+      timeout: 1800
+
+# ── Router & Fallback Settings ───────────────────────────────────────────
+router_settings:
+  timeout: 1800              # 30m request timeout for large models & deep reasoning
+  stream_timeout: 1800       # 30m chunk timeout for slow reasoning token streams
+  fallbacks:
+    - default:
+        - "kilo/kilo-auto/free"
+        - "mistral/codestral-latest"
+
+# ── General Settings ─────────────────────────────────────────────────────
+general_settings:
+  drop_params: true
+  request_timeout: 1800      # 30m global HTTP timeout
