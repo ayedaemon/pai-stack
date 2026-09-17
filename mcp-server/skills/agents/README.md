@@ -13,7 +13,7 @@ When interacting with the repository, this skill will be automatically loaded or
 You can explicitly trigger this skill by prompting your agent (e.g., Hermes, Claude Code, Antigravity) to use it. This forces the agent to read the structured instructions and adhere to your project's standardized workflows, preventing hallucinations.
 
 **Example Prompt:**
-> "Use the `Agents Ground Rules` skill to help me with..."
+> "Use the `agents` skill to help me with..."
 
 ## Technical Details
-This skill is parsed and served by the `pai-stack` MCP server. The operational logic, ground rules, and system prompt payloads reside in `SKILL.md`, which is mapped to `skill://Agents Ground Rules` for headless agents to fetch.
+This skill is parsed and served by the `pai-stack` MCP server. The operational logic, ground rules, and system prompt payloads reside in `SKILL.md`, which is mapped to `skill://agents` for headless agents to fetch.
