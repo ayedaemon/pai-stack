@@ -109,18 +109,16 @@ services:
       - ./open-notebook/entrypoint.sh:/entrypoint-pai.sh:ro
       - ./open-notebook/provision.py:/app/provision.py:ro
       #
-      # ── Optional: export AI notes to workspace (disabled by default) ───────
+      # ── Export AI notes to workspace (enabled) ──────────────────────────────
       # Enables git-tracking of AI-generated research notes alongside code.
       # Creates a .open-notebook-exports/ dir inside WORKSPACE_DIR.
-      # Enabling this is SAFE: it binds a prefixed subdirectory only, not the
-      # whole workspace. inotifywait will see exports written here and trigger
-      # a CodeGraph reindex, making them searchable as semantic notes.
-      # Uncomment both lines below to enable:
-      # - type: bind
-      #   source: ${WORKSPACE_DIR}/.open-notebook-exports
-      #   target: /app/exports
-      #   bind:
-      #     create_host_path: true
+      # Safe: binds a prefixed subdirectory only. inotifywait will see exports
+      # written here and trigger a CodeGraph reindex, making them searchable.
+      - type: bind
+        source: ${WORKSPACE_DIR}/.open-notebook-exports
+        target: /app/exports
+        bind:
+          create_host_path: true
 
     entrypoint: [ "/bin/sh", "/entrypoint-pai.sh" ]
     command: [ "/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf" ]

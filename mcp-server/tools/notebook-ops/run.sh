@@ -18,7 +18,7 @@
 set -e
 
 OPEN_NOTEBOOK_URL="${OPEN_NOTEBOOK_URL:-}"
-ALLOWED_ACTIONS="list_notebooks create_notebook search add_note add_source_url"
+ALLOWED_ACTIONS="list_notebooks create_notebook search add_note add_source_url poll_source_status get_source add_source_file ask_notebook get_notebook"
 
 # ── Graceful no-op when overlay is not active ──────────────────────────────
 if [ -z "$OPEN_NOTEBOOK_URL" ]; then
@@ -36,6 +36,11 @@ SEARCH_TYPE=$(printf '%s' "$TOOL_INPUT" | jq -r '.search_type // "vector"' 2>/de
 TITLE=$(printf '%s' "$TOOL_INPUT" | jq -r '.title // ""' 2>/dev/null)
 CONTENT=$(printf '%s' "$TOOL_INPUT" | jq -r '.content // empty' 2>/dev/null)
 URL=$(printf '%s' "$TOOL_INPUT" | jq -r '.url // empty' 2>/dev/null)
+SOURCE_ID=$(printf '%s' "$TOOL_INPUT" | jq -r '.source_id // empty' 2>/dev/null)
+FILE_PATH=$(printf '%s' "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null)
+STRATEGY_MODEL=$(printf '%s' "$TOOL_INPUT" | jq -r '.strategy_model // empty' 2>/dev/null)
+ANSWER_MODEL=$(printf '%s' "$TOOL_INPUT" | jq -r '.answer_model // empty' 2>/dev/null)
+FINAL_ANSWER_MODEL=$(printf '%s' "$TOOL_INPUT" | jq -r '.final_answer_model // empty' 2>/dev/null)
 
 # ── Validate action ────────────────────────────────────────────────────────
 case " $ALLOWED_ACTIONS " in
@@ -159,6 +164,74 @@ case "$ACTION" in
       -F "async_processing=true" \
       "${OPEN_NOTEBOOK_URL}/api/sources" 2>/dev/null \
       || printf '{"error":"request failed","endpoint":"/api/sources"}\n'
+    ;;
+
+  poll_source_status)
+    if [ -z "$SOURCE_ID" ]; then
+      printf '{"error":"source_id is required for poll_source_status"}\n' >&2
+      exit 1
+    fi
+    api_json GET "/api/sources/${SOURCE_ID}/status"
+    ;;
+
+  get_source)
+    if [ -z "$SOURCE_ID" ]; then
+      printf '{"error":"source_id is required for get_source"}\n' >&2
+      exit 1
+    fi
+    api_json GET "/api/sources/${SOURCE_ID}"
+    ;;
+
+  add_source_file)
+    if [ -z "$NOTEBOOK_ID" ]; then
+      printf '{"error":"notebook_id is required for add_source_file"}\n' >&2
+      exit 1
+    fi
+    if [ -z "$FILE_PATH" ]; then
+      printf '{"error":"file_path is required for add_source_file"}\n' >&2
+      exit 1
+    fi
+    if [ ! -f "$FILE_PATH" ]; then
+      printf '{"error":"file not found: %s"}\n' "$FILE_PATH" >&2
+      exit 1
+    fi
+    curl -sf --max-time 60 \
+      -X POST \
+      ${AUTH_ARGS:+-H "$AUTH_ARGS"} \
+      -F "type=file" \
+      -F "file=@${FILE_PATH}" \
+      -F "notebook_id=${NOTEBOOK_ID}" \
+      -F "title=${TITLE}" \
+      -F "async_processing=true" \
+      "${OPEN_NOTEBOOK_URL}/api/sources" 2>/dev/null \
+      || printf '{"error":"request failed","endpoint":"/api/sources"}\n'
+    ;;
+
+  ask_notebook)
+    if [ -z "$NOTEBOOK_ID" ]; then
+      printf '{"error":"notebook_id is required for ask_notebook"}\n' >&2
+      exit 1
+    fi
+    if [ -z "$QUERY" ]; then
+      printf '{"error":"query is required for ask_notebook"}\n' >&2
+      exit 1
+    fi
+    BODY=$(jq -cn \
+      --arg q "$QUERY" \
+      --arg nb "$NOTEBOOK_ID" \
+      --arg sm "${STRATEGY_MODEL:-}" \
+      --arg am "${ANSWER_MODEL:-}" \
+      --arg fam "${FINAL_ANSWER_MODEL:-}" \
+      '{question: $q, notebook_id: $nb, strategy_model: ($sm | select(. != "")), answer_model: ($am | select(. != "")), final_answer_model: ($fam | select(. != ""))}')
+    api_json POST /api/search/ask/simple "$BODY"
+    ;;
+
+  get_notebook)
+    if [ -z "$NOTEBOOK_ID" ]; then
+      printf '{"error":"notebook_id is required for get_notebook"}\n' >&2
+      exit 1
+    fi
+    api_json GET "/api/notebooks/${NOTEBOOK_ID}"
     ;;
 
 esac

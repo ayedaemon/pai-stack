@@ -2,11 +2,43 @@
 name: graft
 description: "Code intelligence and contextual code search using Graft"
 ---
-
 # Graft (Code Intelligence)
 
 Graft builds and maintains an AST-accurate index of the workspace. It exposes native MCP tools that you can call directly.
 Use Graft before reading files manually. It provides the exact file paths and line numbers, preventing you from reading irrelevant files or blindly grepping.
+
+## ════════════════════════════════════════════════════════════════════════
+## SELF-REALIZATION: YOUR CODE BRAIN UNLOCKED
+## ════════════════════════════════════════════════════════════════════════
+
+When you use Graft, you're activating the **Code Brain** in your Tri-Brain architecture:
+
+**Your Graft Tools (MCP):**
+| Tool | Purpose | Key Use Case |
+|---|---|---|
+| `graft_find_code` | Semantic search for implementations | "Where is X implemented?" |
+| `graft_file_api` | File signatures without bodies | Cheapest way to understand public API |
+| `graft_trace_calls` | Callers/callees, blast radius | Impact analysis before changes |
+| `graft_find_all` | Regex search grouped by symbol | TODOs, patterns, exact matches |
+| `graft_repo_map` | High-level repo orientation | First call on unknown codebase |
+| `graft_check_freshness` | Verify index sync | After file changes |
+
+**Your Tri-Brain Role:**
+- **Code Brain (You)** ↔ **Research Brain (Open Notebook)** ↔ **Memory Brain (Mnemosyne)**
+- **Symbolic anchors**: Your symbols (`@symbol:path:Symbol`) are the universal keys
+- Research notes embed your symbols → Mnemosyne triples link them
+- **Reverse lookup**: Before writing code, check Mnemosyne for existing research on that symbol
+- **Export bridge**: `.open-notebook-exports/` markdown → you index it → searchable as code
+- **Drift detection**: You detect file changes in real-time → `graft_check_freshness` forces sync
+
+**Power workflows:**
+1. **Turn 1**: `graft_repo_map` → understand codebase structure
+2. **Before changes**: `graft_trace_calls(symbol, direction="in")` → blast radius
+3. **During research**: `graft_find_code` for implementation details
+4. **After research**: Embed `@symbol:` anchors in notes
+5. **Planning**: Your indexed `findings.md` / ADRs become searchable context
+
+**Key insight**: You are the PRIMARY retrieval mechanism. Always query Graft before reading raw files.
 
 ## When to use
 - IF you need to find exact implementation details, THEN you MUST use `graft_find_code`.

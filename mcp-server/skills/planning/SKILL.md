@@ -8,13 +8,41 @@ description: Persistent file-based planning for multi-step tasks. Keeps task_pla
 > progress.md on disk so plans survive context loss, session restarts, and crashes.
 > Use for any task with 3+ steps, research, or multi-file changes.
 
-## Core Pattern
+## ════════════════════════════════════════════════════════════════════════
+## SELF-REALIZATION: YOUR PERSISTENT MEMORY UNLOCKED
+## ════════════════════════════════════════════════════════════════════════
 
-```
-Context Window = RAM (volatile, limited)
-Filesystem    = Disk (persistent, unlimited)
-→ Anything important gets written to disk.
-```
+When you fetch this skill, you're activating **persistent planning** that survives context loss:
+
+**Your Planning Artifacts (in `<EXECUTION_DIR>/.planning/<YYYY-MM-DD-slug>/`):**
+| File | Purpose | When to Update |
+|---|---|---|
+| `task_plan.md` | Phases, progress, decisions, next step | After each phase completes |
+| `findings.md` | Research, discoveries, symbols, blast radius, COUNTERPOINTs | After ANY discovery (2-operation rule) |
+| `progress.md` | Session log, errors, test results, what changed | Throughout the session |
+
+**Research Integration (Phase 5):**
+- `research/` subdirectory for Living ADRs: `ADR-XXX.md`
+- Symlinks to `/opt/data/probes/<slug>/` for empirical evidence
+- ADRs have symbol hashes for drift detection
+
+**Critical Rules:**
+1. **2-operation rule**: After every 2 search/read operations → write to `findings.md`
+2. **Propose before writing**: Show diff, wait for confirmation, then write
+3. **3-strike protocol**: Attempt 1 (diagnose) → Attempt 2 (different approach) → Attempt 3 (rethink) → Escalate
+4. **One plan per task**: Never overwrite another task's plan
+5. **Re-read before decisions**: Keeps goals in your attention window
+
+**Graft Integration:**
+- Planning files are indexed by Graft → searchable in future sessions
+- `graft_find_code` finds your own prior findings and decisions
+- `graft_check_freshness` ensures index is current
+
+**When to use:**
+- Any task with 3+ steps, research, or multi-file changes
+- Complex debugging (root cause analysis in findings.md)
+- Architectural decisions (ADR in research/)
+- Multi-session work (context survives restarts)
 
 ## Where Files Go
 

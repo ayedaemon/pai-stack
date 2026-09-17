@@ -124,10 +124,35 @@ Planning files live in the project like developer artifacts:
 | Tool | Purpose | Allowed actions |
 |---|---|---|
 | `docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
-| `notebook_ops` | Query Open Notebook research knowledge base (opt-in; returns `{"available":false}` when offline) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url` |
+| `notebook_ops` | Query Open Notebook research knowledge base (opt-in; returns `{"available":false}` when offline) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 
 All `docker_ops` actions are recorded in `/app/logs/docker-ops.log` on `mcp-server`.
 Fetch `skill://open-notebook` before using `notebook_ops`.
+
+## Tri-Brain Cross-System Lookup (Graft ↔ Open Notebook ↔ Mnemosyne)
+
+When querying code via Graft, check Mnemosyne for existing research notes anchored to
+those symbols:
+
+1. **Before writing new research** on a symbol (function, type, component):
+   ```bash
+   mnemosyne_triple_query(
+     predicate="anchors_symbol",
+     object="@symbol:path/to/file.ext:SymbolName"
+   )
+   ```
+2. **If triples exist**: Extract `subject` (format: `notebook:<nb_id>:note:<note_id>`), then
+   fetch the note via `notebook_ops(action=get_source, ...)` or Open Notebook UI.
+3. **After archiving new notes** with `@symbol:` anchors, record triples:
+   ```bash
+   mnemosyne_triple_add(
+     subject="notebook:<nb_id>:note:<note_id>",
+     predicate="anchors_symbol",
+     object="@symbol:path/to/file.ext:SymbolName"
+   )
+   ```
+
+This prevents duplicate research and builds a persistent knowledge graph across systems.
 
 ## Ground Rules
 
@@ -141,3 +166,123 @@ Fetch `skill://open-notebook` before using `notebook_ops`.
 8. **No secrets in files**: use references (env var, vault path).
 9. **Session-scoped**: stay on this session's project unless the user redirects.
 10. **Graft empty + no session context**: survey `/opt/data/workspace/` to discover projects before concluding none exist.
+
+---
+
+## ════════════════════════════════════════════════════════════════════════
+## SELF-REALIZATION: YOUR UNLOCKED AUTONOMOUS RESEARCH ECOSYSTEM
+## ════════════════════════════════════════════════════════════════════════
+
+When you fetch this skill on Turn 1, **you are activating your full autonomous research mode**.
+The following capabilities are available when running under `make up-all` (Open Notebook active):
+
+### 🧠 TRI-BRAIN ARCHITECTURE — Three Brains, One Agent
+
+| Brain | Service | Primary Tools | What It Gives You |
+|---|---|---|---|
+| **Code Brain** | Graft (20128) | `graft_find_code`, `graft_trace_calls`, `graft_repo_map`, `graft_check_freshness` | AST symbols, semantic search, call graphs, impact analysis, drift detection |
+| **Research Brain** | Open Notebook (5055) | `notebook_ops` (10 actions) | External knowledge: RFCs, papers, API docs, PDFs, grounded RAG (`ask_notebook`) |
+| **Memory Brain** | Mnemosyne (SQLite) | `mnemosyne_recall`, `mnemosyne_remember`, `mnemosyne_triple_*`, `mnemosyne_sleep` | Episodic memory, decisions, prior fixes, user preferences, knowledge graph triples |
+
+**YOUR JOB**: Synthesize across all three. Never use just one.
+
+### 🔗 SYMBOLIC RESEARCH ANCHORS — The Universal Glue
+
+```
+@symbol:path/to/file.ext:SymbolName
+```
+
+- **Embed in EVERY research note** (Open Notebook `add_note`, evidence notes, ADRs)
+- **Cross-brain triples**: After archiving, record in Mnemosyne:
+  ```
+  mnemosyne_triple_add(subject="notebook:<nb>:note:<note>", predicate="anchors_symbol", object="@symbol:...")
+  ```
+- **REVERSE LOOKUP (MANDATORY before new research)**:
+  ```
+  mnemosyne_triple_query(predicate="anchors_symbol", object="@symbol:path:Symbol")
+  ```
+  If results exist → read those notes first → avoid duplicate research.
+- **Export bridge**: Notes exported to `.open-notebook-exports/` → Graft indexes them → searchable via `graft_find_code`.
+
+### 🔬 EMPIRICAL LAB NOTEBOOK — Test, Don't Guess
+
+When docs are ambiguous or conflicting:
+
+1. **Formulate** falsifiable hypothesis
+2. **Write** micro-script in `/opt/data/probes/<slug>/` (Python or Shell)
+3. **Execute** with guardrails: `timeout 30`, `ulimit -v 262144` (256MB)
+4. **Ingest** as `EVIDENCE:` note with `@symbol:` anchors
+
+**Helper scripts** (in `.scripts/`, available in containers):
+- `new_probe.sh <slug> "hypothesis"` — scaffolds probe dir
+- `run_probe.sh <slug> [python|sh]` — runs with safeguards, writes `results.json`
+- `ingest_evidence.sh <slug> <notebook_id>` — formats & calls `notebook_ops(add_note)`
+
+### 🌳 DEEP INQUIRY TREES & LIVING ADRs — Structured Wisdom
+
+**4 Mandatory Perspectives** for every complex question:
+1. **Systems Architecture** — components, data flow, boundaries, scaling
+2. **Security & Threats** — attack surface, trust boundaries, data exposure
+3. **Developer Ergonomics** — API design, debugging, onboarding, migration
+4. **Failure Modes** — timeouts, partial degradation, cascade, recovery
+
+**Dialectical Inquiry (MANDATORY)**:
+- Search GitHub issues for bugs/regressions/edge cases
+- Check version compatibility (changelogs, breaking changes)
+- Search anti-patterns ("why NOT to use X", "X considered harmful")
+- Find production incidents ("X incident", "X postmortem")
+- Record as `COUNTERPOINT:` in `findings.md`
+
+**Living ADRs (L-ADRs)** in `<EXECUTION_DIR>/.planning/research/ADR-XXX.md`:
+- YAML frontmatter: status, symbols, supersession chain
+- Symbol hashes for drift detection: `@symbol:path:Symbol#sha256:...`
+- Dialectical record, validation probes, review triggers
+- Lifecycle: `proposed` → `accepted` → `superseded`/`deprecated`
+
+**Drift detection**: `check_adr_drift.sh` recomputes hashes, flags mismatches in `findings.md`.
+
+**Scripts**: `.scripts/{new_adr,check_adr_drift}.sh`
+
+### 🤖 KANBAN RESEARCH SWARMS — Delegate, Don't Drown
+
+When a task needs multi-perspective research, ADR production, or complex validation:
+
+**Worker Roles** (configured in `hermes/config.yaml` → `kanban.workers`):
+| Worker | Role | Specialization |
+|---|---|---|
+| `researcher` | Deep-dive, ingest sources, run probes, evidence notes | 8k tokens, temp 0.3, max 10 tool calls |
+| `synthesizer` | Consolidate evidence, surface counterpoints, synthesis | 16k tokens, temp 0.2 |
+| `adr_author` | Generate L-ADR from synthesis with symbol hashes | 16k tokens, temp 0.1 |
+
+**Swarm Patterns** (in `kanban.patterns`):
+- `deep_research`: 4-perspective parallel → synthesize → ADR
+- `quick_fact_check`: Single question → evidence → answer
+- `empirical_validation`: Hypothesis → probe → evidence note
+
+**Handoff Protocol** (in `kanban.handoff`):
+- Context keys: `notebook_id`, `execution_dir`, `anchor_symbols`, `inquiry_question`, `perspective`
+- Required artifacts: `evidence_note_ids`, `symbol_anchors`, `confidence_score`, `unresolved_questions`
+
+**Scripts**: `.scripts/{create_research_board,handoff_context}.sh`
+
+### 🎯 YOUR TURN 1 CHECKLIST — Full Activation
+
+After fetching `skill://agents`, immediately:
+
+1. **docker_ops(list)** — confirm which services are running (Open Notebook = extended mode)
+2. **mnemosyne_recall("workspace projects structure boundaries")** — rehydrate memory
+3. **Survey `/opt/data/workspace`** — find project boundaries, declare `EXECUTION_DIR`
+4. **graft_repo_map** — orient on code hubs
+5. **If Open Notebook active**: Fetch `skill://open-notebook` + `skill://autonomous-tech-learner`
+6. **Report**: EXECUTION_DIR, active services, ready tools, available skills, Kanban patterns
+
+### 💡 KEY INSIGHTS FOR EFFECTIVE OPERATION
+
+- **Graft first, files second** — always search before reading
+- **Anchors everywhere** — `@symbol:` in notes, evidence, ADRs, probes
+- **Triples always** — after `add_note`, call `mnemosyne_triple_add`
+- **Reverse lookup first** — before research, query Mnemosyne for existing anchors
+- **Empirical > theoretical** — run a probe when docs conflict
+- **Delegate via Kanban** — complex research = swarm, not solo
+- **Drift detection** — `check_adr_drift.sh` before major decisions
+- **Planning discipline** — `findings.md` after every 2 operations, `task_plan.md` for 3+ steps

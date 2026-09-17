@@ -9,10 +9,49 @@ description: Research Brain for external knowledge: RFCs, API documentation, arc
 > Complement to CodeGraph (Code Brain). Use when the question is about CONCEPTS,
 > external specifications, or prior research, not implementation details.
 >
-> Tool: `notebook_ops` (MCP)
+> Tool: `notebook_ops` (MCP) — **10 actions available**
 > API: http://open-notebook:5055
 > Web UI: http://localhost:8502 (host)
 > Only available when running: `make up-all`
+
+## ════════════════════════════════════════════════════════════════════════
+## SELF-REALIZATION: YOUR RESEARCH BRAIN UNLOCKED
+## ════════════════════════════════════════════════════════════════════════
+
+When you fetch this skill, you're activating the **Research Brain** in your Tri-Brain architecture:
+
+**Your 10 `notebook_ops` actions:**
+| Action | Purpose |
+|---|---|
+| `list_notebooks` | Discover existing research notebooks |
+| `create_notebook` | Create project notebook |
+| `search` | Vector/text search across notes & sources |
+| `add_note` | Archive synthesized findings (with @symbol: anchors!) |
+| `add_source_url` | Ingest URLs (RFCs, docs, articles) |
+| `poll_source_status` | Wait for async ingestion to complete |
+| `get_source` | Read full extracted text of a source |
+| `add_source_file` | Upload local PDFs/markdown from `/opt/data/` |
+| `ask_notebook` | **Grounded RAG** — ask complex questions, get cited answers |
+| `get_notebook` | Fetch notebook metadata (source IDs, note IDs) |
+
+**Your Tri-Brain Role:**
+- **Code Brain (Graft)** ↔ **Research Brain (You)** ↔ **Memory Brain (Mnemosyne)**
+- Bridge via `@symbol:path:Symbol` anchors in every note
+- Cross-system triples: `mnemosyne_triple_add(subject="notebook:<nb>:note:<note>", predicate="anchors_symbol", object="@symbol:...")`
+- Reverse lookup: `mnemosyne_triple_query(predicate="anchors_symbol", object="@symbol:...")` before new research
+- Export bridge: `.open-notebook-exports/` → Graft index → searchable as code
+
+**Integration with other skills:**
+- `skill://autonomous-tech-learner` — Hypothesis-Testing Protocol (probes), Deep Inquiry Trees (perspectives), Living ADRs
+- `skill://planning` — Archive `findings.md` as notes with anchors
+- `skill://agents` — Ground rules, Kanban swarm patterns, Turn 1 protocol
+
+**Power user workflow:**
+1. `ask_notebook` for grounded RAG answers with citations
+2. `add_source_file` for local PDFs/RFCs (not just URLs)
+3. `poll_source_status` to wait for ingestion before searching
+4. Every `add_note` includes `@symbol:` anchors + `mnemosyne_triple_add`
+5. Export notes to `.open-notebook-exports/` for Graft indexing
 
 ## When to use Open Notebook
 
@@ -96,6 +135,68 @@ If `notebook_ops` returns `{"error":"request failed"}`:
   - Attempt 2: use `docker_ops(action=logs, service=open-notebook)` to diagnose
   - Attempt 3: escalate to user
 
+## Symbolic Research Anchor Protocol (Tri-Brain Bridge)
+
+This protocol links Open Notebook research notes to Graft code symbols and Mnemosyne
+knowledge graph triples — enabling cross-system recall.
+
+### Anchor Syntax
+
+Every note archived to Open Notebook MUST include symbolic anchors in this format:
+
+```
+@symbol:path/to/file.ext:SymbolName
+```
+
+Examples:
+- `@symbol:src/auth/token.py:validate_jwt` — links to a Python function
+- `@symbol:pkg/api/routes.go:HandleLogin` — links to a Go handler
+- `@symbol:components/Button.tsx:Button` — links to a React component
+
+### When to Add Anchors
+
+- **On every `add_note`**: Include `@symbol:` anchors for any code symbols discussed in the findings.
+- **On every `add_source_url`**: If the external doc references internal code (e.g., "API at /api/v1/auth"), add the anchor.
+- **When saving research from `findings.md`**: Extract symbol references from `findings.md` and convert to anchors.
+
+### Cross-System Mnemosyne Triples
+
+After archiving a note with anchors, record the relationship in Mnemosyne:
+
+```bash
+mnemosyne_triple_add(
+  subject="notebook:<notebook_id>:note:<note_id>",
+  predicate="anchors_symbol",
+  object="<symbol_anchor>"
+)
+```
+
+Example:
+```bash
+mnemosyne_triple_add(
+  subject="notebook:notebook:abc123:note:note:xyz789",
+  predicate="anchors_symbol",
+  object="@symbol:src/auth/token.py:validate_jwt"
+)
+```
+
+This enables reverse lookup: on code queries, check Mnemosyne for existing research.
+
+### Reverse Lookup Workflow
+
+When working on code (via Graft), before writing new research:
+1. Query Mnemosyne for triples with `predicate="anchors_symbol"` and `object` matching the symbol.
+2. If results exist, fetch those notebook notes — avoid duplicate research.
+
+### Export to `.open-notebook-exports`
+
+When notes are exported to `.open-notebook-exports/` (via Open Notebook UI or API):
+- The exported markdown retains `@symbol:` anchors.
+- Graft indexes these files, making anchors searchable via `graft_find_code` / `graft_find_all`.
+- This creates a persistent, git-trackable bridge: code ↔ research.
+
+---
+
 ## Notes Archiving Convention
 
 Only archive findings when the user explicitly requests "save this research" or
@@ -109,3 +210,4 @@ Note titles should be: `YYYY-MM-DD <slug> — <one-line summary>`
 - `skill://codegraph` — primary code retrieval; always query before reading files
 - `skill://planning` — findings.md is the source to archive into notes
 - `docker_ops(service=open-notebook)` — to check health, tail logs, or restart
+- `mnemosyne_triple_add` / `mnemosyne_triple_query` — cross-system linking

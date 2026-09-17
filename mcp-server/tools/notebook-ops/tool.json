@@ -8,12 +8,12 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["list_notebooks", "create_notebook", "search", "add_note", "add_source_url"],
-        "description": "Operation to perform. list_notebooks: list all notebooks. create_notebook: create a new notebook by name. search: full-text or vector search across notebook content. add_note: save text content as a permanent note. add_source_url: ingest a URL (article, doc, RFC) into a notebook."
+        "enum": ["list_notebooks", "create_notebook", "search", "add_note", "add_source_url", "poll_source_status", "get_source", "add_source_file", "ask_notebook", "get_notebook"],
+        "description": "Operation to perform. list_notebooks: list all notebooks. create_notebook: create a new notebook by name. search: full-text or vector search across notebook content. add_note: save text content as a permanent note. add_source_url: ingest a URL (article, doc, RFC) into a notebook. poll_source_status: check async ingestion status of a source. get_source: retrieve full extracted text of a source. add_source_file: upload a local file (PDF, markdown, etc.) as a source. ask_notebook: grounded RAG query across notebook sources/notes. get_notebook: fetch notebook metadata including source/note IDs."
       },
       "notebook_id": {
         "type": "string",
-        "description": "Target notebook ID (SurrealDB record ID, e.g. 'notebook:abc123'). Required for search, add_note, add_source_url."
+        "description": "Target notebook ID (SurrealDB record ID, e.g. 'notebook:abc123'). Required for search, add_note, add_source_url, add_source_file, ask_notebook."
       },
       "notebook_name": {
         "type": "string",
@@ -25,7 +25,7 @@
       },
       "query": {
         "type": "string",
-        "description": "Search query string (for search action)."
+        "description": "Search query string (for search action) or question (for ask_notebook action)."
       },
       "search_type": {
         "type": "string",
@@ -35,7 +35,7 @@
       },
       "title": {
         "type": "string",
-        "description": "Title for add_note or add_source_url actions."
+        "description": "Title for add_note, add_source_url, or add_source_file actions."
       },
       "content": {
         "type": "string",
@@ -44,6 +44,26 @@
       "url": {
         "type": "string",
         "description": "URL to ingest as a source (for add_source_url action)."
+      },
+      "source_id": {
+        "type": "string",
+        "description": "Source ID (e.g. 'source:abc123') for poll_source_status and get_source actions."
+      },
+      "file_path": {
+        "type": "string",
+        "description": "Path to file inside container (e.g. /opt/data/whitepaper.pdf) for add_source_file action."
+      },
+      "strategy_model": {
+        "type": "string",
+        "description": "Optional strategy model override for ask_notebook action."
+      },
+      "answer_model": {
+        "type": "string",
+        "description": "Optional answer model override for ask_notebook action."
+      },
+      "final_answer_model": {
+        "type": "string",
+        "description": "Optional final answer model override for ask_notebook action."
       }
     },
     "required": ["action"]
