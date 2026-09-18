@@ -72,7 +72,7 @@ graft_check_freshness  → verify index freshness
 
 ### MCP Server — procedural knowledge (skills as MCP resources)
 
-Hermes fetches `skill://<name>` before working on any unknown stack or process.
+Hermes fetches `skill://<name>` via `mcp__pai_tools__read_resource(uri="skill://<name>")` before working on any unknown stack or process (or lists them via `mcp__pai_tools__list_resources()`).
 Skills are markdown files baked into the mcp-server image — zero model tokens to load.
 
 | Resource | Purpose |
@@ -92,7 +92,10 @@ Skills are markdown files baked into the mcp-server image — zero model tokens 
 
 | Tool | Purpose | Allowed actions |
 |---|---|---|
-| `docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
+| `mcp__pai_tools__docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
+| `mcp__pai_tools__notebook_ops` | Query and manage Open Notebook | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
+| `mcp__pai_tools__read_resource` | Fetch procedural skills or template resources by URI | `uri="skill://<name>"` |
+| `mcp__pai_tools__list_resources` | Discover all available skills and templates on mcp-server | (none) |
 
 All container actions are audited to `/app/logs/docker-ops.log` on the persistent `mcp-logs` volume.
 

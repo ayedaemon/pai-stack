@@ -19,6 +19,7 @@ model_list:
       api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
       timeout: 1800
       drop_params: true
+      max_tokens: 4096
 
   # ── Kilo Gateway ───────────────────────────────────────────────────
   - model_name: kilo/kilo-auto/free

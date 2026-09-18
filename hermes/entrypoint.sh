@@ -20,6 +20,12 @@ if [ -x /opt/hermes/.venv/bin/mnemosyne-hermes ]; then
     /opt/hermes/.venv/bin/mnemosyne-hermes install --mode wrapper --python /opt/hermes/.venv/bin/python3 --no-bootstrap --force 2>/dev/null || true
 fi
 
+# Ensure Hermes Labyrinth is linked into user plugins root
+mkdir -p /opt/hermes/data/plugins
+if [ -d /opt/hermes/plugins/hermes-labyrinth ] && [ ! -e /opt/hermes/data/plugins/hermes-labyrinth ]; then
+    ln -s /opt/hermes/plugins/hermes-labyrinth /opt/hermes/data/plugins/hermes-labyrinth
+fi
+
 # Ensure SQLite WAL/SHM files are created group/world-writable
 umask 000
 find /opt/hermes/data -type f \( -name '*.db' -o -name '*.db-wal' -o -name '*.db-shm' -o -name '*.db.dispatch.lock' -o -name '*.db.init.lock' \) -exec chmod -c a+rw {} + 2>/dev/null || true

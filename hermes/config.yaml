@@ -176,10 +176,10 @@ agent:
     # CORE ECOSYSTEM & TOOLS
     - /opt/data/workspace: Active read-write mount. OFTEN MULTI-PROJECT. Write project files only after user confirmation. Temp scripts go in /opt/data.
     - LLM Gateway: LiteLLM proxy at llm-gateway:4000. Sole entrypoint for models.
-    - Graft (graft:20128): Primary code intelligence via MCP. USE BEFORE READING FILES: graft_find_code, graft_file_api, graft_trace_calls, graft_find_all, graft_repo_map, graft_check_freshness.
-    - MCP Server (mcp-server:8000): Zero-cost procedural skills via `skill://<name>` (stack-discovery, graft, python, docker, react, nodejs, postgres, planning, open-notebook, agents, gitops).
-    - docker_ops: Manage containers (hermes, graft, llm-gateway, embeddings, mcp-server, open-notebook, surrealdb) via list, status, logs, restart, start, stop, exec.
-    - notebook_ops: Query Open Notebook (open-notebook:5055) via list_notebooks, create_notebook, search, add_note, add_source_url, poll_source_status, get_source, add_source_file, ask_notebook, get_notebook. (Fetch skill://open-notebook first. Fallback to Graft if unavailable). DO NOT CALL EMBEDDINGS/OPEN-NOTEBOOK APIS DIRECTLY.
+    - Graft (graft:20128): Primary code intelligence via MCP: mcp__graft__graft_find_code, mcp__graft__graft_file_api, mcp__graft__graft_trace_calls, mcp__graft__graft_find_all, mcp__graft__graft_repo_map, mcp__graft__graft_check_freshness. USE BEFORE READING FILES.
+    - MCP Server (mcp-server:8000): Procedural skills via mcp__pai_tools__read_resource(uri="skill://<name>") (agents, stack-discovery, graft, python, docker, react, nodejs, postgres, planning, open-notebook, gitops, autonomous-tech-learner). Call mcp__pai_tools__list_resources() to discover all available resources.
+    - mcp__pai_tools__docker_ops: Manage containers (hermes, graft, llm-gateway, embeddings, mcp-server, open-notebook, surrealdb) via action='list'|'status'|'logs'|'restart'|'start'|'stop'|'exec'.
+    - mcp__pai_tools__notebook_ops: Query Open Notebook (open-notebook:5055) via action='list_notebooks'|'create_notebook'|'search'|'add_note'|'add_source_url'|'poll_source_status'|'get_source'|'add_source_file'|'ask_notebook'|'get_notebook'. (Fetch skill://open-notebook first via mcp__pai_tools__read_resource). DO NOT CALL EMBEDDINGS/OPEN-NOTEBOOK APIS DIRECTLY.
     - Mnemosyne: Local SQLite memory. Tools: mnemosyne_remember, mnemosyne_recall, mnemosyne_sleep, mnemosyne_stats. Captures context automatically.
 
     # ════════════════════════════════════════════════════════════════════════
@@ -233,13 +233,15 @@ agent:
       5. Present consolidated result to user
 
     # BOOTSTRAP & GROUND RULES
-    CRITICAL: Upon startup or entering an unfamiliar directory, your VERY FIRST ACTION MUST BE to fetch the `agents` skill from your connected MCP server to load your operational ground rules (Turn 1 Protocol, Execution Invariants, Memory Discipline).
-    1. Cold-boot: run `docker_ops list`. If core services (graft, mcp-server, llm-gateway) are down, run `docker_ops start <service>` and wait for indexing.
+    CRITICAL: Upon startup or entering an unfamiliar directory, your VERY FIRST ACTION MUST BE to call:
+    `mcp__pai_tools__read_resource(uri="skill://agents")`
+    to load your operational ground rules (Turn 1 Protocol, Execution Invariants, Memory Discipline).
+    1. Cold-boot: run `mcp__pai_tools__docker_ops(action="list")`. If core services (graft, mcp-server, llm-gateway) are down, run `mcp__pai_tools__docker_ops(action="start", service="<name>")` and wait for indexing.
     
     # HARD CONSTRAINTS
     - NEVER delete files without explicit permission.
     - NEVER write raw secrets; use env/vault references.
-    - NEVER execute mutating git commands without explicit user confirmation. Rely on skill://gitops.
+    - NEVER execute mutating git commands without explicit user confirmation. Rely on skill://gitops (read via mcp__pai_tools__read_resource).
 
 # ── Knowledge Base (disabled — Graft owns all retrieval) ───────────────
 knowledgebase:
@@ -267,6 +269,11 @@ platform_hints:
 
 _config_version: 43
 
+# ── Tools & MCP Tool Exposure ─────────────────────────────────────────────
+tools:
+  tool_search:
+    enabled: "off"
+
 # ── MCP Server (tools + skills + AGENTS.md) ────────────────────────────────
 mcp_servers:
   pai_tools:
@@ -284,3 +291,4 @@ mcp_servers:
 plugins:
   enabled:
     - observability/langfuse
+    - hermes-labyrinth

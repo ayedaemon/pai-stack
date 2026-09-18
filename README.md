@@ -180,24 +180,29 @@ Host Machine (WORKSPACE_DIR)
    ```text
    You are operating inside the pai-stack Docker Compose environment with full autonomous research capabilities. Execute your Turn 1 Startup Protocol:
 
-   1. Fetch `skill://agents` from the connected MCP server to load your operational ground rules, invariants, and **newly unlocked research powers** (Kanban swarms, Tri-Brain bridge, empirical probes, Living ADRs).
+   1. Read your ground rules and research powers by calling:
+      mcp__pai_tools__read_resource(uri='skill://agents')
 
-   2. Survey your environment using `docker_ops(action='list')` to check which stack services are active (Graft, LLM Gateway, MCP Server, Open Notebook, SurrealDB, Embeddings).
+   2. Survey your environment using:
+      mcp__pai_tools__docker_ops(action='list')
+      to check which stack services are active (Graft, LLM Gateway, MCP Server, Open Notebook, SurrealDB, Embeddings).
 
-   3. Check your long-term memory via `mnemosyne_recall(query='workspace projects structure boundaries')` to recall previous project contexts and architectural decisions.
+   3. Check your long-term memory via:
+      mnemosyne_recall(query='workspace projects structure boundaries')
+      to recall previous project contexts and architectural decisions.
 
-   4. Inspect `/opt/data/workspace` and run `graft_repo_map` to determine project boundaries and declare your `EXECUTION_DIR`.
+   4. Inspect /opt/data/workspace and run mcp__graft__graft_repo_map to determine project boundaries and declare your EXECUTION_DIR.
 
    5. If Open Notebook is running (from `make up-all`):
-      - Fetch `skill://open-notebook` to activate `notebook_ops` for external research
-      - Fetch `skill://autonomous-tech-learner` for the **Hypothesis-Testing Protocol** (empirical probes) and **Deep Inquiry Trees** (perspective decomposition, dialectical inquiry, Living ADRs)
+      - Call mcp__pai_tools__read_resource(uri='skill://open-notebook') to activate mcp__pai_tools__notebook_ops for external research
+      - Call mcp__pai_tools__read_resource(uri='skill://autonomous-tech-learner') for the **Hypothesis-Testing Protocol** (empirical probes) and **Deep Inquiry Trees** (perspective decomposition, dialectical inquiry, Living ADRs)
       - Note: Kanban worker roles (`researcher`, `synthesizer`, `adr_author`) and patterns (`deep_research`, `quick_fact_check`, `empirical_validation`) are configured in your system prompt under `kanban.workers` and `kanban.patterns`.
 
    6. Report your discovered:
       - `EXECUTION_DIR` (single project directory)
       - Active stack services
-      - Ready tools: `graft_*`, `notebook_ops` (10 actions), `docker_ops`, `mnemosyne_*`
-      - Available skills: `agents`, `open-notebook`, `autonomous-tech-learner`, `graft`, `planning`, `stack-discovery`, `python`, `docker`, `react`, `nodejs`, `postgres`, `gitops`
+      - Ready MCP tools: `mcp__graft__*`, `mcp__pai_tools__notebook_ops`, `mcp__pai_tools__docker_ops`, `mcp__pai_tools__read_resource`, `mnemosyne_*`
+      - Available skills (via `mcp__pai_tools__read_resource`): `agents`, `open-notebook`, `autonomous-tech-learner`, `graft`, `planning`, `stack-discovery`, `python`, `docker`, `react`, `nodejs`, `postgres`, `gitops`
       - Kanban swarm patterns for delegation
 
    This activates your **full autonomous research mode**: Tri-Brain synthesis, empirical validation, multi-perspective inquiry, and Kanban delegation.
