@@ -114,7 +114,6 @@ Planning files live in the project like developer artifacts:
 | `skill://postgres` | Postgres conventions (ORM, migrations, schema, DATABASE_URL) |
 | `skill://planning` | planning-with-files discipline (task_plan.md, findings.md, progress.md) |
 | `skill://open-notebook` | When/how to use the Open Notebook research brain and notebook_ops tool |
-| `skill://_TEMPLATE` | Template for creating new custom skills |
 | `skill://agents` | This file (ground rules, injected at session start) |
 
 ## Bundled Tools (MCP Tools)
@@ -123,6 +122,7 @@ Planning files live in the project like developer artifacts:
 |---|---|---|
 | `docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
 | `notebook_ops` | Query Open Notebook research knowledge base (opt-in; returns `{"available":false}` when offline) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
+| `adr_ops` | Living ADR creation & code symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 
 All `docker_ops` actions are recorded in `/app/logs/docker-ops.log` on `mcp-server`.
 Fetch `skill://open-notebook` before using `notebook_ops`.
@@ -211,10 +211,9 @@ When docs are ambiguous or conflicting:
 3. **Execute** with guardrails: `timeout 30`, `ulimit -v 262144` (256MB)
 4. **Ingest** as `EVIDENCE:` note with `@symbol:` anchors
 
-**Helper scripts** (in `.scripts/`, available in containers):
-- `new_probe.sh <slug> "hypothesis"` — scaffolds probe dir
-- `run_probe.sh <slug> [python|sh]` — runs with safeguards, writes `results.json`
-- `ingest_evidence.sh <slug> <notebook_id>` — formats & calls `notebook_ops(add_note)`
+**Empirical testing & evidence note ingestion**:
+- Execute micro-benchmarks or hypothesis scripts directly in container shell or `/opt/data/`
+- Archive findings via `notebook_ops(action="add_note", notebook_id=..., title="EVIDENCE: <slug> — <supported|refuted|inconclusive>", content=...)` with `@symbol:` anchors
 
 ### 🌳 DEEP INQUIRY TREES & LIVING ADRs — Structured Wisdom
 
@@ -237,9 +236,8 @@ When docs are ambiguous or conflicting:
 - Dialectical record, validation probes, review triggers
 - Lifecycle: `proposed` → `accepted` → `superseded`/`deprecated`
 
-**Drift detection**: `check_adr_drift.sh` recomputes hashes, flags mismatches in `findings.md`.
-
-**Scripts**: `.scripts/{new_adr,check_adr_drift}.sh`
+**Create ADR**: Call `adr_ops(action="create_adr", adr_number=..., title=..., context=..., decision=..., symbols=[...])`.
+**Drift detection**: Call `adr_ops(action="check_drift")` to recompute symbol hashes and automatically flag mismatches in `findings.md`.
 
 ### 🤖 KANBAN RESEARCH SWARMS — Delegate, Don't Drown
 
@@ -261,8 +259,6 @@ When a task needs multi-perspective research, ADR production, or complex validat
 - Context keys: `notebook_id`, `execution_dir`, `anchor_symbols`, `inquiry_question`, `perspective`
 - Required artifacts: `evidence_note_ids`, `symbol_anchors`, `confidence_score`, `unresolved_questions`
 
-**Scripts**: `.scripts/{create_research_board,handoff_context}.sh`
-
 ### 🎯 YOUR TURN 1 CHECKLIST — Full Activation
 
 After fetching `skill://agents`, immediately:
@@ -282,5 +278,5 @@ After fetching `skill://agents`, immediately:
 - **Reverse lookup first** — before research, query Mnemosyne for existing anchors
 - **Empirical > theoretical** — run a probe when docs conflict
 - **Delegate via Kanban** — complex research = swarm, not solo
-- **Drift detection** — `check_adr_drift.sh` before major decisions
+- **Drift detection** — `adr_ops(action="check_drift")` before major decisions
 - **Planning discipline** — `findings.md` after every 2 operations, `task_plan.md` for 3+ steps

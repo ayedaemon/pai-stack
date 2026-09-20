@@ -28,7 +28,7 @@ When you use Graft, you're activating the **Code Brain** in your Tri-Brain archi
 - **Symbolic anchors**: Your symbols (`@symbol:path:Symbol`) are the universal keys
 - Research notes embed your symbols → Mnemosyne triples link them
 - **Reverse lookup**: Before writing code, check Mnemosyne for existing research on that symbol
-- **Export bridge**: `.open-notebook-exports/` markdown → you index it → searchable as code
+- **Research bridge**: Notes in `research/` are directly indexed by Graft → searchable via `graft_find_code`
 - **Drift detection**: You detect file changes in real-time → `graft_check_freshness` forces sync
 
 **Power workflows:**

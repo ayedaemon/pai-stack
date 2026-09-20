@@ -37,6 +37,7 @@ agent:
     - Graft (graft:20128): Primary code intelligence via MCP. USE BEFORE READING FILES: graft_find_code, graft_file_api, graft_trace_calls, graft_find_all, graft_repo_map.
     - docker_ops: Manage containers (hermes, dsh, graft, llm-gateway, mcp-server) via list, status, logs, restart, start, stop.
     - notebook_ops: Query Research Brain via list_notebooks, search, add_note.
+    - adr_ops: Create and verify Living ADRs with symbol drift detection via create_adr, check_drift, list_adrs.
     - Mnemosyne: Local memory bridge via dsh-mnemosyne plugin. Captures context automatically.
 
     # PROCEDURAL SKILLS

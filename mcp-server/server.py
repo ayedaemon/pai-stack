@@ -21,7 +21,6 @@ log = logging.getLogger("pai-mcp")
 
 TOOLS_DIR = Path("/app/tools")
 SKILLS_DIR = Path("/app/skills")
-KB_DIR = Path("/app/kb")
 
 mcp = MCPServer("pai-tools")
 
@@ -130,32 +129,8 @@ def _register_skill(name: str, skill_file: Path):
 
 
 
-
-def register_templates():
-    """Register project scaffolding templates as MCP resources under skill://templates/project/*."""
-    tpl_dir = KB_DIR / "Projects" / "_TEMPLATE"
-    if not tpl_dir.exists():
-        log.warning("template directory not found: %s", tpl_dir)
-        return
-
-    for tpl_file in sorted(tpl_dir.rglob("*.md")):
-        rel = tpl_file.relative_to(tpl_dir).as_posix()
-        uri = f"skill://templates/project/{rel}"
-        _register_template_resource(uri, tpl_file)
-
-
-def _register_template_resource(uri: str, file_path: Path):
-    @mcp.resource(uri)
-    def read_template() -> str:
-        return file_path.read_text()
-
-    log.info("registered template resource: %s", uri)
-
-
 discover_tools()
 discover_skills()
-
-register_templates()
 log.info("starting pai-tools MCP server on :8000")
 
 if __name__ == "__main__":

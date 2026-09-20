@@ -55,7 +55,7 @@ Planning files live **in the project** like any developer artifact — not in a 
   progress.md    ← session log: what ran, errors, what changed
 ```
 
-CodeGraph indexes these files on the next reindex — they are searchable in future sessions.
+Graft indexes these files on the next reindex — they are searchable in future sessions.
 
 ## Quick Start
 
@@ -71,7 +71,7 @@ Before a complex task:
 | File | Purpose | When to Update |
 |---|---|---|
 | `task_plan.md` | Phases, progress, decisions | After each phase completes |
-| `findings.md` | Research, discoveries, retrieved context | After ANY discovery or CodeGraph result |
+| `findings.md` | Research, discoveries, retrieved context | After ANY discovery or Graft result |
 | `progress.md` | Session log, errors, test results | Throughout the session |
 
 ## Critical Rules
@@ -82,7 +82,7 @@ Never start a complex task (3+ steps, research, multi-file) without `task_plan.m
 ### 2. The 2-Operation Rule
 > After every 2 read/search/browse operations → IMMEDIATELY save key findings to `findings.md`.
 
-This prevents retrieved context (CodeGraph results, file contents, search hits) from being lost.
+This prevents retrieved context (Graft results, file contents, search hits) from being lost.
 
 ### 3. Read Before Decide
 Before any major decision, re-read `task_plan.md`. Keeps goals in attention window.
@@ -119,7 +119,7 @@ Attempt 2: Alternative approach
 
 Attempt 3: Broader rethink
   → Question assumptions
-  → Search CodeGraph for related context
+  → Search Graft for related context
   → Consider updating the plan
 
 After 3 failures: Escalate to user
@@ -149,7 +149,7 @@ If you can answer these, your context management is solid:
 | Situation | Action |
 |---|---|
 | Just wrote a file | Don't re-read — still in context |
-| Got CodeGraph results | Write to `findings.md` immediately |
+| Got Graft results | Write to `findings.md` immediately |
 | Starting new phase | Re-read `task_plan.md` and `findings.md` |
 | Error occurred | Read relevant file for current state |
 | Resuming after session gap | Read all 3 planning files |
@@ -164,7 +164,7 @@ If you can answer these, your context management is solid:
 ## Related Skills
 
 - `skill://stack-discovery` — run first on unknown codebase; save result to `findings.md`
-- `skill://codegraph` — CodeGraph query procedures; save results to `findings.md`
+- `skill://graft` — CodeGraph query procedures; save results to `findings.md`
 - `skill://python`, `skill://docker`, etc. — stack skills; follow after stack-discovery
 
 ## Verification

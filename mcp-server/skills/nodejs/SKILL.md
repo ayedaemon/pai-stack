@@ -1,7 +1,8 @@
 ---
 name: nodejs
-description: Read, understand, and safely change Node.js codebases — detect runtime, package manager, framework, scripts, and deps.
+description: Read, understand, and safely change Node.js codebases — detect runtime, package manager, framework, scripts, and deps. Optimized for pai-stack's graft code intelligence engine.
 ---
+
 # Node.js Project
 
 > Read, understand, and safely change Node.js codebases — detect runtime, package manager, framework, scripts, and deps.
@@ -33,7 +34,7 @@ description: Read, understand, and safely change Node.js codebases — detect ru
 5. Map entrypoints & config:
    - Trace `package.json: scripts.start` → file; check `src/index.*`, `src/server.*`, `src/main.*` first 30 lines for bootstrap
    - Env: `.env.example` / `.env` / `config/*.ts` — list required vars (`DATABASE_URL`, `PORT`, `JWT_SECRET` as refs, never raw)
-   - Docker: `Dockerfile` / `docker-compose.yaml` → also retrieve `Skills/docker/SKILL.md`; Postgres detected → `Skills/postgres/SKILL.md`
+   - Docker: `Dockerfile` / `docker-compose.yaml` → also retrieve `Skills/docker/SKILL.md`; Postgres detected → `Skills/sql/SKILL.md`
 6. Assess quality & health:
    - Tests: `__tests__/`, `*.test.*`, `*.spec.*`, `jest.config.*`, `vitest.config.*` — note runner
    - Lint/format: `eslint`, `prettier`, `biome` configs
@@ -73,7 +74,7 @@ When writing, editing, or planning Node.js code, you MUST adhere to the followin
 - `tsconfig.json`
 - `.nvmrc` / `.node-version`
 - `src/server.*` / `src/app.*` / `src/main.*`
-- `Skills/react/SKILL.md` (if React frontend), `Skills/docker/SKILL.md`, `Skills/postgres/SKILL.md`
+- `Skills/react/SKILL.md` (if React frontend), `Skills/docker/SKILL.md`, `Skills/sql/SKILL.md`
 
 ## Notes for Hermes
 - Headings: `## Runtime`, `## Scripts`, `## Framework`, `## Entrypoints`, `## Env` — better retrieval.

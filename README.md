@@ -96,33 +96,23 @@ Host Machine (WORKSPACE_DIR)
   │       ├── notebook.json
   │       ├── notes/
   │       └── sources/
-  ├── .planning/                       ← Planning artifacts per project
-  │   └── YYYY-MM-DD-slug/
-  │       ├── task_plan.md
-  │       ├── findings.md
-  │       ├── progress.md
-  │       └── research/
-  │           └── ADR-XXX.md           ← Living ADRs with symbol hashes
-  └── .scripts/                        ← Helper utilities
-      ├── new_probe.sh
-      ├── run_probe.sh
-      ├── ingest_evidence.sh
-      ├── new_adr.sh
-      ├── check_adr_drift.sh
-      ├── create_research_board.sh
-      └── handoff_context.sh
+  └── .planning/                       ← Planning artifacts per project
+      └── YYYY-MM-DD-slug/
+          ├── task_plan.md
+          ├── findings.md
+          ├── progress.md
+          └── research/
+              └── ADR-XXX.md           ← Living ADRs with symbol hashes
         │
-        ├── [mount: /opt/data/workspace (rw)]  ──> Hermes (Agent workspace + probes)
+        ├── [mount: /opt/data/workspace (rw)]  ──> Hermes (Agent workspace + execution)
         ├── [mount: /opt/data/workspace (ro)]  ──> Graft (Hybrid search: AST + text + semantic)
+        ├── [mount: /opt/data/workspace (rw)]  ──> MCP Server (Research Brain file vault)
         │
         ├── Hermes ──→ Graft:20128/mcp           (Code intelligence via MCP)
         ├── Hermes ──→ MCP Server:8000/mcp       (Tools & Skills via MCP)
         ├── Hermes ──→ LLM Gateway:4000          (ALL model inference)
         ├── Graft ──→ LLM Gateway:4000           (Code summarization)
-        ├── Open Notebook ──→ SurrealDB:8000     (Database)
-        ├── Open Notebook ──→ Embeddings:8080    (Vector embeddings)
-        ├── Open Notebook ──→ LLM Gateway:4000   (Note generation, RAG)
-        └── Hermes ──→ MCP Server ──→ notebook_ops ──→ Open Notebook:5055
+        └── MCP Server (notebook_ops) ──→ research/ (Native Markdown file vault)
 ```
 
 ---
@@ -186,7 +176,7 @@ Host Machine (WORKSPACE_DIR)
    6. Report your discovered:
       - `EXECUTION_DIR` (single project directory)
       - Active stack services
-      - Ready MCP tools: `mcp__graft__*`, `mcp__pai_tools__notebook_ops`, `mcp__pai_tools__docker_ops`, `mcp__pai_tools__read_resource`, `mnemosyne_*`
+      - Ready MCP tools: `mcp__graft__*`, `mcp__pai_tools__notebook_ops`, `mcp__pai_tools__adr_ops`, `mcp__pai_tools__docker_ops`, `mcp__pai_tools__read_resource`, `mnemosyne_*`
       - Available skills (via `mcp__pai_tools__read_resource`): `agents`, `open-notebook`, `autonomous-tech-learner`, `graft`, `planning`, `stack-discovery`, `python`, `docker`, `react`, `nodejs`, `postgres`, `gitops`
       - Kanban swarm patterns for delegation
 
@@ -246,7 +236,7 @@ Host Machine (WORKSPACE_DIR)
 | `mcp-server/skills/open-notebook/SKILL.md` | Research Brain usage + **Symbolic Anchor Protocol** |
 | `mcp-server/skills/autonomous-tech-learner/SKILL.md` | Learning loop + **Hypothesis-Testing Protocol** + **Deep Inquiry Trees & L-ADRs** |
 | `mcp-server/skills/planning/SKILL.md` | Planning discipline (task_plan.md, findings.md, progress.md) |
-| `.scripts/` | Hermes utilities: probes, ADRs, Kanban boards, handoffs |
+| `mcp-server/tools/adr-ops/` | `adr_ops` MCP tool (Living ADR creation & symbol drift detection) |
 
 ---
 

@@ -40,7 +40,7 @@ kanban:
         - notebook_ops: add_source_url, add_source_file, add_note, search, ask_notebook, poll_source_status, get_source, get_notebook
         - graft_find_code, graft_trace_calls, graft_repo_map (for code anchoring)
         - mnemosyne_recall (for prior research)
-        - run_probe.sh, new_probe.sh, ingest_evidence.sh (via shell in /opt/data/workspace/.scripts)
+        - native shell execution (for micro-benchmarks or hypothesis tests in /opt/data), ingest findings via notebook_ops: add_note
         
         WORKFLOW:
         1. Receive task with: {topic, sub_question, notebook_id, anchor_symbols[], context}
@@ -89,17 +89,14 @@ kanban:
         INPUT: {synthesis, decision_topic, symbols[], context}
         
         WORKFLOW:
-        1. Use new_adr.sh template with provided symbols
-        2. Fill Context, Decision, Consequences from synthesis
-        3. Add Dialectical Record from synthesizer's counterpoints
-        4. Add Validation Probes references
-        5. Compute symbol hashes
-        6. Write ADR to <EXECUTION_DIR>/.planning/research/
-        7. Return: {adr_path, adr_number, status: proposed}
+        1. Call adr_ops(action="create_adr", adr_number=..., title=..., context=..., decision=..., symbols=[...])
+        2. Fill Dialectical Record from synthesizer's counterpoints into the created ADR
+        3. Add Validation Probes references
+        4. Return: {adr_path, adr_number, status: proposed}
         
         CONSTRAINTS:
         - Follow L-ADR template exactly (skill://autonomous-tech-learner).
-        - All symbols must have hashes.
+        - All symbols must have hashes computed via adr_ops.
         - Status always "proposed" initially.
 
   # Swarm orchestration patterns
@@ -180,6 +177,7 @@ agent:
     - MCP Server (mcp-server:8000): Procedural skills via mcp__pai_tools__read_resource(uri="skill://<name>") (agents, stack-discovery, graft, python, docker, react, nodejs, postgres, planning, open-notebook, gitops, autonomous-tech-learner). Call mcp__pai_tools__list_resources() to discover all available resources.
     - mcp__pai_tools__docker_ops: Manage stack containers (hermes, graft, llm-gateway, mcp-server) via action='list'|'status'|'logs'|'restart'|'start'|'stop'|'exec'.
     - mcp__pai_tools__notebook_ops: Native Research Brain tool operating directly on Markdown files at /opt/data/workspace/research/<notebook>/ (actions: list_notebooks, create_notebook, get_notebook, add_note, add_source_url, add_source_file, poll_source_status, get_source, search, ask_notebook). (Fetch skill://open-notebook for conventions). Note: There is NO external Open Notebook or SurrealDB container; Research Brain is 100% file-based inside mcp-server. NEVER check for or attempt to manage an open-notebook container.
+    - mcp__pai_tools__adr_ops: Living Architecture Decision Records & symbol drift detection via action='create_adr'|'check_drift'|'list_adrs'. Tracks @symbol: anchors and compares SHA-256 hashes against active workspace code to detect architectural drift.
     - Mnemosyne: Local SQLite memory. Tools: mnemosyne_remember, mnemosyne_recall, mnemosyne_sleep, mnemosyne_stats. Captures context automatically.
 
     # ════════════════════════════════════════════════════════════════════════
@@ -199,24 +197,21 @@ agent:
     #   - Native file storage: /opt/data/workspace/research/ → automatically indexed by Graft & searchable in IDE
     #
     # 🔬 EMPIRICAL LAB NOTEBOOK (Hypothesis-Testing Protocol)
-    #   - Probe dir: /opt/data/probes/<slug>/{hypothesis.md, probe.py, probe.sh, results.json, evidence_note.md}
-    #   - 4-step: Formulate → Write Micro-Script → Execute (30s/256MB guardrails) → Ingest Evidence Note
-    #   - Evidence notes: title="EVIDENCE: <slug> — <supported|refuted|inconclusive>", @symbol: anchors
-    #   - Scripts: .scripts/{new_probe,run_probe,ingest_evidence}.sh
+    #   - Micro-benchmarks & empirical tests: write and execute scripts directly in /opt/data/
+    #   - 4-step: Formulate hypothesis → Write micro-script → Execute with guardrails → Ingest evidence note
+    #   - Evidence notes: Ingest via mcp__pai_tools__notebook_ops(action="add_note", notebook_id=..., title="EVIDENCE: <slug> — <supported|refuted|inconclusive>", content=...) with @symbol: anchors
     #
     # 🌳 DEEP INQUIRY TREES & LIVING ADRs
     #   - 4 PERSPECTIVES: Systems Architecture, Security & Threats, Developer Ergonomics, Failure Modes
     #   - DIALECTICAL INQUIRY: Mandatory counterpoint search (GitHub issues, anti-patterns, version gotchas, incidents)
-    #   - L-ADRs: <EXECUTION_DIR>/.planning/research/ADR-XXX.md with symbol hashes, supersession chain
-    #   - DRIFT DETECTION: check_adr_drift.sh recomputes symbol hashes, flags mismatches in findings.md
-    #   - Scripts: .scripts/{new_adr,check_adr_drift}.sh
+    #   - L-ADRs: Call mcp__pai_tools__adr_ops(action="create_adr", adr_number=..., title=..., context=..., decision=..., symbols=[...]) to generate <EXECUTION_DIR>/.planning/research/ADR-XXX.md with symbol hashes
+    #   - DRIFT DETECTION: Call mcp__pai_tools__adr_ops(action="check_drift") to recompute symbol hashes and automatically flag mismatches in findings.md
     #
     # 🤖 KANBAN RESEARCH SWARMS (Multi-Agent Delegation)
     #   - Workers: researcher (deep-dive), synthesizer (consolidate), adr_author (produce L-ADR)
     #   - Patterns: deep_research (4-perspective parallel → synthesize → ADR), quick_fact_check, empirical_validation
     #   - Handoff: context_keys (notebook_id, execution_dir, anchor_symbols, inquiry_question, perspective)
     #   - Required artifacts: evidence_note_ids, symbol_anchors, confidence_score, unresolved_questions
-    #   - Scripts: .scripts/{create_research_board,handoff_context}.sh
     #   - DELEGATION TRIGGER: Multi-perspective research, ADR production, or complex empirical validation
     #
     # ════════════════════════════════════════════════════════════════════════

@@ -16,7 +16,7 @@ description: Auto-detect tech stack for any project under /opt/data/workspace so
 - Optional: depth limit (default 2 levels), language hint
 
 ## Steps
-1. Retrieve scoped context from CodeGraph: `GET /search?q=<project>&type=hybrid` to see if prior findings exist. Note if no findings → you will write them after discovery.
+1. Check for prior findings: `graft_find_code(question="<project> stack discovery findings", scope=".")` — if results exist, note them. Either way, proceed with marker scan below.
 2. Scan root (depth 1-2) for markers — record `file:lines` hit for each:
    - Python: `pyproject.toml`, `requirements*.txt`, `Pipfile`, `poetry.lock`, `uv.lock`, `setup.py`, `*.py` at top-level, `.python-version`
    - Docker: `Dockerfile*`, `docker-compose*.yaml`, `compose.yaml`, `.dockerignore`

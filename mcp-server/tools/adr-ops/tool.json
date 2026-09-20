@@ -1,0 +1,44 @@
+{
+  "name": "adr_ops",
+  "description": "Create and verify Living Architecture Decision Records (L-ADRs). Tracks code symbol references with SHA-256 hashes to detect when architecture decisions drift from active codebase implementations. Actions: create_adr, check_drift, list_adrs.",
+  "command": ["sh", "run.sh"],
+  "timeout": 30,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["create_adr", "check_drift", "list_adrs"],
+        "description": "Operation to perform: create_adr (scaffold a new living ADR with symbol hashes), check_drift (scan existing ADRs and verify if referenced code symbols have changed), list_adrs (list all ADRs and their status)."
+      },
+      "adr_number": {
+        "type": "string",
+        "description": "ADR number, e.g. '001' or '002' (required for create_adr)."
+      },
+      "title": {
+        "type": "string",
+        "description": "ADR title, e.g. 'Use Redis for Distributed Caching' (required for create_adr)."
+      },
+      "context": {
+        "type": "string",
+        "description": "Context and problem statement (for create_adr)."
+      },
+      "decision": {
+        "type": "string",
+        "description": "The decision reached and rationale (for create_adr)."
+      },
+      "symbols": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "List of symbol references to anchor and hash, formatted as '@symbol:path/to/file.ext:SymbolName' (for create_adr)."
+      },
+      "execution_dir": {
+        "type": "string",
+        "description": "Optional project execution directory path (e.g. /opt/data/workspace/my-project). Defaults to finding .planning directory under workspace."
+      }
+    },
+    "required": ["action"]
+  }
+}

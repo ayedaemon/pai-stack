@@ -22,19 +22,18 @@ Learn → (Hypothesis?) → Probe → Evidence Note → Synthesize → Store →
 **Three Major Capabilities Unlocked:**
 
 ### 1. 🔬 Empirical Lab Notebook (Hypothesis-Testing Protocol)
-When documentation is ambiguous, **run a probe** instead of guessing:
-- Probe dir: `/opt/data/probes/<slug>/{hypothesis.md, probe.py, probe.sh, results.json, evidence_note.md}`
+When documentation is ambiguous, **run an empirical test** instead of guessing:
+- Execute test scripts directly in container shell or `/opt/data/` (Python or Shell)
 - 4-step: Formulate → Write Micro-Script → Execute (30s/256MB) → Ingest Evidence Note
 - Evidence notes: `EVIDENCE: <slug> — <supported|refuted|inconclusive>` with `@symbol:` anchors
-- Scripts: `.scripts/{new_probe,run_probe,ingest_evidence}.sh`
+- Ingestion: Archive findings via `notebook_ops(action="add_note", ...)`
 
 ### 2. 🌳 Deep Inquiry Trees & Living ADRs
 Complex questions → **4 mandatory perspectives** → dialectical inquiry → L-ADRs:
 - **Perspectives**: Systems Architecture, Security & Threats, Developer Ergonomics, Failure Modes
 - **Dialectical**: Mandatory counterpoint search (GitHub issues, anti-patterns, version gotchas, incidents)
-- **L-ADRs**: `<EXECUTION_DIR>/.planning/research/ADR-XXX.md` with symbol hashes, supersession chain
-- **Drift detection**: `check_adr_drift.sh` recomputes symbol hashes, flags mismatches
-- Scripts: `.scripts/{new_adr,check_adr_drift}.sh`
+- **L-ADRs**: Generated via `adr_ops(action="create_adr", ...)` to `<EXECUTION_DIR>/.planning/research/ADR-XXX.md` with symbol hashes, supersession chain
+- **Drift detection**: `adr_ops(action="check_drift")` recomputes symbol hashes, flags mismatches in `findings.md`
 
 ### 3. 🤖 Kanban Research Swarms (Multi-Agent Delegation)
 Delegate complex research to specialized workers (configured in `hermes/config.yaml`):
@@ -242,15 +241,13 @@ If a learning objective requires empirical validation:
 
 ---
 
-## Probe Management Commands
+## Probe Management
 
-Helper scripts (available in `/opt/data/`):
+Probes are run directly — no helper scripts needed:
 
-- `new_probe.sh <slug>` — scaffolds probe directory with template.
-- `run_probe.sh <slug>` — executes with safeguards, writes `results.json`.
-- `ingest_evidence.sh <slug> <notebook_id>` — formats and calls `notebook_ops(add_note)`.
-
-These are Hermes utilities, not MCP tools. Create as needed.
+1. **Create** probe directory and write `probe.py` inline (follow Hypothesis-Testing Protocol above).
+2. **Execute** via `docker_ops(action="exec", service="hermes", command=["timeout", "30", "python", "/opt/data/probes/<slug>/probe.py"])`.
+3. **Ingest** results via `notebook_ops(action="add_note", ...)` with `EVIDENCE:` title prefix.
 
 ---
 

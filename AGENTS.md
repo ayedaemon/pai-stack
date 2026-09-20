@@ -79,7 +79,6 @@ Skills are markdown files baked into the mcp-server image — zero model tokens 
 | `skill://postgres` | Postgres conventions |
 | `skill://graft` | Graft query procedures and tools reference |
 | `skill://planning` | planning-with-files discipline (task_plan.md etc.) |
-| `skill://_TEMPLATE` | Template for new custom skills |
 | `skill://agents` | Ground rules injected at session start |
 
 #### Tools (MCP tools)
@@ -88,6 +87,7 @@ Skills are markdown files baked into the mcp-server image — zero model tokens 
 |---|---|---|
 | `mcp__pai_tools__docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
 | `mcp__pai_tools__notebook_ops` | Query and manage Research Brain (native file vault in `research/`) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
+| `mcp__pai_tools__adr_ops` | Living ADR creation & code symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 | `mcp__pai_tools__read_resource` | Fetch procedural skills or template resources by URI | `uri="skill://<name>"` |
 | `mcp__pai_tools__list_resources` | Discover all available skills and templates on mcp-server | (none) |
 
