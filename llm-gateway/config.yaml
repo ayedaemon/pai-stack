@@ -5,21 +5,20 @@ model_list:
   # ── Primary Default Routing ───────────────────────────────────────────
   - model_name: default
     litellm_params:
-      model: openai//Users/rishabh.umrao/.lmstudio/models/prism-ml/Ternary-Bonsai-27B-mlx-2bit/
+      model: openai/qwen3.5-9b-deepseek-v4-flash
       api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL
       api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
       timeout: 1800
       drop_params: true
 
   # ── Upstream Language Models (Clean Canonical Names) ──────────────────
-  - model_name: Ternary-Bonsai-27B-mlx-2bit
+  - model_name: qwen3.5-9b-deepseek-v4-flash
     litellm_params:
-      model: openai//Users/rishabh.umrao/.lmstudio/models/prism-ml/Ternary-Bonsai-27B-mlx-2bit/
+      model: openai/qwen3.5-9b-deepseek-v4-flash
       api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL
       api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
       timeout: 1800
       drop_params: true
-      max_tokens: 4096
 
   # ── Kilo Gateway ───────────────────────────────────────────────────
   - model_name: kilo/kilo-auto/free
@@ -85,9 +84,9 @@ model_list:
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
 
-  - model_name: kilo/nvidia/nemotron-3.5-lightning:free
+  - model_name: kilo/deepseek/deepseek-v4-flash-0731:free
     litellm_params:
-      model: openai/nvidia/nemotron-3.5-lightning:free
+      model: openai/deepseek/deepseek-v4-flash-0731:free
       api_base: https://api.kilo.ai/api/gateway
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
@@ -127,11 +126,53 @@ model_list:
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
 
-  - model_name: kilo/kilo-auto/small
+  # ── OpenRouter ───────────────────────────────────────────────────
+  - model_name: openrouter/inclusionai/ling-3.0-flash-vl:free
     litellm_params:
-      model: openai/kilo-auto/small
-      api_base: https://api.kilo.ai/api/gateway
-      api_key: os.environ/KILO_GATEWAY_API_KEY
+      model: openrouter/inclusionai/ling-3.0-flash-vl:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 1800
+
+  - model_name: openrouter/nex-agi/nex-n2.5-mini:free
+    litellm_params:
+      model: openrouter/nex-agi/nex-n2.5-mini:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 1800
+
+  - model_name: openrouter/nex-agi/nex-n2.5-pro:free
+    litellm_params:
+      model: openrouter/nex-agi/nex-n2.5-pro:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 1800
+
+  - model_name: openrouter/inclusionai/ling-3.0-flash-sante:free
+    litellm_params:
+      model: openrouter/inclusionai/ling-3.0-flash-sante:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 1800
+
+  - model_name: openrouter/inclusionai/ling-3.0-flash-fin:free
+    litellm_params:
+      model: openrouter/inclusionai/ling-3.0-flash-fin:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 1800
+
+  - model_name: openrouter/dots-studio/dots-3-note-preview:free
+    litellm_params:
+      model: openrouter/dots-studio/dots-3-note-preview:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 1800
+
+  - model_name: openrouter/liquid/lfm-2.5-2.6b:free
+    litellm_params:
+      model: openrouter/liquid/lfm-2.5-2.6b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 1800
+
+  - model_name: openrouter/deepseek/deepseek-v4-flash-0731:free
+    litellm_params:
+      model: openrouter/deepseek/deepseek-v4-flash-0731:free
+      api_key: os.environ/OPENROUTER_API_KEY
       timeout: 1800
 
   # ── Mistral AI ───────────────────────────────────────────────────
@@ -242,6 +283,12 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
+  - model_name: gemini/gemini-flash-latest
+    litellm_params:
+      model: gemini/gemini-flash-latest
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
   - model_name: gemini/gemini-flash-lite-latest
     litellm_params:
       model: gemini/gemini-flash-lite-latest
@@ -257,12 +304,6 @@ model_list:
   - model_name: gemini/gemini-3.1-flash-lite-preview
     litellm_params:
       model: gemini/gemini-3.1-flash-lite-preview
-      api_key: os.environ/GEMINI_API_KEY
-      timeout: 1800
-
-  - model_name: gemini/gemini-3.1-flash-lite
-    litellm_params:
-      model: gemini/gemini-3.1-flash-lite
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
@@ -287,6 +328,12 @@ model_list:
   - model_name: gemini/gemini-3.6-flash
     litellm_params:
       model: gemini/gemini-3.6-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-3.7-flash
+    litellm_params:
+      model: gemini/gemini-3.7-flash
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
@@ -318,6 +365,7 @@ router_settings:
   fallbacks:
     - default:
         - "kilo/kilo-auto/free"
+        - "openrouter/openai/gpt-4o-mini"
         - "mistral/codestral-latest"
 
 # ── General Settings ─────────────────────────────────────────────────────

@@ -127,19 +127,14 @@ case "$ACTION" in
       printf '{"error":"content is required for add_note"}\n' >&2
       exit 1
     fi
-    # Notes endpoint: POST /api/notes with notebook_id as a query param
+    # Notes endpoint: POST /api/notes with notebook_id in request body (not query param)
     BODY=$(jq -cn \
       --arg title "${TITLE:-Hermes Note}" \
       --arg content "$CONTENT" \
       --arg note_type "human" \
-      '{title: $title, content: $content, note_type: $note_type}')
-    curl -sf --max-time 25 \
-      -X POST \
-      -H "Content-Type: application/json" \
-      ${AUTH_ARGS:+-H "$AUTH_ARGS"} \
-      -d "$BODY" \
-      "${OPEN_NOTEBOOK_URL}/api/notes?notebook_id=${NOTEBOOK_ID}" 2>/dev/null \
-      || printf '{"error":"request failed","endpoint":"/api/notes"}\n'
+      --arg nb "$NOTEBOOK_ID" \
+      '{title: $title, content: $content, note_type: $note_type, notebook_id: $nb}')
+    api_json POST /api/notes "$BODY"
     ;;
 
   add_source_url)

@@ -150,6 +150,7 @@ services:
       - mcp-logs:/app/logs
       - ./mcp-server/skills:/app/skills:ro
       - ./mcp-server/kb:/app/kb:ro
+      - ./mcp-server/tools:/app/tools:ro
     deploy:
       resources:
         limits:
