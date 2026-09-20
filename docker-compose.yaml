@@ -207,32 +207,6 @@ services:
         aliases:
           - litellm
 
-  opencode:
-    build:
-      context: ./opencode
-      dockerfile: Dockerfile
-    container_name: opencode
-    restart: unless-stopped
-    depends_on:
-      llm-gateway:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 1024M
-          cpus: "1.0"
-    environment:
-      - OPENAI_API_BASE=http://llm-gateway:4000/v1
-      - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-not-needed}
-    volumes:
-      - type: bind
-        source: ${WORKSPACE_DIR}
-        target: /opt/data/workspace
-        bind:
-          create_host_path: false
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
 volumes:
   hermes-data:
   graft-cache:
