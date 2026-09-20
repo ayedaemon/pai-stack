@@ -20,6 +20,14 @@ model_list:
       timeout: 1800
       drop_params: true
 
+  - model_name: ministral-3-14b-reasoning
+    litellm_params:
+      model: openai/mistralai/ministral-3-14b-reasoning
+      api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL
+      api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
+      timeout: 1800
+      drop_params: true
+
   # ── Kilo Gateway ───────────────────────────────────────────────────
   - model_name: kilo/kilo-auto/free
     litellm_params:
@@ -38,13 +46,6 @@ model_list:
   - model_name: kilo/dots-studio/dots-3-note-preview:free
     litellm_params:
       model: openai/dots-studio/dots-3-note-preview:free
-      api_base: https://api.kilo.ai/api/gateway
-      api_key: os.environ/KILO_GATEWAY_API_KEY
-      timeout: 1800
-
-  - model_name: kilo/nex-agi/nex-n2.5-pro:free
-    litellm_params:
-      model: openai/nex-agi/nex-n2.5-pro:free
       api_base: https://api.kilo.ai/api/gateway
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
@@ -84,9 +85,9 @@ model_list:
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
 
-  - model_name: kilo/deepseek/deepseek-v4-flash-0731:free
+  - model_name: kilo/poolside/laguna-xs-2.1:free
     litellm_params:
-      model: openai/deepseek/deepseek-v4-flash-0731:free
+      model: openai/poolside/laguna-xs-2.1:free
       api_base: https://api.kilo.ai/api/gateway
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
@@ -122,6 +123,13 @@ model_list:
   - model_name: kilo/stepfun/step-3.7-flash:free
     litellm_params:
       model: openai/stepfun/step-3.7-flash:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+
+  - model_name: kilo/kilo-auto/small
+    litellm_params:
+      model: openai/kilo-auto/small
       api_base: https://api.kilo.ai/api/gateway
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
@@ -166,12 +174,6 @@ model_list:
   - model_name: openrouter/liquid/lfm-2.5-2.6b:free
     litellm_params:
       model: openrouter/liquid/lfm-2.5-2.6b:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      timeout: 1800
-
-  - model_name: openrouter/deepseek/deepseek-v4-flash-0731:free
-    litellm_params:
-      model: openrouter/deepseek/deepseek-v4-flash-0731:free
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 1800
 
@@ -307,9 +309,9 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
-  - model_name: gemini/gemini-3.5-flash
+  - model_name: gemini/gemini-3.1-flash-lite
     litellm_params:
-      model: gemini/gemini-3.5-flash
+      model: gemini/gemini-3.1-flash-lite
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
@@ -364,6 +366,7 @@ router_settings:
   stream_timeout: 1800       # 30m chunk timeout for slow reasoning token streams
   fallbacks:
     - default:
+        - "ministral-3-14b-reasoning"
         - "kilo/kilo-auto/free"
         - "openrouter/openai/gpt-4o-mini"
         - "mistral/codestral-latest"

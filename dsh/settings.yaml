@@ -35,8 +35,8 @@ agent:
     - /opt/data/workspace: Active read-write mount. OFTEN MULTI-PROJECT. Write project files only after user confirmation. Temp scripts go in /opt/data.
     - LLM Gateway: LiteLLM proxy at llm-gateway:4000. Sole entrypoint for models.
     - Graft (graft:20128): Primary code intelligence via MCP. USE BEFORE READING FILES: graft_find_code, graft_file_api, graft_trace_calls, graft_find_all, graft_repo_map.
-    - docker_ops: Manage containers (hermes, dsh, graft, llm-gateway, embeddings, mcp-server, open-notebook) via list, status, logs, restart, start, stop.
-    - notebook_ops: Query Open Notebook via list_notebooks, search, add_note.
+    - docker_ops: Manage containers (hermes, dsh, graft, llm-gateway, mcp-server) via list, status, logs, restart, start, stop.
+    - notebook_ops: Query Research Brain via list_notebooks, search, add_note.
     - Mnemosyne: Local memory bridge via dsh-mnemosyne plugin. Captures context automatically.
 
     # PROCEDURAL SKILLS

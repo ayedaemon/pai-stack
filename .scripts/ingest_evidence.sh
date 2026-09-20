@@ -69,23 +69,7 @@ if [[ -n "$TITLE_SUFFIX" ]]; then
   TITLE="$TITLE — $TITLE_SUFFIX"
 fi
 
-# Call notebook_ops via MCP (requires OPEN_NOTEBOOK_URL in env)
-# This script is meant to be run inside mcp-server container or via docker exec
-if [[ -z "${OPEN_NOTEBOOK_URL:-}" ]]; then
-  echo "Warning: OPEN_NOTEBOOK_URL not set. Cannot call notebook_ops directly."
-  echo "Run inside mcp-server container or set OPEN_NOTEBOOK_URL=http://open-notebook:5055"
-  echo ""
-  echo "--- Evidence Note Preview ---"
-  echo "Title: $TITLE"
-  echo "Notebook: $NOTEBOOK_ID"
-  echo "Content length: ${#EVIDENCE_CONTENT} chars"
-  echo ""
-  echo "To ingest manually:"
-  echo "  notebook_ops(action=add_note, notebook_id=\"$NOTEBOOK_ID\", title=\"$TITLE\", content=\"...\")"
-  exit 0
-fi
-
-# Use the MCP tool via TOOL_INPUT
+# Ingest evidence note via native notebook_ops
 TOOL_INPUT=$(jq -cn \
   --arg action "add_note" \
   --arg notebook_id "$NOTEBOOK_ID" \
@@ -93,6 +77,10 @@ TOOL_INPUT=$(jq -cn \
   --arg content "$EVIDENCE_CONTENT" \
   '{action: $action, notebook_id: $notebook_id, title: $title, content: $content}')
 
-echo "Ingesting evidence note into Open Notebook..."
-cd /app/tools/notebook-ops
-TOOL_INPUT="$TOOL_INPUT" sh run.sh
+echo "Ingesting evidence note into Research Brain ($NOTEBOOK_ID)..."
+if [[ -d "/app/tools/notebook-ops" ]]; then
+  cd /app/tools/notebook-ops
+  TOOL_INPUT="$TOOL_INPUT" sh run.sh
+else
+  docker exec -i -e TOOL_INPUT="$TOOL_INPUT" mcp-server python3 /app/tools/notebook-ops/notebook_ops.py
+fi

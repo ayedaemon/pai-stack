@@ -13,8 +13,8 @@
       },
       "service": {
         "type": "string",
-        "enum": ["hermes", "codegraph", "embeddings", "mcp-server", "open-notebook", "surrealdb"],
-        "description": "Target container name. Required for all actions except 'list'. 'open-notebook' and 'surrealdb' are only present when running make up-all."
+        "enum": ["hermes", "graft", "llm-gateway", "mcp-server", "dsh"],
+        "description": "Target container name. Required for all actions except 'list'."
       },
       "lines": {
         "type": "integer",
