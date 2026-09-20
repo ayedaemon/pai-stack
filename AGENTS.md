@@ -14,10 +14,8 @@ code intelligence, semantic search, read-write workspace access, and procedural 
 |---|---|---|
 | **hermes** | 9119 / 8642 | AI agent gateway + web dashboard (with native Mnemosyne memory) |
 | **graft** | 20128 | Code intelligence: AST + semantic search (via MCP) |
-| **mcp-server** | 8000 | MCP server: bundled skills (resources) and tools |
+| **mcp-server** | 8000 | MCP server: bundled skills, tools, and native Research Brain |
 | **llm-gateway** | 4000 | Unified LLM Gateway: LiteLLM proxy (routes, fallbacks, provider credentials) |
-| **surrealdb** | 8000 (internal only) | Database for Open Notebook — **opt-in**, only with `make up-all` |
-| **open-notebook** | 8502 (UI), 5055 (API) | Research Brain: external knowledge store — **opt-in**, only with `make up-all` |
 
 ## Container Mounts
 
@@ -25,14 +23,15 @@ code intelligence, semantic search, read-write workspace access, and procedural 
 |---|---|---|---|
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | hermes | **read-write** |
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | graft | read-only (or read-write for cache) |
+| `$WORKSPACE_DIR` | `/opt/data/workspace` | mcp-server | **read-write** (for `research/` vault) |
 
-Both hermes and graft mount the same workspace path (`/opt/data/workspace`), so path references
-are consistent across containers. Graft natively detects file changes (drift) in real-time.
-Hermes can also write helper scripts and scratch tools to `/opt/data`.
+All core services mount the same workspace path (`/opt/data/workspace`), so path references
+are consistent across containers. Graft natively detects file changes in real-time.
+Hermes writes helper scripts and scratch tools to `/opt/data`.
 
-> Open Notebook and SurrealDB use **only named Docker volumes** (`surreal-data`, `open-notebook-data`).
-> They do NOT bind-mount `WORKSPACE_DIR`. This is intentional: writing notebook blobs in the workspace
-> would cause constant spurious Graft graph rebuilds and pollute code-search results.
+> Research Brain stores all notes and sources as human-readable Markdown with YAML frontmatter
+> directly in `$WORKSPACE_DIR/research/<notebook-name>/`. There are no external databases (SurrealDB)
+> or dedicated embedding containers needed, saving ~2.3 GB of RAM and ensuring instant IDE search.
 
 ## Service Interconnection
 
@@ -42,17 +41,12 @@ hermes ──→ graft:20128          code intelligence via MCP (streamable-http
 hermes ──→ mcp-server:8000      skills + tools via MCP protocol (streamable-http)
 hermes ──→ llm-gateway:4000     ONLY gateway for LLM completions & reasoning
 graft  ──→ llm-gateway:4000     ONLY gateway for code summarization & deep indexing
-
-── opt-in (make up-all) ──────────────────────────────────────────────────────
-open-notebook ──→ surrealdb:8000    database (internal network, no host port)
-open-notebook ──→ embeddings:8080   dedicated embedding model server (nomic-embed)
-open-notebook ──→ llm-gateway:4000  ONLY gateway for note generation & LLM queries
-hermes ──→ mcp-server ──→ notebook_ops ──→ open-notebook:5055   research queries
+mcp-server (notebook_ops) ──→ /opt/data/workspace/research/ (file vault)
+mcp-server (ask_notebook) ──→ llm-gateway:4000 (synthesis)
 ```
 
 All services use `llm-gateway:4000` (LiteLLM) as their single gateway for model inference.
-Hermes does NOT call `embeddings:8080` directly. Open Notebook uses it for vector search.
-Hermes does NOT call `open-notebook:5055` directly. `notebook_ops` MCP tool handles it.
+`notebook_ops` runs natively inside `mcp-server` operating directly on Markdown files in the workspace.
 Mnemosyne runs embedded inside Hermes using local ONNX fastembed and SQLite (`hermes-data` volume).
 
 ## How Hermes Uses Each Service
@@ -93,16 +87,11 @@ Skills are markdown files baked into the mcp-server image — zero model tokens 
 | Tool | Purpose | Allowed actions |
 |---|---|---|
 | `mcp__pai_tools__docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
-| `mcp__pai_tools__notebook_ops` | Query and manage Open Notebook | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
+| `mcp__pai_tools__notebook_ops` | Query and manage Research Brain (native file vault in `research/`) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 | `mcp__pai_tools__read_resource` | Fetch procedural skills or template resources by URI | `uri="skill://<name>"` |
 | `mcp__pai_tools__list_resources` | Discover all available skills and templates on mcp-server | (none) |
 
 All container actions are audited to `/app/logs/docker-ops.log` on the persistent `mcp-logs` volume.
-
-### Embeddings — Open Notebook only
-
-Hermes does NOT call the embeddings service directly.
-It is primarily used by the `open-notebook` service.
 
 ### Mnemosyne — agent memory (decisions, execution outcomes, lessons learned)
 
@@ -117,7 +106,7 @@ using embedded SQLite (`/opt/hermes/data/mnemosyne/data/mnemosyne.db`) and local
 | Retrieval System | Scope | Storage | Role |
 |---|---|---|---|
 | **Graft** | Workspace code & files | `/data` on graft-cache | AST symbols, semantic search (via MCP) |
-| **Open Notebook** | External knowledge | SurrealDB & Open Notebook volumes | RFCs, API docs, papers, research notes |
+| **Research Brain** | External knowledge & notes | `$WORKSPACE_DIR/research/` | RFCs, API docs, papers, research notes in Markdown + Graft search |
 | **Mnemosyne** | Agent experience | `/opt/hermes/data/mnemosyne` | Decisions, prior fixes, session continuity, user preferences |
 
 ## Startup Protocol: Workspace Understanding & Boundaries

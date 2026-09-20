@@ -12,8 +12,7 @@ WORKSPACE_DIR ?= $(shell grep -E '^WORKSPACE_DIR=' .env 2>/dev/null | cut -d= -f
 
 # Compose definitions
 COMPOSE_BASE := -f docker-compose.yaml
-COMPOSE_NOTEBOOK := -f docker-compose.open-notebook.yml
-COMPOSE_ALL := $(COMPOSE_BASE) $(COMPOSE_NOTEBOOK)
+COMPOSE_ALL := $(COMPOSE_BASE)
 
 DOCKER_COMPOSE_BASE := docker compose $(COMPOSE_BASE)
 DOCKER_COMPOSE_ALL := docker compose $(COMPOSE_ALL)
@@ -42,11 +41,11 @@ help:  ## Show this help message
 	@printf "  \033[36m%-16s\033[0m %s\n" "sync" "Sync LLM models with upstream providers (auto-reloads gateway)"
 	@printf "  \033[36m%-16s\033[0m %s\n" "sync-all" "Sync models and include all cloud provider templates"
 	@echo ""
-	@echo "\033[1;34mResearch Brain (Open Notebook):\033[0m"
-	@printf "  \033[36m%-16s\033[0m %s\n" "up-all" "Start base stack + Open Notebook research layer"
-	@printf "  \033[36m%-16s\033[0m %s\n" "down-all" "Stop all services including Open Notebook"
-	@printf "  \033[36m%-16s\033[0m %s\n" "status-all" "Show status of all services including Open Notebook"
-	@printf "  \033[36m%-16s\033[0m %s\n" "logs-all" "Tail logs for all services including Open Notebook"
+	@echo "\033[1;34mResearch Brain (Built-in File-Based):\033[0m"
+	@printf "  \033[36m%-16s\033[0m %s\n" "up-all" "Start stack with native file-based Research Brain (same as up)"
+	@printf "  \033[36m%-16s\033[0m %s\n" "down-all" "Stop all services"
+	@printf "  \033[36m%-16s\033[0m %s\n" "status-all" "Show status of all services"
+	@printf "  \033[36m%-16s\033[0m %s\n" "logs-all" "Tail logs for all services"
 	@echo ""
 	@echo "\033[1;34mMaintenance:\033[0m"
 	@printf "  \033[36m%-16s\033[0m %s\n" "build" "Build container images (optional: s=<service>)"
@@ -119,28 +118,28 @@ sync-all:  ## Sync LLM models and include all cloud provider templates
 
 sync-models: sync  ## Alias for 'make sync'
 
-# ── Open Notebook (Extended Research Stack) ───────────────────────────────────
+# ── Research Brain (Built-in File-Based) ───────────────────────────────────────
 
-up-all: check-workspace  ## Start base stack + Open Notebook research stack (optional: s=<service>)
+up-all: check-workspace  ## Start stack with built-in Research Brain (optional: s=<service>)
 	$(DOCKER_COMPOSE_ALL) up -d $(s)
 
-down-all:  ## Stop base stack + Open Notebook
+down-all:  ## Stop all services
 	$(DOCKER_COMPOSE_ALL) down --remove-orphans
 
-restart-all:  ## Restart all services including Open Notebook (optional: s=<service>)
+restart-all:  ## Restart all services (optional: s=<service>)
 	$(DOCKER_COMPOSE_ALL) restart $(s)
 
-logs-all:  ## Tail logs for all services including Open Notebook (optional: s=<service>)
+logs-all:  ## Tail logs for all services (optional: s=<service>)
 	$(DOCKER_COMPOSE_ALL) logs -f $(s)
 
-status-all:  ## Show status of all services including Open Notebook (optional: s=<service>)
+status-all:  ## Show status of all services (optional: s=<service>)
 	$(DOCKER_COMPOSE_ALL) ps $(s)
 
 build-all:  ## Build images for all services (optional: s=<service>)
 	$(DOCKER_COMPOSE_ALL) build $(s)
 
-clean-all:  ## Stop and remove ALL volumes including Open Notebook data (DESTRUCTIVE)
+clean-all:  ## Stop and remove persisted volumes (destroys hermes & graft state)
 	$(DOCKER_COMPOSE_ALL) down -v --remove-orphans
 
-config-all:  ## Validate and view merged compose config for all services
+config-all:  ## Validate and view compose config for all services
 	$(DOCKER_COMPOSE_ALL) config

@@ -1,6 +1,6 @@
 {
   "name": "notebook_ops",
-  "description": "Query and manage the Open Notebook research knowledge base. Use for external knowledge: RFCs, papers, API docs, web articles — anything NOT in the codebase. Falls back gracefully with {\"available\":false} when Open Notebook is not running (base stack without overlay).",
+  "description": "Query and manage the Research Brain vault. Use for external knowledge: RFCs, papers, API docs, web articles, Living ADRs, and evidence notes. Backed by human-readable Markdown files in the workspace research/ directory, indexed by Graft.",
   "command": ["sh", "run.sh"],
   "timeout": 30,
   "inputSchema": {

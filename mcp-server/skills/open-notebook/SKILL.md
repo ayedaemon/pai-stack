@@ -10,9 +10,9 @@ description: Research Brain for external knowledge: RFCs, API documentation, arc
 > external specifications, or prior research, not implementation details.
 >
 > Tool: `notebook_ops` (MCP) — **10 actions available**
-> API: http://open-notebook:5055
-> Web UI: http://localhost:8502 (host)
-> Only available when running: `make up-all`
+> Storage: `$WORKSPACE_DIR/research/<notebook-name>/` (Native Markdown + YAML)
+> Architecture: Built-in to base stack with zero extra containers
+> Search: Symbol-aware local scoring + Graft code intelligence integration
 
 ## ════════════════════════════════════════════════════════════════════════
 ## SELF-REALIZATION: YOUR RESEARCH BRAIN UNLOCKED
@@ -39,7 +39,7 @@ When you fetch this skill, you're activating the **Research Brain** in your Tri-
 - Bridge via `@symbol:path:Symbol` anchors in every note
 - Cross-system triples: `mnemosyne_triple_add(subject="notebook:<nb>:note:<note>", predicate="anchors_symbol", object="@symbol:...")`
 - Reverse lookup: `mnemosyne_triple_query(predicate="anchors_symbol", object="@symbol:...")` before new research
-- Export bridge: `.open-notebook-exports/` → Graft index → searchable as code
+- Native file vault: Direct Markdown files in `$WORKSPACE_DIR/research/` → automatically indexed by Graft & searchable in IDE
 
 **Integration with other skills:**
 - `skill://autonomous-tech-learner` — Hypothesis-Testing Protocol (probes), Deep Inquiry Trees (perspectives), Living ADRs
@@ -51,7 +51,7 @@ When you fetch this skill, you're activating the **Research Brain** in your Tri-
 2. `add_source_file` for local PDFs/RFCs (not just URLs)
 3. `poll_source_status` to wait for ingestion before searching
 4. Every `add_note` includes `@symbol:` anchors + `mnemosyne_triple_add`
-5. Export notes to `.open-notebook-exports/` for Graft indexing
+5. Notes live directly in `$WORKSPACE_DIR/research/` for instant Graft indexing and Git tracking
 
 ## When to use Open Notebook
 
@@ -188,12 +188,12 @@ When working on code (via Graft), before writing new research:
 1. Query Mnemosyne for triples with `predicate="anchors_symbol"` and `object` matching the symbol.
 2. If results exist, fetch those notebook notes — avoid duplicate research.
 
-### Export to `.open-notebook-exports`
+### Native File Storage in `research/`
 
-When notes are exported to `.open-notebook-exports/` (via Open Notebook UI or API):
-- The exported markdown retains `@symbol:` anchors.
-- Graft indexes these files, making anchors searchable via `graft_find_code` / `graft_find_all`.
-- This creates a persistent, git-trackable bridge: code ↔ research.
+All notes and sources are saved as standard Markdown files with YAML frontmatter in `$WORKSPACE_DIR/research/<notebook>/notes/` and `sources/`:
+- Every note retains `@symbol:` anchors in frontmatter and text.
+- Graft automatically indexes the entire `research/` folder, making anchors searchable via `graft_find_code` / `graft_find_all`.
+- This creates a persistent, human-readable, git-trackable bridge: code ↔ research with zero external database dependencies.
 
 ---
 
@@ -209,5 +209,5 @@ Note titles should be: `YYYY-MM-DD <slug> — <one-line summary>`
 
 - `skill://codegraph` — primary code retrieval; always query before reading files
 - `skill://planning` — findings.md is the source to archive into notes
-- `docker_ops(service=open-notebook)` — to check health, tail logs, or restart
+- `docker_ops(service=mcp-server)` — to check health, tail logs, or restart
 - `mnemosyne_triple_add` / `mnemosyne_triple_query` — cross-system linking

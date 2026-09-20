@@ -145,12 +145,20 @@ services:
       - "8000:8000"
     environment:
       - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-pai-stack}
+      - RESEARCH_DIR=${RESEARCH_DIR:-/opt/data/workspace/research}
+      - LLM_GATEWAY_URL=http://llm-gateway:4000/v1
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-not-needed}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - mcp-logs:/app/logs
       - ./mcp-server/skills:/app/skills:ro
       - ./mcp-server/kb:/app/kb:ro
       - ./mcp-server/tools:/app/tools:ro
+      - type: bind
+        source: ${WORKSPACE_DIR}
+        target: /opt/data/workspace
+        bind:
+          create_host_path: false
     deploy:
       resources:
         limits:

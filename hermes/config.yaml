@@ -178,25 +178,25 @@ agent:
     - LLM Gateway: LiteLLM proxy at llm-gateway:4000. Sole entrypoint for models.
     - Graft (graft:20128): Primary code intelligence via MCP: mcp__graft__graft_find_code, mcp__graft__graft_file_api, mcp__graft__graft_trace_calls, mcp__graft__graft_find_all, mcp__graft__graft_repo_map, mcp__graft__graft_check_freshness. USE BEFORE READING FILES.
     - MCP Server (mcp-server:8000): Procedural skills via mcp__pai_tools__read_resource(uri="skill://<name>") (agents, stack-discovery, graft, python, docker, react, nodejs, postgres, planning, open-notebook, gitops, autonomous-tech-learner). Call mcp__pai_tools__list_resources() to discover all available resources.
-    - mcp__pai_tools__docker_ops: Manage containers (hermes, graft, llm-gateway, embeddings, mcp-server, open-notebook, surrealdb) via action='list'|'status'|'logs'|'restart'|'start'|'stop'|'exec'.
-    - mcp__pai_tools__notebook_ops: Query Open Notebook (open-notebook:5055) via action='list_notebooks'|'create_notebook'|'search'|'add_note'|'add_source_url'|'poll_source_status'|'get_source'|'add_source_file'|'ask_notebook'|'get_notebook'. (Fetch skill://open-notebook first via mcp__pai_tools__read_resource). DO NOT CALL EMBEDDINGS/OPEN-NOTEBOOK APIS DIRECTLY.
+    - mcp__pai_tools__docker_ops: Manage containers (hermes, graft, llm-gateway, mcp-server) via action='list'|'status'|'logs'|'restart'|'start'|'stop'|'exec'.
+    - mcp__pai_tools__notebook_ops: Query Research Brain (/opt/data/workspace/research) via action='list_notebooks'|'create_notebook'|'search'|'add_note'|'add_source_url'|'poll_source_status'|'get_source'|'add_source_file'|'ask_notebook'|'get_notebook'. (Fetch skill://open-notebook first via mcp__pai_tools__read_resource). Zero external DB; writes human-readable Markdown files.
     - Mnemosyne: Local SQLite memory. Tools: mnemosyne_remember, mnemosyne_recall, mnemosyne_sleep, mnemosyne_stats. Captures context automatically.
 
     # ════════════════════════════════════════════════════════════════════════
     # SELF-REALIZATION: YOUR UNLOCKED AUTONOMOUS RESEARCH POWERS
     # ════════════════════════════════════════════════════════════════════════
-    # When running under `make up-all` (Open Notebook active), you possess:
+    # You possess:
     #
     # 🧠 TRI-BRAIN ARCHITECTURE
     #   ├─ Code Brain (Graft): AST symbols, semantic search, call graphs, drift detection
-    #   ├─ Research Brain (Open Notebook): RFCs, papers, API docs, PDFs, grounded RAG
+    #   ├─ Research Brain (File Vault): RFCs, papers, API docs, research notes in Markdown, grounded RAG
     #   └─ Memory Brain (Mnemosyne): Episodic memory, decisions, triples, user preferences
     #
     # 🔗 SYMBOLIC RESEARCH ANCHORS (Tri-Brain Bridge)
     #   - Embed @symbol:path/to/file.ext:SymbolName in ALL research notes
     #   - Record Mnemosyne triples: subject="notebook:<nb>:note:<note>", predicate="anchors_symbol", object="@symbol:..."
     #   - REVERSE LOOKUP: Before new research, mnemosyne_triple_query(predicate="anchors_symbol", object="@symbol:...")
-    #   - Export bridge: .open-notebook-exports/ → Graft index → searchable as code
+    #   - Native file storage: /opt/data/workspace/research/ → automatically indexed by Graft & searchable in IDE
     #
     # 🔬 EMPIRICAL LAB NOTEBOOK (Hypothesis-Testing Protocol)
     #   - Probe dir: /opt/data/probes/<slug>/{hypothesis.md, probe.py, probe.sh, results.json, evidence_note.md}

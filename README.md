@@ -35,7 +35,7 @@ When running `make up-all`, Hermes becomes an **autonomous empirical research ag
 | Brain | Service | Capability |
 |---|---|---|
 | **Code Brain** | Graft | AST symbols, semantic search, call graphs, file APIs, drift detection |
-| **Research Brain** | Open Notebook | External knowledge: RFCs, papers, API docs, web articles, PDFs |
+| **Research Brain** | File Vault | External knowledge: RFCs, papers, API docs, web articles, Markdown notes |
 | **Memory Brain** | Mnemosyne | Episodic memory, decisions, prior fixes, user preferences, knowledge graph triples |
 
 ### 🔗 Cross-Brain Synthesis (Symbolic Research Anchors)
@@ -43,7 +43,7 @@ When running `make up-all`, Hermes becomes an **autonomous empirical research ag
 - **Anchor syntax**: `@symbol:path/to/file.ext:SymbolName` embedded in all research notes
 - **Mnemosyne triples**: Link notebook notes → code symbols → decisions
 - **Reverse lookup**: Before new research, query Mnemosyne for existing notes on a symbol
-- **Export bridge**: Notes exported to `.open-notebook-exports/` → indexed by Graft → searchable as code
+- **Native file storage**: Notes saved to `research/<notebook>/notes/` → indexed by Graft → searchable in IDE & code search
 
 ### 🔬 Empirical Lab Notebook Engine
 
@@ -100,7 +100,11 @@ Hermes orchestrates **specialized workers** via Kanban:
 ```
 Host Machine (WORKSPACE_DIR)
   ├── Projects/ & Codebases
-  ├── .open-notebook-exports/          ← Research notes exported here (git-trackable)
+  ├── research/                        ← Native Research Brain (Markdown + YAML frontmatter)
+  │   └── <notebook>/
+  │       ├── notebook.json
+  │       ├── notes/
+  │       └── sources/
   ├── .planning/                       ← Planning artifacts per project
   │   └── YYYY-MM-DD-slug/
   │       ├── task_plan.md
@@ -250,18 +254,13 @@ Host Machine (WORKSPACE_DIR)
 
 ## Accessing Services
 
-### Base Stack
+### Services
 
 - **Hermes Web UI**: [http://localhost:9119](http://localhost:9119)
 - **Graft Visualizer**: [http://localhost:20128/viz/](http://localhost:20128/viz/)
 - **Graft API**: [http://localhost:20128/search?q=query&type=hybrid](http://localhost:20128/search?q=query&type=hybrid)
-- **Embeddings API**: [http://localhost:8088/v1/embeddings](http://localhost:8088/v1/embeddings) (`GET /health`)
 - **MCP Server**: [http://localhost:8000/mcp](http://localhost:8000/mcp)
-
-### Extended Stack (`make up-all`)
-
-- **Open Notebook UI**: [http://localhost:8502](http://localhost:8502)
-- **Open Notebook API**: [http://localhost:5055](http://localhost:5055) (used by `notebook_ops` MCP tool)
+- **Research Brain**: Built-in native file vault at `${WORKSPACE_DIR}/research/` (queried via `notebook_ops`)
 
 ---
 
@@ -272,9 +271,9 @@ Host Machine (WORKSPACE_DIR)
 | `AGENTS.md` | This context file — read first |
 | `hermes/config.yaml` | System prompt, model providers, MCP config, **Kanban swarm config** |
 | `docker-compose.yaml` | Base service definitions, mounts, resource limits |
-| `docker-compose.open-notebook.yml` | Extended stack overlay (Open Notebook + SurrealDB) |
+| `docker-compose.open-notebook.yml` | (Deprecated) Superseded by native file vault |
 | `mcp-server/server.py` | MCP server: auto-discovers tools & skills |
-| `mcp-server/tools/notebook-ops/` | `notebook_ops` MCP tool (10 actions) |
+| `mcp-server/tools/notebook-ops/` | `notebook_ops` MCP tool (10 actions over native Markdown vault) |
 | `mcp-server/skills/agents/SKILL.md` | Ground rules injected at session start |
 | `mcp-server/skills/open-notebook/SKILL.md` | Research Brain usage + **Symbolic Anchor Protocol** |
 | `mcp-server/skills/autonomous-tech-learner/SKILL.md` | Learning loop + **Hypothesis-Testing Protocol** + **Deep Inquiry Trees & L-ADRs** |
@@ -285,8 +284,8 @@ Host Machine (WORKSPACE_DIR)
 
 ## Philosophy
 
-- **Zero Contamination**: External research never pollutes git code directories; lives in Open Notebook (SurrealDB) or `.planning/research/` / `.open-notebook-exports/`.
-- **Graceful Degradation**: Base stack (`make up`) without Open Notebook continues functioning cleanly. All `notebook_ops` actions return `{"available":false}` when offline.
-- **Single LLM Gateway**: All model calls route through `llm-gateway:4000` (LiteLLM). Embeddings route through `embeddings:8080` internally via Open Notebook.
+- **Zero Contamination**: External research never pollutes git code directories; lives in `research/<notebook>/` or `.planning/research/`.
+- **Zero-Container Research**: Pure file-based Markdown + YAML frontmatter eliminates external database overhead (~2.3 GB RAM saved) and avoids RPi5 jemalloc page size incompatibilities.
+- **Single LLM Gateway**: All model calls route through `llm-gateway:4000` (LiteLLM).
 - **Empirical Over Theoretical**: When documentation is ambiguous, micro-probes in `/opt/data/probes/` take precedence over web claims.
 - **Self-Realizing Agent**: Hermes discovers its own capabilities, tools, and ecosystem on Turn 1 — no external orchestration needed.

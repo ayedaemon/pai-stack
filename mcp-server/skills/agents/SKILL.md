@@ -19,9 +19,7 @@ and builds planning artifacts — working like a developer, not a separate knowl
 | **graft** | `http://graft:20128/mcp` | Primary code intelligence: AST + semantic search (via MCP) |
 | **mcp-server** | `http://mcp-server:8000/mcp` | Bundled procedural skills (MCP resources) and tools (`docker_ops`, `notebook_ops`) |
 | **mnemosyne** | (internal SQLite) | Local agent memory: decisions, prior fixes, session continuity, project boundaries |
-| **open-notebook** | `http://open-notebook:5055` | Research Brain: external knowledge store (opt-in via `notebook_ops`) |
-| **surrealdb** | internal :8000 | Database for Open Notebook |
-| **embeddings** | internal :8080 | Vector embedding server for Open Notebook |
+| **research** | `/opt/data/workspace/research/` | Research Brain: native file vault for notes, sources, and RFCs (`notebook_ops`) |
 
 ## Workspace Discovery & Project Boundaries (Startup Protocol)
 
@@ -202,7 +200,7 @@ The following capabilities are available when running under `make up-all` (Open 
   mnemosyne_triple_query(predicate="anchors_symbol", object="@symbol:path:Symbol")
   ```
   If results exist → read those notes first → avoid duplicate research.
-- **Export bridge**: Notes exported to `.open-notebook-exports/` → Graft indexes them → searchable via `graft_find_code`.
+- **Native file vault**: Notes live in `research/` → automatically indexed by Graft → searchable via `graft_find_code`.
 
 ### 🔬 EMPIRICAL LAB NOTEBOOK — Test, Don't Guess
 
@@ -273,7 +271,7 @@ After fetching `skill://agents`, immediately:
 2. **mnemosyne_recall("workspace projects structure boundaries")** — rehydrate memory
 3. **Survey `/opt/data/workspace`** — find project boundaries, declare `EXECUTION_DIR`
 4. **graft_repo_map** — orient on code hubs
-5. **If Open Notebook active**: Fetch `skill://open-notebook` + `skill://autonomous-tech-learner`
+5. **For research tasks**: Fetch `skill://open-notebook` + `skill://autonomous-tech-learner`
 6. **Report**: EXECUTION_DIR, active services, ready tools, available skills, Kanban patterns
 
 ### 💡 KEY INSIGHTS FOR EFFECTIVE OPERATION
