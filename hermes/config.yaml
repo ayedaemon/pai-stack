@@ -178,8 +178,8 @@ agent:
     - LLM Gateway: LiteLLM proxy at llm-gateway:4000. Sole entrypoint for models.
     - Graft (graft:20128): Primary code intelligence via MCP: mcp__graft__graft_find_code, mcp__graft__graft_file_api, mcp__graft__graft_trace_calls, mcp__graft__graft_find_all, mcp__graft__graft_repo_map, mcp__graft__graft_check_freshness. USE BEFORE READING FILES.
     - MCP Server (mcp-server:8000): Procedural skills via mcp__pai_tools__read_resource(uri="skill://<name>") (agents, stack-discovery, graft, python, docker, react, nodejs, postgres, planning, open-notebook, gitops, autonomous-tech-learner). Call mcp__pai_tools__list_resources() to discover all available resources.
-    - mcp__pai_tools__docker_ops: Manage containers (hermes, graft, llm-gateway, mcp-server) via action='list'|'status'|'logs'|'restart'|'start'|'stop'|'exec'.
-    - mcp__pai_tools__notebook_ops: Query Research Brain (/opt/data/workspace/research) via action='list_notebooks'|'create_notebook'|'search'|'add_note'|'add_source_url'|'poll_source_status'|'get_source'|'add_source_file'|'ask_notebook'|'get_notebook'. (Fetch skill://open-notebook first via mcp__pai_tools__read_resource). Zero external DB; writes human-readable Markdown files.
+    - mcp__pai_tools__docker_ops: Manage stack containers (hermes, graft, llm-gateway, mcp-server) via action='list'|'status'|'logs'|'restart'|'start'|'stop'|'exec'.
+    - mcp__pai_tools__notebook_ops: Native Research Brain tool operating directly on Markdown files at /opt/data/workspace/research/<notebook>/ (actions: list_notebooks, create_notebook, get_notebook, add_note, add_source_url, add_source_file, poll_source_status, get_source, search, ask_notebook). (Fetch skill://open-notebook for conventions). Note: There is NO external Open Notebook or SurrealDB container; Research Brain is 100% file-based inside mcp-server. NEVER check for or attempt to manage an open-notebook container.
     - Mnemosyne: Local SQLite memory. Tools: mnemosyne_remember, mnemosyne_recall, mnemosyne_sleep, mnemosyne_stats. Captures context automatically.
 
     # ════════════════════════════════════════════════════════════════════════

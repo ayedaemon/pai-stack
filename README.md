@@ -1,6 +1,6 @@
 # pai-stack
 
-A streamlined AI development stack running four core Docker Compose services: **Hermes** (AI Agent Gateway), **Graft** (Code Intelligence), **LLM Gateway** (LiteLLM Proxy), and **MCP Server** (Tools & Skills). Extended with **Open Notebook** (Research Brain) and **SurrealDB** via opt-in overlay.
+A streamlined AI development stack running four core Docker Compose services: **Hermes** (AI Agent Gateway), **Graft** (Code Intelligence), **LLM Gateway** (LiteLLM Proxy), and **MCP Server** (Tools, Skills, and native File-Based Research Brain).
 
 All services operate directly on your local workspace directory mounted from the host.
 
@@ -15,20 +15,11 @@ All services operate directly on your local workspace directory mounted from the
 | **LLM Gateway** | `4000` | Dedicated LiteLLM proxy — single gateway for all model inference, routing, fallbacks, and provider credentials. |
 | **MCP Server** | `8000` | Model Context Protocol server exposing bundled development tools (`docker_ops`, `notebook_ops`) and procedural skills to Hermes. |
 
-### Extended Stack (opt-in via `make up-all`)
-
-Activates a research knowledge base layer. No impact on the base stack.
-
-| Service | Port | Description |
-|---|---|---|
-| **SurrealDB** | internal only | Database backend for Open Notebook. No host port (avoids conflict with MCP Server on 8000). |
-| **Open Notebook** | `8502` (UI), `5055` (API) | Self-hosted research knowledge base. Ingest URLs, PDFs, local files; semantic search & grounded RAG. Shares the `embeddings` container (no extra RAM). |
-
 ---
 
 ## Autonomous Research Agent Capabilities
 
-When running `make up-all`, Hermes becomes an **autonomous empirical research agent** with a "Tri-Brain" architecture:
+Hermes operates with a unified **"Tri-Brain" architecture**:
 
 ### 🧠 Tri-Brain Architecture
 
@@ -156,29 +147,19 @@ Host Machine (WORKSPACE_DIR)
    - `CODEGRAPH_SUBDIR`: (Optional) Subdirectory inside `WORKSPACE_DIR` for Graft to index (leave empty for entire workspace).
    - LLM settings and API keys.
 
-2. **Start the Base Stack**:
+2. **Start the Stack**:
    ```bash
    make up
    ```
-   This verifies that `WORKSPACE_DIR` exists on the host and starts all core containers in the background.
+   This verifies that `WORKSPACE_DIR` exists on the host and starts all core containers (`hermes`, `graft`, `mcp-server`, `llm-gateway`) in the background. Research Brain is built-in natively.
 
-3. **Start Extended Stack (Research Agent)**:
+3. **Check Status & Logs**:
    ```bash
-   make up-all
-   ```
-   Adds Open Notebook + SurrealDB. Enables full autonomous research capabilities.
-
-4. **Check Status**:
-   ```bash
-   make status-all
+   make status
+   make logs
    ```
 
-5. **View Logs**:
-   ```bash
-   make logs-all
-   ```
-
-6. **Initial Prompt for Hermes (Turn 1)**:
+4. **Initial Prompt for Hermes (Turn 1)**:
    Provide this prompt on Turn 1 to orient Hermes to its full ecosystem:
 
    ```text
@@ -189,7 +170,7 @@ Host Machine (WORKSPACE_DIR)
 
    2. Survey your environment using:
       mcp__pai_tools__docker_ops(action='list')
-      to check which stack services are active (Graft, LLM Gateway, MCP Server, Open Notebook, SurrealDB, Embeddings).
+      to verify core stack services (Graft, LLM Gateway, MCP Server, Hermes). Note: Research Brain operates natively through mcp-server over Markdown files in /opt/data/workspace/research/ (no external database or container).
 
    3. Check your long-term memory via:
       mnemosyne_recall(query='workspace projects structure boundaries')
@@ -197,9 +178,9 @@ Host Machine (WORKSPACE_DIR)
 
    4. Inspect /opt/data/workspace and run mcp__graft__graft_repo_map to determine project boundaries and declare your EXECUTION_DIR.
 
-   5. If Open Notebook is running (from `make up-all`):
-      - Call mcp__pai_tools__read_resource(uri='skill://open-notebook') to activate mcp__pai_tools__notebook_ops for external research
-      - Call mcp__pai_tools__read_resource(uri='skill://autonomous-tech-learner') for the **Hypothesis-Testing Protocol** (empirical probes) and **Deep Inquiry Trees** (perspective decomposition, dialectical inquiry, Living ADRs)
+   5. For research tasks:
+      - Call mcp__pai_tools__read_resource(uri='skill://open-notebook') for Research Brain vault conventions and notebook_ops tools.
+      - Call mcp__pai_tools__read_resource(uri='skill://autonomous-tech-learner') for the **Hypothesis-Testing Protocol** (empirical probes) and **Deep Inquiry Trees** (perspective decomposition, dialectical inquiry, Living ADRs).
       - Note: Kanban worker roles (`researcher`, `synthesizer`, `adr_author`) and patterns (`deep_research`, `quick_fact_check`, `empirical_validation`) are configured in your system prompt under `kanban.workers` and `kanban.patterns`.
 
    6. Report your discovered:
@@ -214,7 +195,7 @@ Host Machine (WORKSPACE_DIR)
 
    **What this prompt accomplishes:**
    - **Ground Rules & Invariants**: Enforces `skill://agents`, anchoring Hermes strictly to `<EXECUTION_DIR>` and preventing monolithic workspace confusion.
-   - **Stack Awareness**: Auto-detects whether the base stack or extended research stack (`make up-all`) is running via `docker_ops`.
+   - **Native File Vault Awareness**: Directs Hermes to file-based research in `/opt/data/workspace/research/` via `notebook_ops` without checking for dead containers.
    - **Memory Re-hydration**: Pulls past project lessons and architectural context via Mnemosyne.
    - **Research Powers Unlocked**: Activates all 6 phases — notebook_ops expansion, workspace sync, Tri-Bridge, empirical probes, inquiry trees, Kanban swarms.
    - **Self-Realization**: Hermes understands its own ecosystem, tools, and delegation patterns without external instruction.
@@ -226,29 +207,16 @@ Host Machine (WORKSPACE_DIR)
 | Command | Action |
 |---|---|
 | `make setup` | Initialize `.env` from `.env.example` and create default workspace folder |
-| `make up` | Validate workspace existence and start base services in background (supports `ALL=1`, `s=<service>`) |
-| `make down` | Stop running base services (supports `ALL=1`) |
-| `make restart` | Restart base services (supports `ALL=1`, `s=<service>`) |
-| `make logs` | Tail logs for base containers (supports `ALL=1`, `s=<service>`) |
-| `make status` | View running base containers and health status (supports `ALL=1`, `s=<service>`) |
+| `make up` | Validate workspace existence and start stack in background (supports `s=<service>`) |
+| `make down` | Stop running services |
+| `make restart` | Restart services (supports `s=<service>`) |
+| `make logs` | Tail logs for containers (supports `s=<service>`) |
+| `make status` | View running containers and health status (supports `s=<service>`) |
 | `make sync` | Sync LLM models with local & cloud providers and auto-reload gateway |
 | `make sync-all` | Sync models and include all cloud provider templates |
-| `make build` | Build / rebuild base container images (supports `ALL=1`, `s=<service>`) |
-| `make clean` | Stop base containers and remove persisted volumes (`hermes-data`, `graft-cache`) |
-| `make config` | Validate and resolve Docker Compose configuration for base stack (supports `ALL=1`) |
-
-### Extended Stack Commands
-
-| Command | Action |
-|---|---|
-| `make up-all` | Start base stack **+ Open Notebook** (surrealdb + open-notebook; optional `s=<service>`) |
-| `make down-all` | Stop base stack + Open Notebook |
-| `make restart-all` | Restart all services including Open Notebook (optional `s=<service>`) |
-| `make logs-all` | Tail logs for all services including Open Notebook (optional `s=<service>`) |
-| `make status-all` | View all containers including Open Notebook (optional `s=<service>`) |
-| `make build-all` | Build images for all services (optional `s=<service>`) |
-| `make clean-all` | Stop and remove ALL volumes including Open Notebook data (**DESTRUCTIVE**) |
-| `make config-all` | Validate and view merged compose config for all services |
+| `make build` | Build / rebuild container images (supports `s=<service>`) |
+| `make clean` | Stop containers and remove persisted volumes (`hermes-data`, `graft-cache`) |
+| `make config` | Validate and resolve Docker Compose configuration |
 
 ---
 

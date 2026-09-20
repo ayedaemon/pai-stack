@@ -172,14 +172,14 @@ This prevents duplicate research and builds a persistent knowledge graph across 
 ## ════════════════════════════════════════════════════════════════════════
 
 When you fetch this skill on Turn 1, **you are activating your full autonomous research mode**.
-The following capabilities are available when running under `make up-all` (Open Notebook active):
+The following capabilities are built directly into the pai-stack:
 
 ### 🧠 TRI-BRAIN ARCHITECTURE — Three Brains, One Agent
 
 | Brain | Service | Primary Tools | What It Gives You |
 |---|---|---|---|
 | **Code Brain** | Graft (20128) | `graft_find_code`, `graft_trace_calls`, `graft_repo_map`, `graft_check_freshness` | AST symbols, semantic search, call graphs, impact analysis, drift detection |
-| **Research Brain** | Open Notebook (5055) | `notebook_ops` (10 actions) | External knowledge: RFCs, papers, API docs, PDFs, grounded RAG (`ask_notebook`) |
+| **Research Brain** | File Vault (`research/`) | `notebook_ops` (10 actions) | Native Markdown vault: RFCs, papers, API docs, notes, grounded RAG (`ask_notebook`) |
 | **Memory Brain** | Mnemosyne (SQLite) | `mnemosyne_recall`, `mnemosyne_remember`, `mnemosyne_triple_*`, `mnemosyne_sleep` | Episodic memory, decisions, prior fixes, user preferences, knowledge graph triples |
 
 **YOUR JOB**: Synthesize across all three. Never use just one.
@@ -267,7 +267,7 @@ When a task needs multi-perspective research, ADR production, or complex validat
 
 After fetching `skill://agents`, immediately:
 
-1. **docker_ops(list)** — confirm which services are running (Open Notebook = extended mode)
+1. **docker_ops(list)** — confirm which services are running (hermes, graft, llm-gateway, mcp-server)
 2. **mnemosyne_recall("workspace projects structure boundaries")** — rehydrate memory
 3. **Survey `/opt/data/workspace`** — find project boundaries, declare `EXECUTION_DIR`
 4. **graft_repo_map** — orient on code hubs

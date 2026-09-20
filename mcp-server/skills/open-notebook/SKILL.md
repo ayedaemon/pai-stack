@@ -118,22 +118,17 @@ notebook_ops(action=add_note, notebook_id="<id>",
    - Use exact text searches for specific API names, and vector searches for conceptual topics.
 
 ## Verification
-- Verify that `notebook_ops` returns `available: true` before attempting further queries.
-- Verify that you are not duplicating existing notes in the notebook.
+- Verify notebook existence via `notebook_ops(action=list_notebooks)`.
+- Verify that you are not duplicating existing notes in the notebook by searching first via `notebook_ops(action=search, query=...)`.
 
 ## Failure Handling
 
-```
-notebook_ops returns {"available":false}
-  → Do NOT retry
-  → Fall back to: GET codegraph:20128/search?type=semantic&q=<query>
-  → Inform user: "Open Notebook is offline; searched CodeGraph instead."
-```
+`notebook_ops` runs natively inside `mcp-server` directly reading and writing files in `/opt/data/workspace/research/`. There is no external database or container.
 
-If `notebook_ops` returns `{"error":"request failed"}`:
-  - Attempt 1: retry once
-  - Attempt 2: use `docker_ops(action=logs, service=open-notebook)` to diagnose
-  - Attempt 3: escalate to user
+If `notebook_ops` returns an error:
+  - Check that the target notebook exists (or let `add_note` auto-create it).
+  - Verify file permissions on `/opt/data/workspace/research/`.
+  - If unexpected Python errors occur, diagnose with `docker_ops(action=logs, service=mcp-server)`.
 
 ## Symbolic Research Anchor Protocol (Tri-Brain Bridge)
 
