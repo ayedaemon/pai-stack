@@ -351,15 +351,6 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
-  # ── Cluster Embeddings ────────────────────────────────────────────────
-  - model_name: nomic-ai/nomic-embed-text-v1.5
-    litellm_params:
-      model: openai/nomic-ai/nomic-embed-text-v1.5
-      api_base: http://embeddings:8080/v1
-      api_key: not-needed
-      mode: embedding
-      timeout: 1800
-
 # ── Router & Fallback Settings ───────────────────────────────────────────
 router_settings:
   timeout: 1800              # 30m request timeout for large models & deep reasoning

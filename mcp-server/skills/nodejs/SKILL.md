@@ -1,6 +1,6 @@
 ---
 name: nodejs
-description: Read, understand, and safely change Node.js codebases — detect runtime, package manager, framework, scripts, and deps. Optimized for pai-stack's graft code intelligence engine.
+description: Read, understand, and safely change Node.js codebases — detect runtime, package manager, framework, scripts, and deps. Optimized for pai-stack's code intelligence engine.
 ---
 
 # Node.js Project

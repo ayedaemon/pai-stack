@@ -2,7 +2,6 @@
 """
 notebook_ops.py — Native File-Based Research Brain MCP Tool
 
-Zero-container replacement for Open Notebook:
 Stores notebooks, research notes, and external sources as human-readable
 Markdown files with YAML frontmatter in RESEARCH_DIR (default: /opt/data/workspace/research).
 

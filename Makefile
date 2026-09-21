@@ -1,6 +1,6 @@
 # pai-stack Makefile
-# Intelligent local development environment for AI agents (Hermes + Graft + LiteLLM)
-# with native file-based Research Brain.
+# Intelligent local development environment for AI agents (Hermes + LiteLLM)
+# with code intelligence and native file-based Research Brain.
 
 .DEFAULT_GOAL := help
 
@@ -18,7 +18,7 @@ help:  ## Show this help message
 	@echo ""
 	@echo "\033[1;34mCore Commands:\033[0m"
 	@printf "  \033[36m%-16s\033[0m %s\n" "setup" "Initialize .env and default workspace folder"
-	@printf "  \033[36m%-16s\033[0m %s\n" "up" "Start stack in background (hermes, graft, mcp, llm-gateway)"
+	@printf "  \033[36m%-16s\033[0m %s\n" "up" "Start stack in background (hermes, mcp, llm-gateway)"
 	@printf "  \033[36m%-16s\033[0m %s\n" "down" "Stop all services"
 	@printf "  \033[36m%-16s\033[0m %s\n" "restart" "Restart services (optional: s=<service>)"
 	@printf "  \033[36m%-16s\033[0m %s\n" "status" "Show running containers, ports, and health"
@@ -28,7 +28,7 @@ help:  ## Show this help message
 	@echo ""
 	@echo "\033[1;34mMaintenance:\033[0m"
 	@printf "  \033[36m%-16s\033[0m %s\n" "build" "Build container images (optional: s=<service>)"
-	@printf "  \033[36m%-16s\033[0m %s\n" "clean" "Stop containers and remove volumes (destroys hermes & graft state)"
+	@printf "  \033[36m%-16s\033[0m %s\n" "clean" "Stop containers and remove volumes (destroys hermes state)"
 	@printf "  \033[36m%-16s\033[0m %s\n" "config" "Validate and view resolved compose configuration"
 	@echo ""
 
@@ -81,7 +81,7 @@ status:  ## Show running containers and health status (optional: s=<service>)
 build:  ## Build container images (optional: s=<service>)
 	$(COMPOSE) build $(s)
 
-clean:  ## Stop containers and remove persisted volumes (destroys hermes & graft state)
+clean:  ## Stop containers and remove persisted volumes (destroys hermes state)
 	$(COMPOSE) down -v --remove-orphans
 
 config:  ## Validate and view compose config

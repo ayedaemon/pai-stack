@@ -33,10 +33,10 @@ When you fetch this skill, you're activating **persistent planning** that surviv
 4. **One plan per task**: Never overwrite another task's plan
 5. **Re-read before decisions**: Keeps goals in your attention window
 
-**Graft Integration:**
-- Planning files are indexed by Graft → searchable in future sessions
-- `graft_find_code` finds your own prior findings and decisions
-- `graft_check_freshness` ensures index is current
+**Code Intelligence Integration:**
+- Planning files are indexed by code intelligence → searchable in future sessions
+- `code_intel(action="find_code")` finds your own prior findings and decisions
+- `code_intel(action="check_freshness")` ensures index is current
 
 **When to use:**
 - Any task with 3+ steps, research, or multi-file changes
@@ -55,7 +55,7 @@ Planning files live **in the project** like any developer artifact — not in a 
   progress.md    ← session log: what ran, errors, what changed
 ```
 
-Graft indexes these files on the next reindex — they are searchable in future sessions.
+Code intelligence indexes these files on the next reindex — they are searchable in future sessions.
 
 ## Quick Start
 
@@ -71,7 +71,7 @@ Before a complex task:
 | File | Purpose | When to Update |
 |---|---|---|
 | `task_plan.md` | Phases, progress, decisions | After each phase completes |
-| `findings.md` | Research, discoveries, retrieved context | After ANY discovery or Graft result |
+| `findings.md` | Research, discoveries, retrieved context | After ANY discovery or code_intel result |
 | `progress.md` | Session log, errors, test results | Throughout the session |
 
 ## Critical Rules
@@ -82,7 +82,7 @@ Never start a complex task (3+ steps, research, multi-file) without `task_plan.m
 ### 2. The 2-Operation Rule
 > After every 2 read/search/browse operations → IMMEDIATELY save key findings to `findings.md`.
 
-This prevents retrieved context (Graft results, file contents, search hits) from being lost.
+This prevents retrieved context (code intelligence results, file contents, search hits) from being lost.
 
 ### 3. Read Before Decide
 Before any major decision, re-read `task_plan.md`. Keeps goals in attention window.
@@ -119,7 +119,7 @@ Attempt 2: Alternative approach
 
 Attempt 3: Broader rethink
   → Question assumptions
-  → Search Graft for related context
+  → Search code intelligence for related context
   → Consider updating the plan
 
 After 3 failures: Escalate to user
@@ -149,7 +149,7 @@ If you can answer these, your context management is solid:
 | Situation | Action |
 |---|---|
 | Just wrote a file | Don't re-read — still in context |
-| Got Graft results | Write to `findings.md` immediately |
+| Got code intelligence results | Write to `findings.md` immediately |
 | Starting new phase | Re-read `task_plan.md` and `findings.md` |
 | Error occurred | Read relevant file for current state |
 | Resuming after session gap | Read all 3 planning files |
@@ -164,7 +164,7 @@ If you can answer these, your context management is solid:
 ## Related Skills
 
 - `skill://stack-discovery` — run first on unknown codebase; save result to `findings.md`
-- `skill://graft` — CodeGraph query procedures; save results to `findings.md`
+- `skill://code-intel` — Code intelligence query procedures; save results to `findings.md`
 - `skill://python`, `skill://docker`, etc. — stack skills; follow after stack-discovery
 
 ## Verification

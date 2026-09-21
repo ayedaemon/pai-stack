@@ -1,6 +1,6 @@
 # pai-stack
 
-A streamlined AI development stack running four core Docker Compose services: **Hermes** (AI Agent Gateway), **Graft** (Code Intelligence), **LLM Gateway** (LiteLLM Proxy), and **MCP Server** (Tools, Skills, and native File-Based Research Brain).
+A streamlined AI development stack running three core Docker Compose services: **Hermes** (AI Agent Gateway), **MCP Server** (Code Intelligence, Tools, Skills, and native File-Based Research Brain), and **LLM Gateway** (LiteLLM Proxy). Optional **DSH** (DeepSeek Harness) available via profile.
 
 All services operate directly on your local workspace directory mounted from the host.
 
@@ -11,9 +11,9 @@ All services operate directly on your local workspace directory mounted from the
 | Service | Port | Description |
 |---|---|---|
 | **Hermes** | `9119` / `8642` | Primary AI agent gateway + web dashboard (with native Mnemosyne memory). Operating in `/opt/data`. |
-| **Graft** | `20128` | Multi-modal code intelligence engine: hybrid search (AST symbols + ripgrep text + vector semantics), caller/callee graphs, impact analysis, drift detection. |
+| **MCP Server** | `8000` | Model Context Protocol server exposing code intelligence (`code_intel`), bundled tools (`docker_ops`, `notebook_ops`, `adr_ops`), and procedural skills to Hermes. |
 | **LLM Gateway** | `4000` | Dedicated LiteLLM proxy — single gateway for all model inference, routing, fallbacks, and provider credentials. |
-| **MCP Server** | `8000` | Model Context Protocol server exposing bundled development tools (`docker_ops`, `notebook_ops`) and procedural skills to Hermes. |
+| **DSH** | `9120` | (Optional) DeepSeek Harness — alternative agent UI. Activate with `docker compose --profile dsh up -d`. |
 
 ---
 
@@ -25,8 +25,8 @@ Hermes operates with a unified **"Tri-Brain" architecture**:
 
 | Brain | Service | Capability |
 |---|---|---|
-| **Code Brain** | Graft | AST symbols, semantic search, call graphs, file APIs, drift detection |
-| **Research Brain** | File Vault | External knowledge: RFCs, papers, API docs, web articles, Markdown notes |
+| **Code Brain** | Code Intelligence (`mcp-server:8000`) | AST symbols, semantic search, call graphs, file APIs, drift detection via `code_intel` tool |
+| **Research Brain** | File Vault (`research/`) | External knowledge: RFCs, papers, API docs, web articles, Markdown notes via `notebook_ops` tool |
 | **Memory Brain** | Mnemosyne | Episodic memory, decisions, prior fixes, user preferences, knowledge graph triples |
 
 ### 🔗 Cross-Brain Synthesis (Symbolic Research Anchors)
@@ -34,14 +34,14 @@ Hermes operates with a unified **"Tri-Brain" architecture**:
 - **Anchor syntax**: `@symbol:path/to/file.ext:SymbolName` embedded in all research notes
 - **Mnemosyne triples**: Link notebook notes → code symbols → decisions
 - **Reverse lookup**: Before new research, query Mnemosyne for existing notes on a symbol
-- **Native file storage**: Notes saved to `research/<notebook>/notes/` → indexed by Graft → searchable in IDE & code search
+- **Native file storage**: Notes saved to `research/<notebook>/notes/` → indexed by code_intel → searchable in IDE & code search
 
 ### 🔬 Empirical Lab Notebook Engine
 
 When documentation is ambiguous, Hermes runs **micro-probes** in `/opt/data/probes/`:
 
 ```
-Hypothesis → Micro-script (Python/Shell) → Execute (30s/256MB guardrails) → Evidence Note → Open Notebook
+Hypothesis → Micro-script (Python/Shell) → Execute (30s/256MB guardrails) → Evidence Note → Research Brain
 ```
 
 - Evidence notes prefixed `EVIDENCE:` with status `supported|refuted|inconclusive`
@@ -93,7 +93,6 @@ Host Machine (WORKSPACE_DIR)
   ├── Projects/ & Codebases
   ├── research/                        ← Native Research Brain (Markdown + YAML frontmatter)
   │   └── <notebook>/
-  │       ├── notebook.json
   │       ├── notes/
   │       └── sources/
   └── .planning/                       ← Planning artifacts per project
@@ -105,13 +104,10 @@ Host Machine (WORKSPACE_DIR)
               └── ADR-XXX.md           ← Living ADRs with symbol hashes
         │
         ├── [mount: /opt/data/workspace (rw)]  ──> Hermes (Agent workspace + execution)
-        ├── [mount: /opt/data/workspace (ro)]  ──> Graft (Hybrid search: AST + text + semantic)
-        ├── [mount: /opt/data/workspace (rw)]  ──> MCP Server (Research Brain file vault)
+        ├── [mount: /opt/data/workspace (rw)]  ──> MCP Server (Code intelligence + Research Brain file vault)
         │
-        ├── Hermes ──→ Graft:20128/mcp           (Code intelligence via MCP)
-        ├── Hermes ──→ MCP Server:8000/mcp       (Tools & Skills via MCP)
+        ├── Hermes ──→ MCP Server:8000/mcp       (Code intelligence, Tools & Skills via MCP)
         ├── Hermes ──→ LLM Gateway:4000          (ALL model inference)
-        ├── Graft ──→ LLM Gateway:4000           (Code summarization)
         └── MCP Server (notebook_ops) ──→ research/ (Native Markdown file vault)
 ```
 
@@ -134,14 +130,13 @@ Host Machine (WORKSPACE_DIR)
    Edit `.env` and set:
    - `WORKSPACE_DIR`: Path to your host workspace directory (e.g. `./workspace` or `/path/to/projects`).
      > **Note**: This directory **must exist** on your host before starting. The stack will fail with an error if the directory is missing.
-   - `CODEGRAPH_SUBDIR`: (Optional) Subdirectory inside `WORKSPACE_DIR` for Graft to index (leave empty for entire workspace).
    - LLM settings and API keys.
 
 2. **Start the Stack**:
    ```bash
    make up
    ```
-   This verifies that `WORKSPACE_DIR` exists on the host and starts all core containers (`hermes`, `graft`, `mcp-server`, `llm-gateway`) in the background. Research Brain is built-in natively.
+   This verifies that `WORKSPACE_DIR` exists on the host and starts all core containers (`hermes`, `mcp-server`, `llm-gateway`) in the background. Research Brain is built-in natively.
 
 3. **Check Status & Logs**:
    ```bash
@@ -160,24 +155,24 @@ Host Machine (WORKSPACE_DIR)
 
    2. Survey your environment using:
       mcp__pai_tools__docker_ops(action='list')
-      to verify core stack services (Graft, LLM Gateway, MCP Server, Hermes). Note: Research Brain operates natively through mcp-server over Markdown files in /opt/data/workspace/research/ (no external database or container).
+      to verify core stack services (MCP Server, LLM Gateway, Hermes). Note: Research Brain operates natively through mcp-server over Markdown files in /opt/data/workspace/research/.
 
    3. Check your long-term memory via:
       mnemosyne_recall(query='workspace projects structure boundaries')
       to recall previous project contexts and architectural decisions.
 
-   4. Inspect /opt/data/workspace and run mcp__graft__graft_repo_map to determine project boundaries and declare your EXECUTION_DIR.
+   4. Inspect /opt/data/workspace and run mcp__pai_tools__code_intel(action="repo_map") to determine project boundaries and declare your EXECUTION_DIR.
 
    5. For research tasks:
-      - Call mcp__pai_tools__read_resource(uri='skill://open-notebook') for Research Brain vault conventions and notebook_ops tools.
+      - Use mcp__pai_tools__notebook_ops for Research Brain vault operations (list_notebooks, add_note, search, ask_notebook).
       - Call mcp__pai_tools__read_resource(uri='skill://autonomous-tech-learner') for the **Hypothesis-Testing Protocol** (empirical probes) and **Deep Inquiry Trees** (perspective decomposition, dialectical inquiry, Living ADRs).
       - Note: Kanban worker roles (`researcher`, `synthesizer`, `adr_author`) and patterns (`deep_research`, `quick_fact_check`, `empirical_validation`) are configured in your system prompt under `kanban.workers` and `kanban.patterns`.
 
    6. Report your discovered:
       - `EXECUTION_DIR` (single project directory)
       - Active stack services
-      - Ready MCP tools: `mcp__graft__*`, `mcp__pai_tools__notebook_ops`, `mcp__pai_tools__adr_ops`, `mcp__pai_tools__docker_ops`, `mcp__pai_tools__read_resource`, `mnemosyne_*`
-      - Available skills (via `mcp__pai_tools__read_resource`): `agents`, `open-notebook`, `autonomous-tech-learner`, `graft`, `planning`, `stack-discovery`, `python`, `docker`, `react`, `nodejs`, `postgres`, `gitops`
+      - Ready MCP tools: `mcp__pai_tools__code_intel`, `mcp__pai_tools__notebook_ops`, `mcp__pai_tools__adr_ops`, `mcp__pai_tools__docker_ops`, `mcp__pai_tools__read_resource`, `mnemosyne_*`
+      - Available skills (via `mcp__pai_tools__read_resource`): `agents`, `autonomous-tech-learner`, `code-intel`, `planning`, `stack-discovery`, `python`, `docker`, `react`, `nodejs`, `sql`, `gitops`
       - Kanban swarm patterns for delegation
 
    This activates your **full autonomous research mode**: Tri-Brain synthesis, empirical validation, multi-perspective inquiry, and Kanban delegation.
@@ -185,7 +180,7 @@ Host Machine (WORKSPACE_DIR)
 
    **What this prompt accomplishes:**
    - **Ground Rules & Invariants**: Enforces `skill://agents`, anchoring Hermes strictly to `<EXECUTION_DIR>` and preventing monolithic workspace confusion.
-   - **Native File Vault Awareness**: Directs Hermes to file-based research in `/opt/data/workspace/research/` via `notebook_ops` without checking for dead containers.
+   - **Native File Vault Awareness**: Directs Hermes to file-based research in `/opt/data/workspace/research/` via `notebook_ops`.
    - **Memory Re-hydration**: Pulls past project lessons and architectural context via Mnemosyne.
    - **Research Powers Unlocked**: Activates all 6 phases — notebook_ops expansion, workspace sync, Tri-Bridge, empirical probes, inquiry trees, Kanban swarms.
    - **Self-Realization**: Hermes understands its own ecosystem, tools, and delegation patterns without external instruction.
@@ -205,7 +200,7 @@ Host Machine (WORKSPACE_DIR)
 | `make sync` | Sync LLM models with local & cloud providers and auto-reload gateway |
 | `make sync-all` | Sync models and include all cloud provider templates |
 | `make build` | Build / rebuild container images (supports `s=<service>`) |
-| `make clean` | Stop containers and remove persisted volumes (`hermes-data`, `graft-cache`) |
+| `make clean` | Stop containers and remove persisted volumes (destroys hermes state) |
 | `make config` | Validate and resolve Docker Compose configuration |
 
 ---
@@ -215,8 +210,6 @@ Host Machine (WORKSPACE_DIR)
 ### Services
 
 - **Hermes Web UI**: [http://localhost:9119](http://localhost:9119)
-- **Graft Visualizer**: [http://localhost:20128/viz/](http://localhost:20128/viz/)
-- **Graft API**: [http://localhost:20128/search?q=query&type=hybrid](http://localhost:20128/search?q=query&type=hybrid)
 - **MCP Server**: [http://localhost:8000/mcp](http://localhost:8000/mcp)
 - **Research Brain**: Built-in native file vault at `${WORKSPACE_DIR}/research/` (queried via `notebook_ops`)
 
@@ -229,14 +222,13 @@ Host Machine (WORKSPACE_DIR)
 | `AGENTS.md` | This context file — read first |
 | `hermes/config.yaml` | System prompt, model providers, MCP config, **Kanban swarm config** |
 | `docker-compose.yaml` | Base service definitions, mounts, resource limits |
-| `docker-compose.open-notebook.yml` | (Deprecated) Superseded by native file vault |
 | `mcp-server/server.py` | MCP server: auto-discovers tools & skills |
+| `mcp-server/tools/code-intel/` | `code_intel` MCP tool (symbol search, call graphs, impact analysis) |
 | `mcp-server/tools/notebook-ops/` | `notebook_ops` MCP tool (10 actions over native Markdown vault) |
+| `mcp-server/tools/adr-ops/` | `adr_ops` MCP tool (Living ADR creation & symbol drift detection) |
 | `mcp-server/skills/agents/SKILL.md` | Ground rules injected at session start |
-| `mcp-server/skills/open-notebook/SKILL.md` | Research Brain usage + **Symbolic Anchor Protocol** |
 | `mcp-server/skills/autonomous-tech-learner/SKILL.md` | Learning loop + **Hypothesis-Testing Protocol** + **Deep Inquiry Trees & L-ADRs** |
 | `mcp-server/skills/planning/SKILL.md` | Planning discipline (task_plan.md, findings.md, progress.md) |
-| `mcp-server/tools/adr-ops/` | `adr_ops` MCP tool (Living ADR creation & symbol drift detection) |
 
 ---
 

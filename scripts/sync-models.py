@@ -73,12 +73,6 @@ def resolve_probe_url(url: str) -> str:
     return url
 
 
-def is_embedding_model(name: str) -> bool:
-    """Detect embedding models by identifier keywords."""
-    lower = name.lower()
-    return any(k in lower for k in ("embed", "nomic", "ada-002", "bge-", "e5-", "gte-", "text2vec"))
-
-
 def fetch_json(url: str, headers: Optional[dict] = None, timeout: int = 5) -> Optional[dict]:
     """Fetch JSON with clean timeout and error handling."""
     probe_url = resolve_probe_url(url)
@@ -124,19 +118,14 @@ def probe_model_inference(base_url_or_endpoint: str, model_id: str, headers: dic
         }
         return post_json(url, payload, headers=headers, timeout=timeout) is not None
         
-    is_embed = is_embedding_model(model_id)
-    
     # Determine URL
     if base_url_or_endpoint.endswith("/models"):
-        url = base_url_or_endpoint.replace("/models", "/embeddings" if is_embed else "/chat/completions")
+        url = base_url_or_endpoint.replace("/models", "/chat/completions")
     else:
         clean = base_url_or_endpoint.rstrip("/")
-        url = f"{clean}/embeddings" if is_embed else f"{clean}/chat/completions"
+        url = f"{clean}/chat/completions"
             
-    if is_embed:
-        payload = {"model": model_id, "input": "hi"}
-    else:
-        payload = {"model": model_id, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}
+    payload = {"model": model_id, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}
         
     return post_json(url, payload, headers=headers, timeout=timeout) is not None
 
@@ -184,7 +173,7 @@ PROVIDERS = [
         "env_key": "MISTRAL_API_KEY",
         "endpoint": "https://api.mistral.ai/v1/models",
         "prefix": "mistral",
-        "curated": ["codestral-latest", "mistral-large-latest", "ministral-8b-latest", "mistral-embed"],
+        "curated": ["codestral-latest", "mistral-large-latest", "ministral-8b-latest"],
     },
     {
         "id": "groq",
@@ -208,7 +197,7 @@ PROVIDERS = [
         "env_key": "OPENAI_API_KEY",
         "endpoint": "https://api.openai.com/v1/models",
         "prefix": "openai",
-        "curated": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini", "text-embedding-3-small"],
+        "curated": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
     },
     {
         "id": "anthropic",
@@ -225,11 +214,6 @@ PROVIDERS = [
         "prefix": "gemini",
         "curated": ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
     },
-    {
-        "id": "embeddings",
-        "name": "Cluster Embeddings",
-        "type": "cluster_embeddings",
-    },
 ]
 
 
@@ -237,12 +221,7 @@ def discover_provider_models(prov: dict, env: dict, include_all: bool) -> Tuple[
     """Discover models for a given provider specification."""
     p_id = prov["id"]
 
-    # 1. Cluster embeddings pass-through
-    if prov.get("type") == "cluster_embeddings":
-        emb_model = env.get("EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v1.5")
-        return True, [emb_model, f"text-embedding-ada-002 -> {emb_model}"]
-
-    # 2. Primary local/remote OpenAI-compatible provider
+    # 1. Primary local/remote OpenAI-compatible provider
     if prov.get("type") == "openai_compatible":
         base_url = env.get(prov["env_url"]) or env.get("PRIMARY_LLM_BASE_URL") or env.get("LLM_BASE_URL") or prov["default_url"]
         api_key = env.get(prov["env_key"]) or "not-needed"
@@ -323,7 +302,7 @@ def generate_litellm_config(
 ) -> Tuple[str, str, List[str]]:
     """Generate LiteLLM config.yaml string, returning (yaml, selected_default, fallbacks)."""
     primary_models = discovered.get("primary", [])
-    primary_chat = [m for m in primary_models if not is_embedding_model(m)]
+    primary_chat = primary_models
 
     # Determine default model
     if explicit_default and explicit_default != "default":
@@ -376,8 +355,6 @@ def generate_litellm_config(
     # 1. Primary language models (clean short canonical names, no duplicates)
     primary_chat_unique = []
     for m_id in primary_models:
-        if is_embedding_model(m_id):
-            continue  # Embeddings handled by dedicated cluster embedding service
         clean_id = m_id.rstrip("/")
         short_name = clean_id.split("/")[-1] if "/" in clean_id else clean_id
         if not short_name:
@@ -403,7 +380,7 @@ def generate_litellm_config(
     # 2. Other providers (clean prefixed names, no aliases)
     for prov in PROVIDERS:
         p_id = prov["id"]
-        if p_id in ("primary", "embeddings"):
+        if p_id == "primary":
             continue
         models = discovered.get(p_id, [])
         if not models:
@@ -445,24 +422,9 @@ def generate_litellm_config(
                     "    litellm_params:",
                     f"      model: {prefix}/{clean}",
                     f"      api_key: os.environ/{env_key}",
-                    *(["      mode: embedding"] if is_embedding_model(clean) else []),
                     "      timeout: 1800",
                     "",
                 ])
-
-    # 3. Cluster Embeddings (clean canonical name matching EMBEDDING_MODEL)
-    emb_model = env.get("EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v1.5")
-    lines.extend([
-        "  # ── Cluster Embeddings ────────────────────────────────────────────────",
-        f"  - model_name: {emb_model}",
-        "    litellm_params:",
-        f"      model: openai/{emb_model}",
-        "      api_base: http://embeddings:8080/v1",
-        "      api_key: not-needed",
-        "      mode: embedding",
-        "      timeout: 1800",
-        "",
-    ])
 
     # Router Settings & Fallbacks
     lines.extend([
@@ -547,15 +509,8 @@ def main():
         active, models = discover_provider_models(prov, env, include_all=args.all)
         p_name = prov["name"]
         if active and models:
-            emb_count = sum(1 for m in models if is_embedding_model(m))
-            chat_count = len(models) - emb_count
-            info_parts = []
-            if chat_count:
-                info_parts.append(f"{chat_count} chat")
-            if emb_count:
-                info_parts.append(f"{emb_count} embedding")
             discovered[prov["id"]] = models
-            log_ok(f"{p_name:<26} → {', '.join(info_parts)}: {', '.join(models[:4])}{'...' if len(models) > 4 else ''}")
+            log_ok(f"{p_name:<26} → {len(models)} models: {', '.join(models[:4])}{'...' if len(models) > 4 else ''}")
         elif active:
             log_warn(f"{p_name:<26} → configured but unreachable / 0 models returned")
         else:

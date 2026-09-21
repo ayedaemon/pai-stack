@@ -16,7 +16,7 @@ and builds planning artifacts — working like a developer, not a separate knowl
 | `/opt/data/workspace` | (bind mount) | Multi-project workspace mounted from host — read-write |
 | `/opt/data` | (local dir) | Scratch tools, helper scripts, and agent utilities |
 | **llm-gateway** | `http://llm-gateway:4000` | Unified LLM Gateway: LiteLLM proxy for all completions, fallbacks, and tool calls |
-| **graft** | `http://graft:20128/mcp` | Primary code intelligence: AST + semantic search (via MCP) |
+| **code_intel** | `http://mcp-server:8000/mcp` | Primary code intelligence: AST + semantic search (via MCP) |
 | **mcp-server** | `http://mcp-server:8000/mcp` | Bundled procedural skills (MCP resources) and tools (`docker_ops`, `notebook_ops`) |
 | **mnemosyne** | (internal SQLite) | Local agent memory: decisions, prior fixes, session continuity, project boundaries |
 | **research** | `/opt/data/workspace/research/` | Research Brain: native file vault for notes, sources, and RFCs (`notebook_ops`) |
@@ -34,7 +34,7 @@ On **turn 1 of every session** (or whenever entering an unfamiliar directory):
    - Version control: `.git/` directory
    - Manifests: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pom.xml`, `Makefile`
    - Configs: `.env`, `docker-compose.yml`, `tsconfig.json`
-3. **Orient with Graft**: Call `graft_repo_map` to understand symbol hubs and high-level structure. If the project stack is unknown, fetch `skill://stack-discovery` before reading code.
+3. **Orient with Code Intelligence**: Call `code_intel(action="repo_map")` to understand symbol hubs and high-level structure. If the project stack is unknown, fetch `skill://stack-discovery` before reading code.
 4. **Persist boundaries**: Record newly discovered boundaries with `mnemosyne_remember(content="Workspace Project: '<name>' at /opt/data/workspace/<name>. Markers: [...], Stack: [...]")`.
 5. **Enforce boundary isolation**: Never mix files, git branches, planning files, or build artifacts across different project subdirectories.
 
@@ -71,12 +71,12 @@ Mnemosyne is the long-term associative memory. Do NOT pollute it with transient 
 ## Retrieval Strategy
 
 1. **Prior lessons/decisions** → `mnemosyne_recall` first to check known solutions and constraints
-2. **Code/symbol questions** → Graft first (`graft_find_code`, `graft_trace_calls`)
-3. **Doc/note questions** → Graft first (`graft_find_code`)
+2. **Code/symbol questions** → Code intelligence first (`code_intel(action="find_code")`, `code_intel(action="trace_calls")`)
+3. **Doc/note questions** → Code intelligence first (`code_intel(action="find_code")`)
 4. **Unknown stack** → `skill://stack-discovery` before reading any files
 5. **Procedure needed** → fetch the relevant `skill://<name>` resource
 
-Never bulk-read a directory without a prior Graft search.
+Never bulk-read a directory without a prior code intelligence search.
 
 ## Writing to the Project
 
@@ -84,7 +84,7 @@ Never bulk-read a directory without a prior Graft search.
 2. **Wait** for explicit confirmation
 3. **Write** to `<EXECUTION_DIR>/<file>`
 4. **Update** `progress.md` with what changed
-5. **Reindex** if new files were added: call `graft_check_freshness`
+5. **Reindex** if new files were added: call `code_intel(action="check_freshness")`
 
 Never write raw secrets to any file. Use references (env var name, vault path).
 
@@ -106,14 +106,13 @@ Planning files live in the project like developer artifacts:
 | Resource | Purpose |
 |---|---|
 | `skill://stack-discovery` | Detect tech stack — run first on any unknown codebase |
-| `skill://graft` | Graft query procedures and tools reference |
+| `skill://code-intel` | Code intelligence query procedures and tools reference |
 | `skill://python` | Python project conventions (pyproject.toml, uv, FastAPI, pytest) |
 | `skill://docker` | Docker/Compose conventions (multi-stage, volumes, healthchecks) |
 | `skill://react` | React/Next.js conventions (Vite, hooks, routing, Tailwind) |
 | `skill://nodejs` | Node.js conventions (package.json, ESM/CJS, Express/Nest) |
-| `skill://postgres` | Postgres conventions (ORM, migrations, schema, DATABASE_URL) |
+| `skill://sql` | SQL/Postgres conventions (ORM, migrations, schema, DATABASE_URL) |
 | `skill://planning` | planning-with-files discipline (task_plan.md, findings.md, progress.md) |
-| `skill://open-notebook` | When/how to use the Open Notebook research brain and notebook_ops tool |
 | `skill://agents` | This file (ground rules, injected at session start) |
 
 ## Bundled Tools (MCP Tools)
@@ -121,15 +120,14 @@ Planning files live in the project like developer artifacts:
 | Tool | Purpose | Allowed actions |
 |---|---|---|
 | `docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
-| `notebook_ops` | Query Open Notebook research knowledge base (opt-in; returns `{"available":false}` when offline) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
+| `notebook_ops` | Query Research Brain (native Markdown file vault) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 | `adr_ops` | Living ADR creation & code symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 
 All `docker_ops` actions are recorded in `/app/logs/docker-ops.log` on `mcp-server`.
-Fetch `skill://open-notebook` before using `notebook_ops`.
 
-## Tri-Brain Cross-System Lookup (Graft ↔ Open Notebook ↔ Mnemosyne)
+## Tri-Brain Cross-System Lookup (Code Intelligence ↔ Research Brain ↔ Mnemosyne)
 
-When querying code via Graft, check Mnemosyne for existing research notes anchored to
+When querying code via code intelligence, check Mnemosyne for existing research notes anchored to
 those symbols:
 
 1. **Before writing new research** on a symbol (function, type, component):
@@ -140,7 +138,7 @@ those symbols:
    )
    ```
 2. **If triples exist**: Extract `subject` (format: `notebook:<nb_id>:note:<note_id>`), then
-   fetch the note via `notebook_ops(action=get_source, ...)` or Open Notebook UI.
+   fetch the note via `notebook_ops(action=get_source, ...)`.
 3. **After archiving new notes** with `@symbol:` anchors, record triples:
    ```bash
    mnemosyne_triple_add(
@@ -156,14 +154,14 @@ This prevents duplicate research and builds a persistent knowledge graph across 
 
 1. **Workspace Discovery on Turn 1**: survey `/opt/data/workspace`, check `mnemosyne_recall`, determine project boundaries, and set `EXECUTION_DIR`.
 2. **Anchor to EXECUTION_DIR**: all terminal commands, planning files, and edits must run strictly within `<EXECUTION_DIR>`. Never pollute workspace root.
-3. **Retrieve before reading**: Graft first (`graft_find_code`, `graft_trace_calls`), raw files second.
+3. **Retrieve before reading**: Code intelligence first (`code_intel(action="find_code")`, `code_intel(action="trace_calls")`), raw files second.
 4. **Cite everything**: `path:line` relative to `<EXECUTION_DIR>`, `skill://<name>` for MCP resources.
 5. **Propose before writing**: show the user what you will write and wait for confirmation.
 6. **Plan for complex tasks**: `task_plan.md` is non-negotiable for 3+ step work.
 7. **Log all errors**: every error goes into `task_plan.md`. Never repeat the same failing action.
 8. **No secrets in files**: use references (env var, vault path).
 9. **Session-scoped**: stay on this session's project unless the user redirects.
-10. **Graft empty + no session context**: survey `/opt/data/workspace/` to discover projects before concluding none exist.
+10. **Code intelligence empty + no session context**: survey `/opt/data/workspace/` to discover projects before concluding none exist.
 
 ---
 
@@ -178,7 +176,7 @@ The following capabilities are built directly into the pai-stack:
 
 | Brain | Service | Primary Tools | What It Gives You |
 |---|---|---|---|
-| **Code Brain** | Graft (20128) | `graft_find_code`, `graft_trace_calls`, `graft_repo_map`, `graft_check_freshness` | AST symbols, semantic search, call graphs, impact analysis, drift detection |
+| **Code Brain** | Code Intelligence (mcp-server:8000) | `code_intel(action="find_code")`, `code_intel(action="trace_calls")`, `code_intel(action="repo_map")`, `code_intel(action="check_freshness")` | AST symbols, semantic search, call graphs, impact analysis, drift detection |
 | **Research Brain** | File Vault (`research/`) | `notebook_ops` (10 actions) | Native Markdown vault: RFCs, papers, API docs, notes, grounded RAG (`ask_notebook`) |
 | **Memory Brain** | Mnemosyne (SQLite) | `mnemosyne_recall`, `mnemosyne_remember`, `mnemosyne_triple_*`, `mnemosyne_sleep` | Episodic memory, decisions, prior fixes, user preferences, knowledge graph triples |
 
@@ -190,7 +188,7 @@ The following capabilities are built directly into the pai-stack:
 @symbol:path/to/file.ext:SymbolName
 ```
 
-- **Embed in EVERY research note** (Open Notebook `add_note`, evidence notes, ADRs)
+- **Embed in EVERY research note** (evidence notes, ADRs, `notebook_ops(action="add_note", ...)`)
 - **Cross-brain triples**: After archiving, record in Mnemosyne:
   ```
   mnemosyne_triple_add(subject="notebook:<nb>:note:<note>", predicate="anchors_symbol", object="@symbol:...")
@@ -200,7 +198,7 @@ The following capabilities are built directly into the pai-stack:
   mnemosyne_triple_query(predicate="anchors_symbol", object="@symbol:path:Symbol")
   ```
   If results exist → read those notes first → avoid duplicate research.
-- **Native file vault**: Notes live in `research/` → automatically indexed by Graft → searchable via `graft_find_code`.
+- **Native file vault**: Notes live in `research/` → automatically indexed by code intelligence → searchable via `code_intel(action="find_code")`.
 
 ### 🔬 EMPIRICAL LAB NOTEBOOK — Test, Don't Guess
 
@@ -263,16 +261,16 @@ When a task needs multi-perspective research, ADR production, or complex validat
 
 After fetching `skill://agents`, immediately:
 
-1. **docker_ops(list)** — confirm which services are running (hermes, graft, llm-gateway, mcp-server)
+1. **docker_ops(list)** — confirm which services are running (hermes, mcp-server, llm-gateway)
 2. **mnemosyne_recall("workspace projects structure boundaries")** — rehydrate memory
 3. **Survey `/opt/data/workspace`** — find project boundaries, declare `EXECUTION_DIR`
-4. **graft_repo_map** — orient on code hubs
-5. **For research tasks**: Fetch `skill://open-notebook` + `skill://autonomous-tech-learner`
+4. **code_intel(action="repo_map")** — orient on code hubs
+5. **For research tasks**: Fetch `skill://autonomous-tech-learner` for empirical probes and inquiry trees
 6. **Report**: EXECUTION_DIR, active services, ready tools, available skills, Kanban patterns
 
 ### 💡 KEY INSIGHTS FOR EFFECTIVE OPERATION
 
-- **Graft first, files second** — always search before reading
+- **Code intelligence first, files second** — always search before reading
 - **Anchors everywhere** — `@symbol:` in notes, evidence, ADRs, probes
 - **Triples always** — after `add_note`, call `mnemosyne_triple_add`
 - **Reverse lookup first** — before research, query Mnemosyne for existing anchors

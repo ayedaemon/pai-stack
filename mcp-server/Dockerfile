@@ -5,7 +5,10 @@ RUN apt-get update && \
         curl \
         jq \
         ca-certificates \
-        gnupg && \
+        gnupg \
+        build-essential \
+        gcc \
+        g++ && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     chmod a+r /etc/apt/keyrings/docker.gpg && \

@@ -2,7 +2,7 @@
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 PROJECT="${COMPOSE_PROJECT_NAME:-pai-stack}"
-ALLOWED_SERVICES="hermes graft llm-gateway mcp-server dsh"
+ALLOWED_SERVICES="hermes llm-gateway mcp-server dsh"
 ALLOWED_ACTIONS="list status logs restart start stop exec"
 LOG_DIR="${LOG_DIR:-/app/logs}"
 LOG_FILE="$LOG_DIR/docker-ops.log"

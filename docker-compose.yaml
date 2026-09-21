@@ -11,8 +11,6 @@ services:
     depends_on:
       mcp-server:
         condition: service_healthy
-      graft:
-        condition: service_healthy
       llm-gateway:
         condition: service_healthy
     deploy:
@@ -45,14 +43,12 @@ services:
     depends_on:
       mcp-server:
         condition: service_healthy
-      graft:
-        condition: service_healthy
       llm-gateway:
         condition: service_healthy
     deploy:
       resources:
         limits:
-          memory: 3072M
+          memory: 1536M
           cpus: "3.0"
     environment:
       - HERMES_HOME=/opt/hermes/data
@@ -94,46 +90,14 @@ services:
           create_host_path: false
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    entrypoint: [ "/bin/sh", "/hermes-entrypoint.sh" ]
-    command: gateway run
-
-  graft:
-    build:
-      context: ./graft
-      dockerfile: Dockerfile
-    container_name: graft
-    restart: unless-stopped
-    depends_on:
-      llm-gateway:
-        condition: service_healthy
-    ports:
-      - "20128:20128"
-    deploy:
-      resources:
-        limits:
-          memory: 2048M
-          cpus: "1.0"
-    environment:
-      - WORKSPACE_PATH=/opt/data/workspace
-      - GRAFT_PROVIDER=litellm
-      - GRAFT_BASE_URL=http://llm-gateway:4000
-      - GRAFT_API_KEY=${LITELLM_MASTER_KEY:-not-needed}
-      - GRAFT_MODEL=${GRAFT_MODEL:-default}
-    volumes:
-      - ./graft:/app
-      - /app/node_modules
-      - type: bind
-        source: ${WORKSPACE_DIR}
-        target: /opt/data/workspace
-        bind:
-          create_host_path: false
-      - graft-cache:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:20128/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9119/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
+    entrypoint: [ "/bin/sh", "/hermes-entrypoint.sh" ]
+    command: gateway run
 
   mcp-server:
     build:
@@ -146,6 +110,7 @@ services:
     environment:
       - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-pai-stack}
       - RESEARCH_DIR=${RESEARCH_DIR:-/opt/data/workspace/research}
+      - WORKSPACE_PATH=${WORKSPACE_DIR}
       - LLM_GATEWAY_URL=http://llm-gateway:4000/v1
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-not-needed}
     volumes:
@@ -162,8 +127,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
-          cpus: "0.5"
+          memory: 512M
+          cpus: "0.75"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -181,7 +146,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1024M
+          memory: 512M
           cpus: "1.0"
     environment:
       - PORT=4000
@@ -217,5 +182,4 @@ services:
 
 volumes:
   hermes-data:
-  graft-cache:
   mcp-logs:

@@ -27,7 +27,7 @@ description: Read, reason, and safely change Docker/Docker Compose projects — 
    - `USER`, `EXPOSE`, `ENTRYPOINT`/`CMD`, `HEALTHCHECK`
    - Note s6-overlay / `USER root` patterns (see `hermes/Dockerfile:7` / `hermes/entrypoint.sh:1` if relevant)
 4. Analyze Compose:
-   - Map service → port → host mapping (`ports: - "20128:20128"` style `docker-compose.yaml:14`)
+   - Map service → port → host mapping (`ports: - "8000:8000"` style `docker-compose.yaml:14`)
    - Volumes: named (`hermes-data:/opt/hermes/data` `docker-compose.yaml:89`) vs bind (`${STACK_ROOT}:/stack_root` `:92`) — check for `EACCES` risk, `user: "${UID:-1000}"`, `deploy.resources.limits`
    - Network: default bridge vs custom; `extra_hosts: host.docker.internal` `docker-compose.yaml:22` for host services (Syncthing pattern)
    - Env: which vars come from host `.env` vs hard-coded; flag raw secrets in compose

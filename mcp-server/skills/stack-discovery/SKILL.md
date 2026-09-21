@@ -16,7 +16,7 @@ description: Auto-detect tech stack for any project under /opt/data/workspace so
 - Optional: depth limit (default 2 levels), language hint
 
 ## Steps
-1. Check for prior findings: `graft_find_code(question="<project> stack discovery findings", scope=".")` — if results exist, note them. Either way, proceed with marker scan below.
+1. Check for prior findings: `code_intel(action="find_code", question="<project> stack discovery findings", scope=".")` — if results exist, note them. Either way, proceed with marker scan below.
 2. Scan root (depth 1-2) for markers — record `file:lines` hit for each:
    - Python: `pyproject.toml`, `requirements*.txt`, `Pipfile`, `poetry.lock`, `uv.lock`, `setup.py`, `*.py` at top-level, `.python-version`
    - Docker: `Dockerfile*`, `docker-compose*.yaml`, `compose.yaml`, `.dockerignore`
@@ -32,11 +32,11 @@ description: Auto-detect tech stack for any project under /opt/data/workspace so
    - Polyglot is common — list primary (most files/entripoint) vs secondary
 4. Pick skills:
    - Primary stack → retrieve its `skill://<stack>` first and follow it
-   - Secondary stacks → retrieve each co-skill (`skill://docker`, `skill://postgres`) and apply their steps where relevant
+   - Secondary stacks → retrieve each co-skill (`skill://docker`, `skill://sql`) and apply their steps where relevant
    - If no marker → state "unknown stack — listing files in /opt/data/workspace/<project>:..." and propose initializing a plan with `/pwf "Stack Discovery"`
 5. Summarize & route:
    - Build table: `| Stack | Evidence | Skill |` with `file:lines` citations (e.g. `| Python | pyproject.toml:8 requires-python | skill://python |`)
-   - State next skill to execute (e.g. "Detected Python + Docker + Postgres → will follow skill://python then skill://postgres + skill://docker")
+   - State next skill to execute (e.g. "Detected Python + Docker + Postgres → will follow skill://python then skill://sql + skill://docker")
 6. Write & cite:
    - Write discovery table to `findings.md` in the active task plan directory
    - If no plan exists yet, propose creating one with `/pwf "Stack Discovery — <project>"`
@@ -55,7 +55,7 @@ description: Auto-detect tech stack for any project under /opt/data/workspace so
 - `skill://docker`
 - `skill://react`
 - `skill://nodejs`
-- `skill://postgres`
+- `skill://sql`
 - `skill://planning`
 - `skill://agents`
 

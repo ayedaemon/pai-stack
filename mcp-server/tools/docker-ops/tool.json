@@ -13,7 +13,7 @@
       },
       "service": {
         "type": "string",
-        "enum": ["hermes", "graft", "llm-gateway", "mcp-server", "dsh"],
+        "enum": ["hermes", "llm-gateway", "mcp-server", "dsh"],
         "description": "Target container name. Required for all actions except 'list'."
       },
       "lines": {

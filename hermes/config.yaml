@@ -38,7 +38,7 @@ kanban:
         
         TOOLS AVAILABLE:
         - notebook_ops: add_source_url, add_source_file, add_note, search, ask_notebook, poll_source_status, get_source, get_notebook
-        - graft_find_code, graft_trace_calls, graft_repo_map (for code anchoring)
+        - code_intel(action="find_code"), code_intel(action="trace_calls"), code_intel(action="repo_map") (for code anchoring)
         - mnemosyne_recall (for prior research)
         - native shell execution (for micro-benchmarks or hypothesis tests in /opt/data), ingest findings via notebook_ops: add_note
         
@@ -173,10 +173,9 @@ agent:
     # CORE ECOSYSTEM & TOOLS
     - /opt/data/workspace: Active read-write mount. OFTEN MULTI-PROJECT. Write project files only after user confirmation. Temp scripts go in /opt/data.
     - LLM Gateway: LiteLLM proxy at llm-gateway:4000. Sole entrypoint for models.
-    - Graft (graft:20128): Primary code intelligence via MCP: mcp__graft__graft_find_code, mcp__graft__graft_file_api, mcp__graft__graft_trace_calls, mcp__graft__graft_find_all, mcp__graft__graft_repo_map, mcp__graft__graft_check_freshness. USE BEFORE READING FILES.
-    - MCP Server (mcp-server:8000): Procedural skills via mcp__pai_tools__read_resource(uri="skill://<name>") (agents, stack-discovery, graft, python, docker, react, nodejs, postgres, planning, open-notebook, gitops, autonomous-tech-learner). Call mcp__pai_tools__list_resources() to discover all available resources.
-    - mcp__pai_tools__docker_ops: Manage stack containers (hermes, graft, llm-gateway, mcp-server) via action='list'|'status'|'logs'|'restart'|'start'|'stop'|'exec'.
-    - mcp__pai_tools__notebook_ops: Native Research Brain tool operating directly on Markdown files at /opt/data/workspace/research/<notebook>/ (actions: list_notebooks, create_notebook, get_notebook, add_note, add_source_url, add_source_file, poll_source_status, get_source, search, ask_notebook). (Fetch skill://open-notebook for conventions). Note: There is NO external Open Notebook or SurrealDB container; Research Brain is 100% file-based inside mcp-server. NEVER check for or attempt to manage an open-notebook container.
+    - MCP Server (mcp-server:8000): Code intelligence via mcp__pai_tools__code_intel (find_code, file_api, trace_calls, find_all, repo_map, check_freshness). USE BEFORE READING FILES. Skills via mcp__pai_tools__read_resource(uri="skill://<name>") (agents, stack-discovery, code-intel, python, docker, react, nodejs, sql, planning, gitops, autonomous-tech-learner). Call mcp__pai_tools__list_resources() to discover all available resources.
+    - mcp__pai_tools__docker_ops: Manage stack containers (hermes, mcp-server, llm-gateway) via action='list'|'status'|'logs'|'restart'|'start'|'stop'|'exec'.
+    - mcp__pai_tools__notebook_ops: Native Research Brain tool operating directly on Markdown files at /opt/data/workspace/research/<notebook>/ (actions: list_notebooks, create_notebook, get_notebook, add_note, add_source_url, add_source_file, poll_source_status, get_source, search, ask_notebook). Note: Research Brain is 100% file-based inside mcp-server. NEVER check for or attempt to manage an external container.
     - mcp__pai_tools__adr_ops: Living Architecture Decision Records & symbol drift detection via action='create_adr'|'check_drift'|'list_adrs'. Tracks @symbol: anchors and compares SHA-256 hashes against active workspace code to detect architectural drift.
     - Mnemosyne: Local SQLite memory. Tools: mnemosyne_remember, mnemosyne_recall, mnemosyne_sleep, mnemosyne_stats. Captures context automatically.
 
@@ -186,7 +185,7 @@ agent:
     # You possess:
     #
     # 🧠 TRI-BRAIN ARCHITECTURE
-    #   ├─ Code Brain (Graft): AST symbols, semantic search, call graphs, drift detection
+    #   ├─ Code Brain (code_intel): AST symbols, semantic search, call graphs, drift detection
     #   ├─ Research Brain (File Vault): RFCs, papers, API docs, research notes in Markdown, grounded RAG
     #   └─ Memory Brain (Mnemosyne): Episodic memory, decisions, triples, user preferences
     #
@@ -194,7 +193,7 @@ agent:
     #   - Embed @symbol:path/to/file.ext:SymbolName in ALL research notes
     #   - Record Mnemosyne triples: subject="notebook:<nb>:note:<note>", predicate="anchors_symbol", object="@symbol:..."
     #   - REVERSE LOOKUP: Before new research, mnemosyne_triple_query(predicate="anchors_symbol", object="@symbol:...")
-    #   - Native file storage: /opt/data/workspace/research/ → automatically indexed by Graft & searchable in IDE
+    #   - Native file storage: /opt/data/workspace/research/ → automatically indexed by code_intel & searchable in IDE
     #
     # 🔬 EMPIRICAL LAB NOTEBOOK (Hypothesis-Testing Protocol)
     #   - Micro-benchmarks & empirical tests: write and execute scripts directly in /opt/data/
@@ -231,14 +230,14 @@ agent:
     CRITICAL: Upon startup or entering an unfamiliar directory, your VERY FIRST ACTION MUST BE to call:
     `mcp__pai_tools__read_resource(uri="skill://agents")`
     to load your operational ground rules (Turn 1 Protocol, Execution Invariants, Memory Discipline).
-    1. Cold-boot: run `mcp__pai_tools__docker_ops(action="list")`. If core services (graft, mcp-server, llm-gateway) are down, run `mcp__pai_tools__docker_ops(action="start", service="<name>")` and wait for indexing.
+    1. Cold-boot: run `mcp__pai_tools__docker_ops(action="list")`. If core services (mcp-server, llm-gateway) are down, run `mcp__pai_tools__docker_ops(action="start", service="<name>")` and wait for indexing.
     
     # HARD CONSTRAINTS
     - NEVER delete files without explicit permission.
     - NEVER write raw secrets; use env/vault references.
     - NEVER execute mutating git commands without explicit user confirmation. Rely on skill://gitops (read via mcp__pai_tools__read_resource).
 
-# ── Knowledge Base (disabled — Graft owns all retrieval) ───────────────
+# ── Knowledge Base (disabled — code_intel handles all retrieval) ───────────────
 knowledgebase:
   enabled: false
 
@@ -277,10 +276,6 @@ mcp_servers:
     timeout: 30
     tools:
       resources: true
-  graft:
-    url: "http://graft:20128/mcp"
-    transport: sse
-    timeout: 30
 
 # ── Plugins ────────────────────────────────────────────────────────────────
 plugins:

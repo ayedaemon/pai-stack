@@ -1,0 +1,54 @@
+{
+  "name": "code_intel",
+  "description": "Code intelligence: symbol search, call graphs, impact analysis, project structure via tree-sitter AST parsing. The workspace may contain multiple projects — scope queries to your EXECUTION_DIR.",
+  "command": ["sh", "run.sh"],
+  "timeout": 30,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["find_code", "file_api", "trace_calls", "find_all", "repo_map", "check_freshness"],
+        "description": "Operation to perform. find_code: search for implementations via text+AST. file_api: extract symbol signatures without bodies. trace_calls: find callers/callees of a symbol. find_all: regex search across files. repo_map: analyze project structure. check_freshness: clear cache and re-index."
+      },
+      "question": {
+        "type": "string",
+        "description": "Natural language question for find_code (e.g. 'Where is user authentication handled?')."
+      },
+      "scope": {
+        "type": "string",
+        "description": "Directory or file path to scope the search (e.g. EXECUTION_DIR or EXECUTION_DIR/src)."
+      },
+      "file_path": {
+        "type": "string",
+        "description": "File path for file_api (e.g. 'src/main.py')."
+      },
+      "symbol": {
+        "type": "string",
+        "description": "Symbol name for trace_calls (e.g. 'loginUser')."
+      },
+      "direction": {
+        "type": "string",
+        "enum": ["in", "out"],
+        "description": "For trace_calls: in=who calls this symbol, out=what does this symbol call."
+      },
+      "depth": {
+        "type": "integer",
+        "description": "Traversal depth for trace_calls (default: 1)."
+      },
+      "regex": {
+        "type": "string",
+        "description": "Regex pattern for find_all (e.g. 'TODO|FIXME')."
+      },
+      "path": {
+        "type": "string",
+        "description": "Directory or file path for find_all."
+      },
+      "max_dirs": {
+        "type": "integer",
+        "description": "Max directories to show in repo_map (default: 5)."
+      }
+    },
+    "required": ["action"]
+  }
+}

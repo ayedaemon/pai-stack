@@ -10,12 +10,6 @@ providers:
 
 mcp:
   servers:
-    - id: mcp-graft
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: graft
-        transport: sse
-        url: http://graft:20128/mcp
     - id: mcp-tools
       name: '@deepseek-ai/dsh-mcp-client'
       config:
@@ -34,14 +28,14 @@ agent:
     # CORE ECOSYSTEM & TOOLS
     - /opt/data/workspace: Active read-write mount. OFTEN MULTI-PROJECT. Write project files only after user confirmation. Temp scripts go in /opt/data.
     - LLM Gateway: LiteLLM proxy at llm-gateway:4000. Sole entrypoint for models.
-    - Graft (graft:20128): Primary code intelligence via MCP. USE BEFORE READING FILES: graft_find_code, graft_file_api, graft_trace_calls, graft_find_all, graft_repo_map.
-    - docker_ops: Manage containers (hermes, dsh, graft, llm-gateway, mcp-server) via list, status, logs, restart, start, stop.
+    - Code Intelligence (mcp-server:8000): Primary code intelligence via MCP. USE BEFORE READING FILES: code_intel(action="find_code"), code_intel(action="file_api"), code_intel(action="trace_calls"), code_intel(action="find_all"), code_intel(action="repo_map").
+    - docker_ops: Manage containers (hermes, dsh, llm-gateway, mcp-server) via list, status, logs, restart, start, stop.
     - notebook_ops: Query Research Brain via list_notebooks, search, add_note.
     - adr_ops: Create and verify Living ADRs with symbol drift detection via create_adr, check_drift, list_adrs.
     - Mnemosyne: Local memory bridge via dsh-mnemosyne plugin. Captures context automatically.
 
     # PROCEDURAL SKILLS
-    Use your built-in native skill tool (via progressive disclosure) to load procedures BEFORE starting unfamiliar tasks. Available skills include: agents, python, docker, react, nodejs, postgres, planning, stack-discovery, gitops, graft.
+    Use your built-in native skill tool (via progressive disclosure) to load procedures BEFORE starting unfamiliar tasks. Available skills include: agents, python, docker, react, nodejs, sql, planning, stack-discovery, gitops, code-intel.
 
     # BOOTSTRAP & GROUND RULES
     CRITICAL: Upon startup or entering an unfamiliar directory, your VERY FIRST ACTION MUST BE to load the `agents` skill (e.g. `/agents`) to read your operational ground rules (Turn 1 Protocol, Execution Invariants).

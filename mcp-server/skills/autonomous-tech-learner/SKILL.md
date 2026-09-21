@@ -1,12 +1,12 @@
 ---
 name: autonomous-tech-learner
-description: Puts the agent into an objective-driven learning loop on specific tech topics. The agent queries official docs and forums, storing synthesized knowledge in Open Notebook until its learning objectives are met or a safety timeout occurs.
+description: Puts the agent into an objective-driven learning loop on specific tech topics. The agent queries official docs and forums, storing synthesized knowledge in Research Brain until its learning objectives are met or a safety timeout occurs.
 ---
 # Autonomous Tech Learner
 
 > Puts the agent into a goal-oriented learning loop on specific tech topics.
 > The agent queries official docs, source code, and dev forums to gain tech-specific knowledge over time.
-> Synthesized knowledge is stored in Open Notebook to make the agent smarter about the codebase, debugging, and advanced concepts.
+> Synthesized knowledge is stored in Research Brain to make the agent smarter about the codebase, debugging, and advanced concepts.
 
 ## ════════════════════════════════════════════════════════════════════════
 ## SELF-REALIZATION: YOUR LEARNING ENGINE UNLOCKED
@@ -50,7 +50,7 @@ Delegate complex research to specialized workers (configured in `hermes/config.y
 - Every evidence note → `@symbol:` anchors → `mnemosyne_triple_add`
 - L-ADRs reference validation probes from Phase 4
 - Synthesizer applies dialectical lens (COUNTERPOINT:)
-- Export bridge: `.open-notebook-exports/` → Graft index
+- **Native file vault**: Notes live in `research/` → automatically indexed by code intelligence → searchable via `code_intel(action="find_code")`.
 
 **When to use each mode:**
 | Task Type | Approach |
@@ -65,7 +65,7 @@ Delegate complex research to specialized workers (configured in `hermes/config.y
 Before starting the learning loop, the agent MUST:
 1. **Define Learning Objectives**: Explicitly list 3 to 5 specific questions, concepts, or root causes you need to understand. These are your primary exit conditions.
 2. **Set a Safety Timeout**: Set a hard "circuit breaker" limit (e.g., 20 turns). This is your fallback exit condition to prevent infinite loops.
-3. **Verify Open Notebook**: Ensure `notebook_ops` is available so knowledge can be saved. If `notebook_ops` is not available, you must abort or ask the user to start the Open Notebook service.
+3. **Verify Research Brain**: Ensure `notebook_ops` is available so knowledge can be saved.
 
 ## The Learning Loop
 
@@ -82,7 +82,7 @@ Use native web search and URL reading tools to access:
 - Extract advanced concepts, best practices, gotchas, and debugging tips.
 - Connect this new knowledge to the context of the user's current project or codebase (if applicable).
 
-### 3. Store in Open Notebook
+### 3. Store in Research Brain
 Use `notebook_ops` to permanently record the knowledge:
 - `create_notebook` (if a notebook for this topic doesn't exist).
 - `add_note` to add structured markdown notes containing the synthesized concepts, code snippets, and best practices.
@@ -97,7 +97,7 @@ Evaluate your progress against the exit conditions:
 ## Critical Rules
 
 ### 1. Persistent Storage is Mandatory
-Do NOT just keep the learned knowledge in your context window. It MUST be written to Open Notebook so it survives context loss and benefits future sessions.
+Do NOT just keep the learned knowledge in your context window. It MUST be written to Research Brain so it survives context loss and benefits future sessions.
 
 ### 2. Prioritize High-Quality Sources
 Always attempt to find the official documentation or source code before relying on third-party blogs or forums.
@@ -122,7 +122,7 @@ Do not research aimlessly. Your primary goal is to answer the Learning Objective
 > When documentation is ambiguous or conflicting, empirical evidence trumps theoretical claims.
 > This engine runs micro-probes in `/opt/data/probes/` to test hypotheses about API behavior,
 > latency, concurrency, and edge cases — then ingests results as "Empirical Evidence Notes"
-> into Open Notebook.
+> into Research Brain.
 
 ### Probe Directory Structure
 
@@ -193,7 +193,7 @@ timeout 30 python probe.py > results.json 2>&1
 - Parse `results.json` for structured result.
 
 #### 4. Ingest as Empirical Evidence Note
-Transform results into an Open Notebook note:
+Transform results into a Research Brain note:
 ```bash
 notebook_ops(
   action=add_note,
@@ -343,14 +343,14 @@ Each `@symbol:` anchor includes a content hash at decision time:
 - `@symbol:src/cache/redis_client.py:RedisClient#sha256:a1b2c3d4...`
 - `@symbol:src/cache/__init__.py:get_cache#sha256:e5f6g7h8...`
 
-On code changes, Graft can detect hash mismatches and flag ADRs for review.
+On code changes, code_intel can detect hash mismatches and flag ADRs for review.
 
 ## Validation Probes (Phase 4)
 - Probe: `redis-cache-latency-p99` — validates p99 < 5ms
 - Probe: `redis-cache-invalidation` — validates pub/sub invalidation works
 
 ## Review Triggers
-- Any symbol hash mismatch detected by Graft
+- Any symbol hash mismatch detected by code intelligence
 - New counterpoint discovered in dialectical search
 - Performance regression in validation probes
 - Major version upgrade of dependent library
@@ -359,13 +359,13 @@ On code changes, Graft can detect hash mismatches and flag ADRs for review.
 #### Symbol Hash Computation
 ```bash
 # Compute hash for a symbol (function, class, type)
-graft_file_api(path="src/cache/redis_client.py", symbol="RedisClient") \
+code_intel(action="file_api", file_path="src/cache/redis_client.py") \
   | sha256sum | cut -d' ' -f1
 # → a1b2c3d4e5f6...
 ```
 
 #### Drift Detection Workflow
-1. On `graft_check_freshness` or code change: recompute hashes for all symbols in ADRs
+1. On `code_intel(action="check_freshness")` or code change: recompute hashes for all symbols in ADRs
 2. If mismatch: flag ADR with `DRIFT_DETECTED` in `findings.md`
 3. Trigger review: re-run validation probes, update ADR or supersede
 
