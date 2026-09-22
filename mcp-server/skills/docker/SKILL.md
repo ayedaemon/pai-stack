@@ -27,23 +27,18 @@ description: Read, reason, and safely change Docker/Docker Compose projects — 
    - `USER`, `EXPOSE`, `ENTRYPOINT`/`CMD`, `HEALTHCHECK`
    - Note s6-overlay / `USER root` patterns (see `hermes/Dockerfile:7` / `hermes/entrypoint.sh:1` if relevant)
 4. Analyze Compose:
-   - Map service → port → host mapping (`ports: - "8000:8000"` style `docker-compose.yaml:14`)
-   - Volumes: named (`hermes-data:/opt/hermes/data` `docker-compose.yaml:89`) vs bind (`${STACK_ROOT}:/stack_root` `:92`) — check for `EACCES` risk, `user: "${UID:-1000}"`, `deploy.resources.limits`
-   - Network: default bridge vs custom; `extra_hosts: host.docker.internal` `docker-compose.yaml:22` for host services (Syncthing pattern)
+   - Map service → port → host mapping (`ports: - "8000:8000"` style)
+   - Volumes: named (`hermes-data:/opt/hermes/data`) vs bind (`${WORKSPACE_DIR}:/opt/data/workspace`) — check for `EACCES` risk, `user: "${UID:-1000}"`, `deploy.resources.limits`
+   - Network: default bridge vs custom; `extra_hosts: host.docker.internal` for host-gateway access
    - Env: which vars come from host `.env` vs hard-coded; flag raw secrets in compose
-5. Check pai-stack conventions (if repo is pai-stack itself):
-   - Build contexts must be flat (playbook copies files into `~/deployed-pai-stack/`)
-   - Knowledge base seeding is `force: no` — never overwrite user edits
-   - Services bind directly to Tailscale IP (no reverse proxy) — Tailscale encrypts via WireGuard
-6. Plan change:
+5. Plan change:
    - For read-only: summarize services, deps graph, build order, how to run (`docker compose up --build`, `docker compose logs -f <svc>`)
    - For edits: keep diff minimal — edit `Dockerfile` or `compose.yaml` one service at a time, preserve `deploy.resources.limits`, keep secrets in env not in image. Propose `docker compose config` validate step.
-   - If deployment target is pai-stack Pi, remind `ansible/playbook.yml` copies build contexts explicitly — new files need a copy entry.
-7. Verify without heavy builds when possible:
+6. Verify without heavy builds when possible:
    - `docker compose config` for YAML validity (dry-run)
    - `docker build --dry-run` or `hadolint` mental lint; flag missing `HEALTHCHECK` / running as root unwarranted
    - Suggest `make status` / `make logs` for runtime checks (`Makefile:1`)
-8. Write & cite:
+7. Write & cite:
    - Update `Projects/<Name>/docs/architecture.md` with service map + `file:lines`
    - Post concise service table + next command in same Telegram topic, cited
 
@@ -74,8 +69,7 @@ When writing, editing, or planning Docker configurations, you MUST adhere to the
 - `docker-compose.yaml` (or `compose.yaml`)
 - `Dockerfile` per service
 - `.dockerignore`
-- `ansible/playbook.yml` (pai-stack deploy conventions)
-- `Skills/python/SKILL.md`, `Skills/nodejs/SKILL.md`, `Skills/postgres/SKILL.md` (stacks often compose with Docker)
+- `skills/python/SKILL.md`, `skills/nodejs/SKILL.md`, `skills/sql/SKILL.md` (stacks often compose with Docker)
 
 ## Notes for Hermes
 - Use `docker compose config` before proposing `up --build` — cheap validation.

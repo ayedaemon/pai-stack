@@ -1,7 +1,7 @@
 #!/bin/sh
 # Hermes entrypoint wrapper:
 # 1. Sets permissions on Hermes home / SQLite WAL files
-# 2. Configures knowledge base directories dynamically relative to HERMES_DATA_DIR
+# 2. Copies and normalizes config paths
 # 3. Sets dashboard auth password hash if provided
 # 4. Spawns filesystem notifier in background
 # 5. Delegates to upstream entrypoint
@@ -46,22 +46,6 @@ content = re.sub(r'(?<!/opt/data)/workspace', '${DATA_DIR}', content)
 with open('/opt/hermes/data/hermes-config.yaml', 'w') as f:
     f.write(content)
 "
-
-# Inject KB_DIRS into knowledgebase.directories relative to DATA_DIR
-if [ -n "${KB_DIRS:-}" ] && [ "$KB_DIRS" != "." ]; then
-    KB_YAML=$(echo "$KB_DIRS" | python3 -c "
-import sys, os
-base_dir = os.environ.get('HERMES_DATA_DIR', '/opt/data/workspace').rstrip('/')
-dirs = [d.strip() for d in sys.stdin.read().split(',') if d.strip()]
-print('\n'.join(f'    - {base_dir}/{d.lstrip(\"/\")}' for d in dirs))
-")
-    sed -i "/^knowledgebase:/,/^[^ ]/{s|directories:.*|directories:\n${KB_YAML}|}" \
-        /opt/hermes/data/hermes-config.yaml
-else
-    # Index entire DATA_DIR
-    sed -i "/^knowledgebase:/,/^[^ ]/{s|directories:.*|directories:\n    - ${DATA_DIR}|}" \
-        /opt/hermes/data/hermes-config.yaml
-fi
 
 # Ensure CLI reads the same config
 cp /opt/hermes/data/hermes-config.yaml /opt/hermes/data/config.yaml

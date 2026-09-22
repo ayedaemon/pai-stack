@@ -44,7 +44,7 @@ description: Read, understand, and work with any Python codebase fast — detect
    - **Execution Enforcements**:
      - ALWAYS use `uv run <command>` (e.g., `uv run pytest`, `uv run python main.py`) to execute code, tests, or scripts to ensure isolated, correct environment usage.
      - NEVER build the project into egg files or wheels (e.g., `python setup.py bdist_egg`, `uv build`) unless the user explicitly requests a package build.
-   - If Docker present → also retrieve `Skills/docker/SKILL.md`; if Postgres/SQLAlchemy → also `Skills/postgres/SKILL.md`
+    - If Docker present → also retrieve `Skills/docker/SKILL.md`; if Postgres/SQLAlchemy → also `Skills/sql/SKILL.md`
 8. Write & cite:
    - Update `Projects/<Name>/docs/architecture.md` or `issues/<slug>.md` with findings (stack, entrypoints, run/test commands) + `file:lines` citations
    - Post concise summary in originating Telegram topic only, with citations
@@ -88,7 +88,7 @@ When writing, editing, or planning Python code, you MUST adhere to the following
 - `Projects/<Name>/docs/architecture.md`
 - `Projects/<Name>/config.md` (secret refs like `env DATABASE_URL`)
 - `Skills/docker/SKILL.md` (if `Dockerfile` present)
-- `Skills/postgres/SKILL.md` (if DB layer detected)
+- `Skills/sql/SKILL.md` (if DB layer detected)
 
 ## Notes for Hermes
 - Keep headings specific (`## Python version`, `## Framework`, `## Entrypoints`) — better retrieval chunks.
