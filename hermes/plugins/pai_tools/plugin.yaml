@@ -1,0 +1,8 @@
+name: pai_tools
+version: "1.0.0"
+description: Native pai-stack tools — code intelligence, research vault, living ADRs, stack container ops.
+provides_tools:
+  - pai_code_intel
+  - pai_notebook_ops
+  - pai_adr_ops
+  - pai_docker_ops

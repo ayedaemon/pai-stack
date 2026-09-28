@@ -1,0 +1,88 @@
+# pai-stack — OpenDesign optional override (Phase 1: stock image, no bundled CLI).
+# Usage:
+#   make design-up      # start open-design (profile: design) alongside core stack
+#   make design-config   # validate merged compose configuration
+#   make design-down     # stop open-design only (workspace + daemon volume untouched)
+#
+# Design decisions:
+# - `profiles: ["design"]` keeps `make up` unaffected (opt-in only).
+# - Daemon state stays in named volume `open_design_data:/app/.od` (SQLite, config,
+#   artifacts index). Never bind-mount `.od` into the workspace — avoids SQLite
+#   lock contention with Hermes and keeps code-intel index clean.
+# - `${WORKSPACE_DIR}` (same var Hermes uses) is bind-mounted at `/workspace:rw`.
+#   In the OpenDesign UI use "Import folder" -> `/workspace/<project>`; the daemon
+#   records it as an imported-folder project (`metadata.baseDir`), so generated
+#   files land as real files in the host workspace where Hermes code-intel sees them.
+# - Host macOS `opencode` (Mach-O/arm64) CANNOT be bind-mounted into this Alpine
+#   Linux container (exec-format error). Linux CLI bundling is Phase 2
+#   (Dockerfile installing linux opencode + libc6-compat, mirroring upstream
+#   deploy/Dockerfile.local). Until then generation works via BYOK keys for
+#   public (non-RFC1918) endpoints pasted in the UI, or plain artifact browsing.
+# - Auth: single-tenant `OD_API_TOKEN`. Browser login is user `open-design` +
+#   token; API clients send `Authorization: Bearer <token>`. Keep bound to
+#   127.0.0.1 — never publish on LAN/public without a TLS proxy in front.
+# - Image: built locally as pai-stack-open-design:latest (mirrors the
+#   pai-stack-hermes pattern). Set OPEN_DESIGN_IMAGE=ghcr.io/nexu-io/od:<ver>
+#   to run stock upstream without the bundled opencode (UI still works;
+#   generation then needs BYOK keys). Pin the base via
+#   --build-arg OPEN_DESIGN_BASE=ghcr.io/nexu-io/od:<ver|digest>.
+# - Memory: uncapped on purpose (no mem_limit). Upstream ships 384m, but that
+#   assumes no bundled CLI; daemon + opencode server + run exceed it and the
+#   kernel SIGKILLs the child (seen as AGENT_SIGNAL_SIGKILL). pids_limit stays.
+
+services:
+  open-design:
+    build:
+      context: ./opendesign
+    image: ${OPEN_DESIGN_IMAGE:-pai-stack-open-design:latest}
+    container_name: open-design
+    restart: unless-stopped
+    profiles:
+      - design
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=192}
+      # Writable HOME for the bundled opencode's cache/sessions (ephemeral tmpfs).
+      # Daemon state is unaffected (OD_DATA_DIR -> /app/.od volume).
+      HOME: /tmp
+      OD_BIND_HOST: 0.0.0.0
+      OD_ALLOWED_ORIGINS: ${OPEN_DESIGN_ALLOWED_ORIGINS:-}
+      OD_PORT: 7456
+      OD_WEB_PORT: ${OPEN_DESIGN_PORT:-7456}
+      OD_API_TOKEN: ${OD_API_TOKEN:-}
+      OD_DISABLE_API_AUTH: ${OPEN_DESIGN_DISABLE_API_AUTH:-}
+      OD_CODEX_SANDBOX: ${OD_CODEX_SANDBOX:-}
+    ports:
+      - "127.0.0.1:${OPEN_DESIGN_PORT:-7456}:7456"
+    volumes:
+      - open_design_data:/app/.od
+      - type: bind
+        source: ${WORKSPACE_DIR}
+        target: /workspace
+        read_only: false
+        bind:
+          create_host_path: false
+    user: "${UID:-1000}:${GID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:7456/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  open_design_data:

@@ -1,0 +1,116 @@
+services:
+  hermes:
+    build:
+      context: ./hermes
+      dockerfile: Dockerfile
+    image: pai-stack-hermes:latest
+    container_name: hermes
+    restart: unless-stopped
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
+    environment:
+      - HERMES_HOME=/opt/hermes/data
+      - HERMES_DATA_DIR=/opt/data/workspace
+      - HERMES_LAZY_INSTALL_TARGET=/opt/hermes/data/lazy-packages
+      - PYTHONPATH=/opt/hermes/data/lazy-packages
+      - LLM_GATEWAY_BASE_URL=http://llm-gateway:4000/v1
+      - LLM_GATEWAY_URL=http://llm-gateway:4000/v1
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-not-needed}
+      - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-pai-stack}
+      - RESEARCH_DIR=/opt/data/workspace/${RESEARCH_SUBDIR:-research}
+      - WIKI_PATH=/opt/data/workspace/${RESEARCH_SUBDIR:-research}
+      - HERMES_UID=${UID:-1000}
+      - HERMES_GID=${GID:-1000}
+      - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_HOST=0.0.0.0
+      - API_SERVER_HOST=0.0.0.0
+      - API_SERVER_KEY=${API_SERVER_KEY}
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-admin}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}
+      - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET}
+      - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-not-needed}
+      - HERMES_API_TIMEOUT=1800
+      - HERMES_STREAM_READ_TIMEOUT=1800
+      - HERMES_LOCAL_STREAM_STALE_TIMEOUT=1800
+      - HERMES_STREAM_STALE_TIMEOUT=1800
+      - MNEMOSYNE_DATA_DIR=/opt/hermes/data/mnemosyne/data
+      - MNEMOSYNE_AUTO_SLEEP_ENABLED=true
+      - MNEMOSYNE_AUTO_SLEEP_THRESHOLD=30
+      - MNEMOSYNE_SELF_ECHO_ENABLED=1
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
+      - TELEGRAM_GROUP_ALLOWED_USERS=${TELEGRAM_GROUP_ALLOWED_USERS:-}
+      - TELEGRAM_GROUP_ALLOWED_CHATS=${TELEGRAM_GROUP_ALLOWED_CHATS:-}
+    ports:
+      - "9119:9119" 
+      - "8642:8642"
+    volumes:
+      - hermes-data:/opt/hermes/data
+      - ./hermes/config.yaml:/tmp/hermes-config.yaml.host:ro
+      - ./skills:/opt/pai/skills:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - type: bind
+        source: ${WORKSPACE_DIR}
+        target: /opt/data/workspace
+        bind:
+          create_host_path: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9119/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    entrypoint: [ "/bin/sh", "/hermes-entrypoint.sh" ]
+    command: gateway run
+
+  llm-gateway:
+    # Pinned by digest (2026-09-27): main-latest is a moving target and a gateway
+    # behavior change here breaks every model route at once (see Sep-25 reasoning
+    # incident). This digest is the verified-good build. To upgrade: replace digest,
+    # rebuild, and re-run the pair-shape probe (reasoning_effort + forced tool call).
+    image: ghcr.io/berriai/litellm@sha256:a79320760af8df488074ab3fbc830883856c7f952976aad00f039d3a43ffe4b2
+    container_name: llm-gateway
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    command: [ "--config", "/app/config.yaml", "--port", "4000" ]
+    environment:
+      - PORT=4000
+      - STORE_MODEL_IN_DB=False
+      - OPENAI_COMPATIBLE_BASE_URL=${OPENAI_COMPATIBLE_BASE_URL:-${PRIMARY_LLM_BASE_URL:-${LLM_BASE_URL:-${LLAMACPP_BASE_URL:-http://host.docker.internal:8080/v1}}}}
+      - OPENAI_COMPATIBLE_MODEL=${OPENAI_COMPATIBLE_MODEL:-${PRIMARY_LLM_MODEL:-${LLM_MODEL:-${LLAMACPP_MODEL_NAME:-default}}}}
+      - OPENAI_COMPATIBLE_API_KEY=${OPENAI_COMPATIBLE_API_KEY:-${PRIMARY_LLM_API_KEY:-${LLM_API_KEY:-${OPENAI_API_KEY:-not-needed}}}}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - KILO_GATEWAY_API_KEY=${KILO_GATEWAY_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - LITELLM_MASTER_KEY
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+    volumes:
+      - ./llm-gateway/config.yaml:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 20s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      default:
+        aliases:
+          - litellm
+
+volumes:
+  hermes-data:

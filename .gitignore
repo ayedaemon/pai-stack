@@ -1,0 +1,7 @@
+
+hermes-data/
+.env
+*.log
+*.bak
+.planning/
+__pycache__/
