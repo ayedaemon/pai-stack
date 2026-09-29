@@ -5,30 +5,15 @@
 
 model_list:
   # ── Primary Default Routing ───────────────────────────────────────────
-  # STANDING POLICY (2026-09-27): `default` points at live kilo free. office2 is
-  # offline and stays tail-only even after it wakes (reliability over LAN-privacy
-  # by explicit decision); office2 routes live in the section below + fallback tail.
   - model_name: default
     litellm_params:
-      model: mistral/kilo-auto/free
-      api_base: https://api.kilo.ai/api/gateway
-      api_key: os.environ/KILO_GATEWAY_API_KEY
-      timeout: 1800
-      drop_params: true
-
-  # ── office2 Last-Resort (OFFLINE, hand-maintained 2026-09-25) ──────────
-  # Box down. These exist ONLY so the fallback tail can name them; they are tried
-  # last, after every live provider exhausts. `make sync` drops them (no discovery
-  # while down) — re-add after any sync until the box wakes. mistral-mapped +
-  # drop_params like everything else (reasoning-strip doctrine).
-  - model_name: ministral-3-14b-reasoning
-    litellm_params:
-      model: mistral/mistralai/ministral-3-14b-reasoning
+      model: mistral/qwen3.5-9b-deepseek-v4-flash
       api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL
       api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
       timeout: 1800
       drop_params: true
 
+  # ── Upstream Language Models (Clean Canonical Names) ──────────────────
   - model_name: qwen3.5-9b-deepseek-v4-flash
     litellm_params:
       model: mistral/qwen3.5-9b-deepseek-v4-flash
@@ -37,10 +22,15 @@ model_list:
       timeout: 1800
       drop_params: true
 
+  - model_name: ministral-3-14b-reasoning
+    litellm_params:
+      model: mistral/mistralai/ministral-3-14b-reasoning
+      api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL
+      api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
+      timeout: 1800
+      drop_params: true
+
   # ── Kilo Gateway ───────────────────────────────────────────────────
-  # PINNED (2026-09-27, hand-maintained): kilo-auto/free is the primary fallback but
-  # kilo's free rotation drops it from discovery — pin statically (id is stable).
-  # Re-verify with a direct curl if kilo 400s; delete if kilo retires the id.
   - model_name: kilo/kilo-auto/free
     litellm_params:
       model: mistral/kilo-auto/free
@@ -48,6 +38,7 @@ model_list:
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
       drop_params: true
+
   - model_name: kilo/nvidia/nemotron-3-ultra-550b-a55b:free
     litellm_params:
       model: mistral/nvidia/nemotron-3-ultra-550b-a55b:free
@@ -83,6 +74,14 @@ model_list:
   - model_name: kilo/liquid/lfm-2.5-2.6b:free
     litellm_params:
       model: mistral/liquid/lfm-2.5-2.6b:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+      drop_params: true
+
+  - model_name: kilo/nvidia/nemotron-3.5-lightning:free
+    litellm_params:
+      model: mistral/nvidia/nemotron-3.5-lightning:free
       api_base: https://api.kilo.ai/api/gateway
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
@@ -149,12 +148,6 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 1800
 
-  - model_name: openrouter/qwen/qwen3.8-27b:free
-    litellm_params:
-      model: openrouter/qwen/qwen3.8-27b:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      timeout: 1800
-
   - model_name: openrouter/dots-studio/dots-3-note-preview:free
     litellm_params:
       model: openrouter/dots-studio/dots-3-note-preview:free
@@ -167,9 +160,9 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 1800
 
-  - model_name: openrouter/poolside/laguna-xs-2.1:free
+  - model_name: openrouter/nvidia/nemotron-3.5-lightning:free
     litellm_params:
-      model: openrouter/poolside/laguna-xs-2.1:free
+      model: openrouter/nvidia/nemotron-3.5-lightning:free
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 1800
 
@@ -185,7 +178,6 @@ model_list:
       model: mistral/codestral-latest
       api_key: os.environ/MISTRAL_API_KEY
       timeout: 1800
-      drop_params: true  # else Hermes's reasoning_effort 400s here (provider lacks the param)
 
   - model_name: mistral/mistral-code-latest
     litellm_params:
@@ -254,15 +246,15 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
-  - model_name: gemini/gemini-flash-lite-latest
+  - model_name: gemini/gemini-flash-latest
     litellm_params:
-      model: gemini/gemini-flash-lite-latest
+      model: gemini/gemini-flash-latest
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
-  - model_name: gemini/gemini-3-flash-preview
+  - model_name: gemini/gemini-flash-lite-latest
     litellm_params:
-      model: gemini/gemini-3-flash-preview
+      model: gemini/gemini-flash-lite-latest
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
@@ -296,6 +288,12 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
+  - model_name: gemini/gemini-3.8-flash
+    litellm_params:
+      model: gemini/gemini-3.8-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
   - model_name: gemini/gemini-3.8-flash-tts
     litellm_params:
       model: gemini/gemini-3.8-flash-tts
@@ -319,14 +317,11 @@ router_settings:
   timeout: 1800              # 30m request timeout for large models & deep reasoning
   stream_timeout: 1800       # 30m chunk timeout for slow reasoning token streams
   fallbacks:
-    # Policy (2026-09-25): live cloud first, office2 tail last — tried ONLY after
-    # all other providers exhaust. Every group here must exist in model_list above.
     - default:
         - "kilo/kilo-auto/free"
-        - "openrouter/inclusionai/ling-3.0-flash-fin:free"
+        - "openrouter/inclusionai/ling-3.0-flash-sante:free"
         - "mistral/codestral-latest"
         - "ministral-3-14b-reasoning"
-        - "qwen3.5-9b-deepseek-v4-flash"
 
 # ── General Settings ─────────────────────────────────────────────────────
 general_settings:

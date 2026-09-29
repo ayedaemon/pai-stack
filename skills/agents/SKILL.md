@@ -152,7 +152,7 @@ Planning files live in the project like developer artifacts:
 
 | Tool | Purpose | Allowed actions |
 |---|---|---|
-| `pai_docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
+| `pai_docker_ops` | Manage pai-stack containers ONLY (hermes, llm-gateway) via Docker socket. Scope is strictly the pai-stack compose cluster — never use for other projects' containers. For any project with a compose file, use `docker compose -p <project>` instead. | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
 | `pai_notebook_ops` | Query Research Brain (native Markdown file vault) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 | `pai_adr_ops` | Living ADR creation & code symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 
@@ -195,6 +195,8 @@ This prevents duplicate research and builds a persistent knowledge graph across 
 8. **No secrets in files**: use references (env var, vault path).
 9. **Session-scoped**: stay on this session's project unless the user redirects.
 10. **Code intelligence empty + no session context**: survey `/opt/data/workspace/` to discover projects before concluding none exist.
+11. **Docker cluster isolation — compose-first invariant**: Each workspace project must live in its own Docker compose cluster. Hermes has the host Docker socket mounted, giving it DinD control, but that power must stay scoped. Before ANY docker action on a non-pai-stack project: check if `EXECUTION_DIR` contains a compose file (`docker-compose*.yaml`, `compose.yaml`). If yes — the project MUST be managed via `docker compose -p <project_name>` from `EXECUTION_DIR`. The `-p` flag creates the project's isolated cluster; omitting it causes `COMPOSE_PROJECT_NAME=pai-stack` (exported by hermes) to redirect all compose operations into the pai-stack cluster, contaminating it with foreign containers. Concrete invariants: (a) `pai_docker_ops` is only for hermes and llm-gateway — never call it for any other container; (b) NEVER use bare `docker run`/`docker create` when a compose file exists; (c) NEVER run `docker compose` without `-p <project_name>`; (d) NEVER run compose commands outside `EXECUTION_DIR`.
+
 
 ---
 

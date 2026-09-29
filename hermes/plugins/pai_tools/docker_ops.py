@@ -1,4 +1,12 @@
-"""pai_docker_ops — pai-stack container management (native Hermes tool).
+"""pai_docker_ops — pai-stack container management ONLY (native Hermes tool).
+
+Scope: hermes + llm-gateway containers in the pai-stack compose cluster.
+Do NOT use this tool for any other project's containers.
+
+For any project that has a docker-compose*.yaml or compose.yaml, use the
+native `docker compose -p <project>` CLI over the mounted socket instead:
+
+    cd <EXECUTION_DIR> && docker compose -p <project_name> <subcommand>
 
 Ported from the retired mcp-server shell tool to Python. Operates the Docker
 CLI over /var/run/docker.sock (mounted read-only into the hermes container).
@@ -20,7 +28,15 @@ LOG_FILE = os.path.join(LOG_DIR, "docker-ops.log")
 
 SCHEMA = {
     "name": "pai_docker_ops",
-    "description": "Manage pai-stack Docker containers via Docker socket. Logs every action to the hermes-data volume log. Allowed actions: list, status, logs, restart, start, stop, exec.",
+    "description": (
+        "Manage pai-stack Docker containers ONLY (hermes, llm-gateway). "
+        "Scope is strictly the pai-stack compose cluster. "
+        "NEVER use this tool for containers belonging to any other project. "
+        "For projects with a compose file, use: "
+        "  cd <EXECUTION_DIR> && docker compose -p <project_name> <subcommand>  "
+        "Logs every action to the hermes-data volume log. "
+        "Allowed actions: list, status, logs, restart, start, stop, exec."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
@@ -107,7 +123,19 @@ def handle(args, **kwargs) -> str:
         if not service:
             return done(1, json.dumps({"error": f"service is required for action: {action}"}))
         if service not in ALLOWED_SERVICES:
-            return done(1, json.dumps({"error": f"unknown service: {service}. Allowed: {list(ALLOWED_SERVICES)}"}))
+            return done(
+                1,
+                json.dumps({
+                    "error": (
+                        f"pai_docker_ops is scoped ONLY to pai-stack services: {list(ALLOWED_SERVICES)}. "
+                        f"Requested service '{service}' is not a pai-stack container. "
+                        "To manage containers in another project, use the docker compose CLI instead: "
+                        "  cd <EXECUTION_DIR> && docker compose -p <project_name> <subcommand>  "
+                        "Check for a compose file in the project directory first "
+                        "(docker-compose*.yaml, compose.yaml)."
+                    )
+                }),
+            )
 
     if action == "exec" and not cmd:
         return done(1, json.dumps({"error": "cmd is required for exec action"}))

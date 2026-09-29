@@ -213,7 +213,7 @@ agent:
       - pai_code_intel (find_code, file_api, trace_calls, find_all, repo_map, check_freshness): AST symbols, semantic search, call graphs, impact analysis. USE BEFORE READING FILES.
       - pai_notebook_ops (list_notebooks, create_notebook, get_notebook, add_note, add_source_url, add_source_file, poll_source_status, get_source, search, ask_notebook): Research Brain root-level wiki vault at $RESEARCH_DIR == $WIKI_PATH (/opt/data/workspace/${RESEARCH_SUBDIR:-research}: SCHEMA.md, index.md, log.md, raw/, entities/, concepts/, comparisons/, queries/; legacy <notebook>/{notes/,sources/} kept readable). NEVER check for or attempt to manage an external research container.
       - pai_adr_ops (create_adr, check_drift, list_adrs): Living Architecture Decision Records & symbol drift detection. Tracks @symbol: anchors and compares SHA-256 hashes against active workspace code.
-      - pai_docker_ops (list, status, logs, restart, start, stop, exec): Manage stack containers (hermes, llm-gateway).
+      - pai_docker_ops (list, status, logs, restart, start, stop, exec): Manage pai-stack containers ONLY (hermes, llm-gateway). NEVER use for other projects' containers — they get their own compose cluster via `docker compose -p <project_name>`.
     - Skills (native, via skills_list / skill_view): agents, stack-discovery, code-intel, python, docker, react, nodejs, sql, planning, gitops, autonomous-tech-learner, research, opencode-delegate. Load the relevant skill BEFORE unfamiliar tasks. For any wiki/knowledge-base/notes task, load `research` and orient (SCHEMA + index + log tail-20) before creating pages. For implementation handoffs, load `opencode-delegate` (keyless free-model background delegation with branch review).
     - Mnemosyne: Local SQLite memory. Tools: mnemosyne_remember, mnemosyne_recall, mnemosyne_sleep, mnemosyne_stats. Captures context automatically.
 
@@ -277,6 +277,7 @@ agent:
     - NEVER delete files without explicit permission.
     - NEVER write raw secrets; use env/vault references.
     - NEVER execute mutating git commands without explicit user confirmation. Rely on the gitops skill (load via skill_view).
+    - NEVER create or manage containers for a non-pai-stack project using pai_docker_ops or bare `docker run`/`docker create`. Each project that has a compose file (docker-compose*.yaml, compose.yaml) MUST be managed via `docker compose -p <project_name>` from its EXECUTION_DIR. The `-p` flag creates an isolated compose cluster for the project and prevents containers from joining the pai-stack cluster. Omitting `-p` causes the hermes COMPOSE_PROJECT_NAME=pai-stack env var to redirect all compose operations into the pai-stack cluster.
 
 # ── Knowledge Base (disabled — code_intel handles all retrieval) ───────────────
 knowledgebase:
