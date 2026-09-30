@@ -97,6 +97,14 @@ config:  ## Validate and view compose config
 # ── OpenDesign (see docs/opendesign.md) ──
 
 design-up: check-workspace design-perms  ## Start open-design alongside core stack
+	@BIND="$${OPEN_DESIGN_BIND_IP:-$$(grep -E '^OPEN_DESIGN_BIND_IP=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")}"; \
+	TOKEN=$$(grep -E '^OD_API_TOKEN=' .env | cut -d= -f2- | tr -d '"' | tr -d "'"); \
+	if [ "$$BIND" = "0.0.0.0" ] || [ "$$BIND" = "::" ]; then \
+		if [ -z "$$TOKEN" ] || [ "$$TOKEN" = "admin" ]; then \
+			echo "\033[31m[WARN]\033[0m OPEN_DESIGN_BIND_IP=$$BIND exposes open-design to the LAN with default/empty OD_API_TOKEN. Set a strong token (openssl rand -hex 32), or keep 127.0.0.1."; \
+		fi; \
+		echo "\033[33m[INFO]\033[0m LAN mode: browse via http://<host-ip>:$${OPEN_DESIGN_PORT:-$$(grep -E '^OPEN_DESIGN_PORT=' .env | cut -d= -f2- | tr -d '"' | tr -d "'")}, and list it in OPEN_DESIGN_ALLOWED_ORIGINS or /api calls get 403."; \
+	fi
 	$(DESIGN_COMPOSE) --profile design up -d --build open-design
 
 design-perms:  ## Create volume + fix ownership to host UID:GID

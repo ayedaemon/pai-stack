@@ -202,3 +202,16 @@ See the `planning` skill for the full discipline.
 3. Read [`hermes/config.yaml`](hermes/config.yaml) for the full system prompt
 4. Check [`docker-compose.yaml`](docker-compose.yaml) for current mount paths and port bindings
 5. For code questions: query code intelligence via Hermes directly (e.g. `pai_code_intel(action="find_code")`, `pai_code_intel(action="trace_calls")`)
+
+
+## System Architecture Maintenance Protocol
+
+**CRITICAL RULE:** This project relies on a living, highly accurate Mermaid system design diagram located in `docs/architecture.md` to onboard users and track data flow. 
+
+Whenever you modify the project's structural architecture (e.g., adding a new module, database table, API route, service, or altering core data flows), you **MUST** update the Mermaid diagram in `docs/architecture.md` before completing the task.
+
+### Diagram Requirements:
+1. **Format:** Use a Mermaid `graph TD` or `graph LR` flowchart. 
+2. **Abstraction Level:** Keep it high-level. Map components, services, databases, and core interactions. Do not map individual functions, classes, or files unless they represent an entire service.
+3. **Interactive Linking:** You must use Mermaid's `click` syntax to make nodes clickable. Link every major node directly to its corresponding detailed documentation file or core source code directory so users can drill down.
+4. **Validation:** Ensure the Mermaid syntax is strictly valid and uses proper escaping for special characters.

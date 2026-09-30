@@ -199,6 +199,11 @@ dashboard:
 # ── Display (TUI skin — Catppuccin Mocha to match the dashboard theme) ──
 display:
   skin: catppuccin
+  pet:
+    enabled: true
+    slug: pixel-black-cat
+    render_mode: auto
+    scale: 0.33
 
 # ── Agent identity & grounding ───────────────────────────────────────────
 agent:
@@ -306,7 +311,7 @@ platform_hints:
   tui: "You are in a TUI session. Verbose, structured output is acceptable. Always cite sources for factual claims."
   api: "You are serving an API caller. Return structured, complete responses with full citations."
 
-_config_version: 44
+_config_version: 46
 
 # ── Tools & Tool Exposure ─────────────────────────────────────────────
 tools:
@@ -325,6 +330,24 @@ plugins:
     - hermes-labyrinth
     - compressor
     - pai_tools
+    # Read-only memory inspector (built-in/Mnemosyne/holographic/Mem0/Honcho/
+    # Hindsight/ByteRover). Adds the Memory tab to the dashboard; no hooks,
+    # no writes, no extra LLM calls.
+    - hermes-memory-ui
+    # Prompt rewriter (+1 LLM call per 5+ word message). Baked default mode is
+    # "off" (patched at build; upstream ships "auto") — opt in per session via
+    # `/prompt-optimizer auto`, reports via /prompt-insights.
+    - prompt-optimizer
+    # Desktop composer suggestion pill (1x max_tokens=100 call per turn on the
+    # main gateway model; Telegram/Discord turns are skipped). Toggle via
+    # plugins.entries.next-prompt.settings.enabled below.
+    - next-prompt
+  entries:
+    next-prompt:
+      settings:
+        enabled: true
+        max_context_messages: 4
+        cooldown_seconds: 3
 
 # ── Compressor Plugin Config ────────────────────────────────────────────────
 compressor:

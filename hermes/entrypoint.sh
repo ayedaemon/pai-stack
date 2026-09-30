@@ -20,10 +20,31 @@ if [ -x /opt/hermes/.venv/bin/mnemosyne-hermes ]; then
     /opt/hermes/.venv/bin/mnemosyne-hermes install --mode wrapper --python /opt/hermes/.venv/bin/python3 --no-bootstrap --force 2>/dev/null || true
 fi
 
-# Ensure Hermes Labyrinth is linked into user plugins root
+# Ensure baked bundled plugins are linked into the user plugins root
+# (/opt/hermes/plugins/* is the bundled discovery dir; the symlink makes the
+# same tree visible under $HERMES_HOME/plugins for tools that resolve
+# $HERMES_HOME-relative paths).
+# NOTE: prompt-optimizer is deliberately NOT symlinked: its engine reads
+# $HERMES_HOME/plugins/prompt-optimizer/model-profiles.yaml (user-editable)
+# and writes metrics.db alongside it. A symlink would redirect those writes
+# into the read-only image layer; a real volume dir keeps them persistent.
 mkdir -p /opt/hermes/data/plugins
-if [ -d /opt/hermes/plugins/hermes-labyrinth ] && [ ! -e /opt/hermes/data/plugins/hermes-labyrinth ]; then
-    ln -s /opt/hermes/plugins/hermes-labyrinth /opt/hermes/data/plugins/hermes-labyrinth
+for _p in hermes-labyrinth hermes-memory-ui next-prompt; do
+    if [ -d "/opt/hermes/plugins/${_p}" ] && [ ! -e "/opt/hermes/data/plugins/${_p}" ]; then
+        ln -s "/opt/hermes/plugins/${_p}" "/opt/hermes/data/plugins/${_p}"
+    fi
+done
+unset _p
+
+# Seed prompt-optimizer user dir on the volume on first start.
+# The engine reads $HERMES_HOME/plugins/prompt-optimizer/model-profiles.yaml
+# (user-editable, falls back to baked-in defaults when missing) and creates
+# metrics.db there via _ensure_db().
+mkdir -p /opt/hermes/data/plugins/prompt-optimizer
+if [ -f /opt/hermes/plugins/prompt-optimizer/model-profiles.yaml ] && \
+   [ ! -f /opt/hermes/data/plugins/prompt-optimizer/model-profiles.yaml ]; then
+    cp /opt/hermes/plugins/prompt-optimizer/model-profiles.yaml \
+       /opt/hermes/data/plugins/prompt-optimizer/model-profiles.yaml 2>/dev/null || true
 fi
 
 # Seed bundled dashboard themes into HERMES_HOME (repo is source of truth;
@@ -38,6 +59,15 @@ fi
 mkdir -p /opt/hermes/data/skins
 if [ -d /opt/hermes/skins ]; then
     cp -f /opt/hermes/skins/*.yaml /opt/hermes/data/skins/ 2>/dev/null || true
+fi
+
+# Seed the default pet sprite into HERMES_HOME on first start (same
+# volume-shadowing reason; re-synced only when missing so a user-removed pet
+# stays removed). Purely cosmetic — no effect on tokens or agent behavior.
+mkdir -p /opt/hermes/data/pets
+if [ -d /opt/hermes/pets-seed/pixel-black-cat ] && \
+   [ ! -e /opt/hermes/data/pets/pixel-black-cat ]; then
+    cp -r /opt/hermes/pets-seed/pixel-black-cat /opt/hermes/data/pets/pixel-black-cat 2>/dev/null || true
 fi
 
 # Ensure SQLite WAL/SHM files are created group/world-writable

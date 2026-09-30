@@ -35,6 +35,37 @@ RUN git clone https://github.com/stainlu/hermes-labyrinth.git /opt/hermes/plugin
     git checkout v0.1.3 && \
     chown -R 1000:1000 /opt/hermes/plugins/hermes-labyrinth
 
+# Install hermes-memory-ui (read-only memory inspector dashboard tab, Mnemosyne-aware)
+# Pinned to catalog-reviewed commit 9472bed (v0.6.0, Sep-15-2026)
+RUN git clone https://github.com/xraysight/hermes-memory-ui.git /opt/hermes/plugins/hermes-memory-ui && \
+    cd /opt/hermes/plugins/hermes-memory-ui && \
+    git checkout 9472bed7e20a51ac4f6c48f882bd9f80ea54d4ee && \
+    chown -R 1000:1000 /opt/hermes/plugins/hermes-memory-ui
+
+# Install prompt-optimizer (model-aware prompt rewriting + /prompt-insights)
+# Pinned to catalog-reviewed commit e83eba9 (v1.0.0, Sep-19-2026)
+# NOTE: upstream defaults to mode=auto (extra LLM call per turn). We patch the
+# baked default to "off" so the plugin loads but stays inert until the user
+# opts in via `/prompt-optimizer auto` (see user decision Sep-30-2026).
+RUN git clone https://github.com/Sahil-SS9/hermes-multichannel-prompt-optimizer.git /opt/hermes/plugins/prompt-optimizer && \
+    cd /opt/hermes/plugins/prompt-optimizer && \
+    git checkout e83eba9a8e102ed255a5bfd20cc88ea50e3af28f && \
+    sed -i 's/^_DEFAULT_MODE = "auto"/_DEFAULT_MODE = "off"/' __init__.py && \
+    grep -q '^_DEFAULT_MODE = "off"' __init__.py && \
+    chown -R 1000:1000 /opt/hermes/plugins/prompt-optimizer
+
+# Install next-prompt (Desktop composer suggestion pill, 1x max_tokens=100 call/turn)
+# Pinned to catalog-reviewed commit eff647b (v0.3.0, Sep-28-2026); HEAD has
+# moved on (ec58f9b) but only eff647b is catalog-reviewed.
+RUN git clone https://github.com/soymarketing/hermes-plugin-next-prompt.git /opt/hermes/plugins/next-prompt && \
+    cd /opt/hermes/plugins/next-prompt && \
+    git checkout eff647b44fc81153f5220d505e5f8a5c642330e8 && \
+    chown -R 1000:1000 /opt/hermes/plugins/next-prompt
+
+# Optional prompt-optimizer dependency: accurate 97-language detection.
+# Without it the plugin falls back to a Unicode-range heuristic.
+RUN uv pip install --python /opt/hermes/.venv/bin/python langid
+
 # Install Compressor plugin (heuristic pre-pass for context compression)
 COPY plugins/compressor /opt/hermes/plugins/compressor
 RUN chown -R 1000:1000 /opt/hermes/plugins/compressor
@@ -67,6 +98,15 @@ COPY dashboard-themes /opt/hermes/dashboard-themes
 RUN chown -R 1000:1000 /opt/hermes/dashboard-themes
 COPY skins /opt/hermes/skins
 RUN chown -R 1000:1000 /opt/hermes/skins
+
+# Fetch the default pet sprite at build time (gallery download, no volume
+# interaction — HERMES_HOME points at throwaway staging). Seeded into
+# HERMES_HOME at runtime by entrypoint.sh (same volume-shadowing reason).
+RUN HERMES_HOME=/tmp/petseed /opt/hermes/bin/hermes pets install pixel-black-cat && \
+    mkdir -p /opt/hermes/pets-seed && \
+    cp -r /tmp/petseed/pets/pixel-black-cat /opt/hermes/pets-seed/ && \
+    rm -rf /tmp/petseed && \
+    chown -R 1000:1000 /opt/hermes/pets-seed
 
 COPY entrypoint.sh /hermes-entrypoint.sh
 RUN chmod +x /hermes-entrypoint.sh

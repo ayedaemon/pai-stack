@@ -12,7 +12,33 @@ make design-config  # validate merged compose
 make design-build   # rebuild image (bundled linux opencode)
 ```
 
-UI: http://localhost:7456 (bound to `127.0.0.1` only). Login user `open-design` + `OD_API_TOKEN` from `.env` (default `admin` — replace with `openssl rand -hex 32` for anything beyond local use).
+UI: http://127.0.0.1:7456 (bound to `127.0.0.1` only by default). Login user `open-design` + `OD_API_TOKEN` from `.env` (default `admin` — replace with `openssl rand -hex 32` for anything beyond local use).
+
+> Browse via `127.0.0.1`, not `localhost`: upstream reserves `localhost` as the
+> sandboxed preview-iframe origin, so a `localhost` tab loads the shell but all
+> `/api` calls (including generation) get `403 Powered preview origin cannot
+> access this API route`. DNS names need the LAN setup below.
+
+## LAN / DNS access (host IP instead of loopback)
+
+Three gates must all pass; all are project-side config:
+
+```bash
+# .env
+OPEN_DESIGN_BIND_IP="0.0.0.0"
+OPEN_DESIGN_ALLOWED_ORIGINS="http://192.168.1.46:7456,http://office2:7456"
+OD_API_TOKEN="<openssl rand -hex 32>"   # never LAN-expose the default `admin`
+```
+
+```bash
+make design-up   # warns if LAN-bound with a default/empty token
+```
+
+1. **TCP bind** (`OPEN_DESIGN_BIND_IP`, default `127.0.0.1`): `0.0.0.0` publishes the port on the LAN so host IPs/DNS names can connect at all.
+2. **Origin allowlist** (`OPEN_DESIGN_ALLOWED_ORIGINS`, exact `scheme://host:port`, comma-separated): the daemon default-denies non-loopback browser origins with `403 Cross-origin requests are not allowed`.
+3. **Auth**: inside Docker the browser peer is never loopback, so each origin needs its own login (`open-design` + token; browsers cache Basic per-origin).
+
+Prefer a TLS proxy / Tailscale over raw LAN exposure.
 
 ## Workspace sharing
 

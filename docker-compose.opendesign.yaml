@@ -19,8 +19,17 @@
 #   deploy/Dockerfile.local). Until then generation works via BYOK keys for
 #   public (non-RFC1918) endpoints pasted in the UI, or plain artifact browsing.
 # - Auth: single-tenant `OD_API_TOKEN`. Browser login is user `open-design` +
-#   token; API clients send `Authorization: Bearer <token>`. Keep bound to
-#   127.0.0.1 — never publish on LAN/public without a TLS proxy in front.
+#   token; API clients send `Authorization: Bearer <token>`. Default bind is
+#   127.0.0.1 (loopback only). To use the UI from a LAN host IP / DNS name,
+#   set OPEN_DESIGN_BIND_IP=0.0.0.0 AND list each browser origin in
+#   OPEN_DESIGN_ALLOWED_ORIGINS (exact scheme+host+port, comma-separated,
+#   e.g. `http://192.168.1.46:7456,http://office2:7456`) — otherwise the
+#   daemon's origin guard answers 403 `Cross-origin requests are not allowed`
+#   on every /api call (UI shell loads, generation fails). LAN origins dodge
+#   the upstream powered-preview trap (`localhost` is reserved as the preview
+#   iframe origin, so always browse via 127.0.0.1 or the LAN address, never
+#   `localhost`). Never publish on LAN/public with the default `admin` token
+#   or without a TLS proxy in front — `make design-up` warns when exposed.
 # - Image: built locally as pai-stack-open-design:latest (mirrors the
 #   pai-stack-hermes pattern). Set OPEN_DESIGN_IMAGE=ghcr.io/nexu-io/od:<ver>
 #   to run stock upstream without the bundled opencode (UI still works;
@@ -53,7 +62,9 @@ services:
       OD_DISABLE_API_AUTH: ${OPEN_DESIGN_DISABLE_API_AUTH:-}
       OD_CODEX_SANDBOX: ${OD_CODEX_SANDBOX:-}
     ports:
-      - "127.0.0.1:${OPEN_DESIGN_PORT:-7456}:7456"
+      # Host bind IP defaults to loopback. Set OPEN_DESIGN_BIND_IP=0.0.0.0 to
+      # reach the UI via LAN IP / DNS name (pair with OPEN_DESIGN_ALLOWED_ORIGINS).
+      - "${OPEN_DESIGN_BIND_IP:-127.0.0.1}:${OPEN_DESIGN_PORT:-7456}:7456"
     volumes:
       - open_design_data:/app/.od
       - type: bind
