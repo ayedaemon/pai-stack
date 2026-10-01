@@ -96,6 +96,7 @@ Skills are markdown files in `./skills/`, mounted read-only into Hermes via `ski
 | `web-design-guidelines` / `webapp-testing` / `mcp-builder` | Vendored UI-audit / browser-testing / MCP scaffolding (MIT/Apache-2.0) |
 | `code-reviewer` / `skill-security-auditor` | Vendored review rubrics + skill supply-chain gate (MIT) |
 | `code-intel` | Code intelligence query procedures and tools reference |
+| `mermaid` | Mermaid diagram authoring guide (type selection, syntax safety, C4 abstraction protocol) |
 | `research` | Root-level wiki (SCHEMA/index/log, ingest/query/lint) — load for wiki/kb/notes tasks |
 | `opencode-delegate` | Keyless OpenCode delegation (background+poll, branch review) — load for implementation handoffs |
 | `agents` | Ground rules injected at session start |
@@ -208,7 +209,7 @@ See the `planning` skill for the full discipline.
 
 **CRITICAL RULE:** This project relies on a living, highly accurate Mermaid system design diagram located in `docs/architecture.md` to onboard users and track data flow. 
 
-Whenever you modify the project's structural architecture (e.g., adding a new module, database table, API route, service, or altering core data flows), you **MUST** update the Mermaid diagram in `docs/architecture.md` before completing the task.
+Whenever you modify the project's structural architecture (e.g., adding a new module, database table, API route, service, or altering core data flows), you **MUST** update the Mermaid diagram in `docs/architecture.md` before completing the task. Always load `skill_view(name="mermaid")` first for syntax rules and abstraction depth protocol.
 
 ### Diagram Requirements:
 1. **Format:** Use a Mermaid `graph TD` or `graph LR` flowchart. 

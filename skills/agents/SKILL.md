@@ -125,6 +125,7 @@ Planning files live in the project like developer artifacts:
 |---|---|
 | `stack-discovery` | Detect tech stack — run first on any unknown codebase |
 | `code-intel` | Code intelligence query procedures and tools reference |
+| `mermaid` | Mermaid diagram authoring guide (type selection, syntax safety, C4 abstraction protocol) |
 | `python` | Python discovery router (env, framework, uv-run) → delegates authoring to `senior-backend` |
 | `docker` | Docker discovery router (services, volumes) → delegates to `docker-development` |
 | `react` | React discovery router (toolchain, routes, state) → delegates to `vercel-react-best-practices` et al. |
