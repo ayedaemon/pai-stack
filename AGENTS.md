@@ -90,6 +90,7 @@ Skills are markdown files in `./skills/`, mounted read-only into Hermes via `ski
 | `nodejs` | Node.js discovery → `senior-backend` for backend authoring |
 | `sql` | DB discovery router → `supabase-postgres-best-practices` for depth |
 | `planning` | Planning router → `writing-plans` + `executing-plans` (superpowers plugin) |
+| `system-design` | System design methodology, capacity planning, and trade-off matrices |
 | `gitops` | Git safety router → `using-git-worktrees` et al. (superpowers plugin) |
 | `vercel-react-best-practices` / `vercel-composition-patterns` / `frontend-design` | Vendored React/perf/design depth (MIT/MIT/Apache-2.0) |
 | `supabase-postgres-best-practices` / `senior-backend` / `docker-development` | Vendored Postgres/backend/Docker depth + scripts (MIT) |

@@ -132,6 +132,7 @@ Planning files live in the project like developer artifacts:
 | `nodejs` | Node.js discovery (runtime, manager, framework) → backend authoring to `senior-backend` |
 | `sql` | DB discovery router (service, ORM, schema) → delegates depth to `supabase-postgres-best-practices` |
 | `planning` | Planning router (paths, 2-op rule, 3-strike) → delegates rigor to `writing-plans` + `executing-plans` |
+| `system-design` | System design methodology, capacity planning, and trade-off matrices |
 | `gitops` | Git safety router (topology, worktrees, confirmation gate) → delegates to `using-git-worktrees` et al. |
 | `vercel-react-best-practices` | 70 React/Next.js perf rules + `rules/*.md` (vendored, MIT) |
 | `vercel-composition-patterns` | 8 composition rules + `rules/*.md` (vendored, MIT) |
