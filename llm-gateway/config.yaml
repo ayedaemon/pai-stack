@@ -7,24 +7,24 @@ model_list:
   # ── Primary Default Routing ───────────────────────────────────────────
   - model_name: default
     litellm_params:
-      model: mistral/qwen3.5-9b-deepseek-v4-flash
+      model: mistral/qwen3.8-27b-uncensored
       api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL
       api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
       timeout: 1800
       drop_params: true
 
   # ── Upstream Language Models (Clean Canonical Names) ──────────────────
-  - model_name: qwen3.5-9b-deepseek-v4-flash
+  - model_name: qwen3.8-27b-uncensored
     litellm_params:
-      model: mistral/qwen3.5-9b-deepseek-v4-flash
+      model: mistral/qwen3.8-27b-uncensored
       api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL
       api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
       timeout: 1800
       drop_params: true
 
-  - model_name: ministral-3-14b-reasoning
+  - model_name: qwen3.5-9b-deepseek-v4-flash
     litellm_params:
-      model: mistral/mistralai/ministral-3-14b-reasoning
+      model: mistral/qwen3.5-9b-deepseek-v4-flash
       api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL
       api_key: os.environ/OPENAI_COMPATIBLE_API_KEY
       timeout: 1800
@@ -34,6 +34,14 @@ model_list:
   - model_name: kilo/kilo-auto/free
     litellm_params:
       model: mistral/kilo-auto/free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+      drop_params: true
+
+  - model_name: kilo/poolside/laguna-s-2.1:free
+    litellm_params:
+      model: mistral/poolside/laguna-s-2.1:free
       api_base: https://api.kilo.ai/api/gateway
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
@@ -55,33 +63,17 @@ model_list:
       timeout: 1800
       drop_params: true
 
+  - model_name: kilo/apodex/apodex-1.1-mini:free
+    litellm_params:
+      model: mistral/apodex/apodex-1.1-mini:free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+      drop_params: true
+
   - model_name: kilo/inclusionai/ling-3.0-flash-sante:free
     litellm_params:
       model: mistral/inclusionai/ling-3.0-flash-sante:free
-      api_base: https://api.kilo.ai/api/gateway
-      api_key: os.environ/KILO_GATEWAY_API_KEY
-      timeout: 1800
-      drop_params: true
-
-  - model_name: kilo/inclusionai/ling-3.0-flash-fin:free
-    litellm_params:
-      model: mistral/inclusionai/ling-3.0-flash-fin:free
-      api_base: https://api.kilo.ai/api/gateway
-      api_key: os.environ/KILO_GATEWAY_API_KEY
-      timeout: 1800
-      drop_params: true
-
-  - model_name: kilo/liquid/lfm-2.5-2.6b:free
-    litellm_params:
-      model: mistral/liquid/lfm-2.5-2.6b:free
-      api_base: https://api.kilo.ai/api/gateway
-      api_key: os.environ/KILO_GATEWAY_API_KEY
-      timeout: 1800
-      drop_params: true
-
-  - model_name: kilo/nvidia/nemotron-3.5-lightning:free
-    litellm_params:
-      model: mistral/nvidia/nemotron-3.5-lightning:free
       api_base: https://api.kilo.ai/api/gateway
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
@@ -136,15 +128,15 @@ model_list:
       drop_params: true
 
   # ── OpenRouter ───────────────────────────────────────────────────
-  - model_name: openrouter/inclusionai/ling-3.0-flash-sante:free
+  - model_name: openrouter/apodex/apodex-1.1-mini:free
     litellm_params:
-      model: openrouter/inclusionai/ling-3.0-flash-sante:free
+      model: openrouter/apodex/apodex-1.1-mini:free
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 1800
 
-  - model_name: openrouter/inclusionai/ling-3.0-flash-fin:free
+  - model_name: openrouter/inclusionai/ling-3.0-flash-sante:free
     litellm_params:
-      model: openrouter/inclusionai/ling-3.0-flash-fin:free
+      model: openrouter/inclusionai/ling-3.0-flash-sante:free
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 1800
 
@@ -160,9 +152,15 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 1800
 
-  - model_name: openrouter/nvidia/nemotron-3.5-lightning:free
+  - model_name: openrouter/poolside/laguna-s-2.1:free
     litellm_params:
-      model: openrouter/nvidia/nemotron-3.5-lightning:free
+      model: openrouter/poolside/laguna-s-2.1:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 1800
+
+  - model_name: openrouter/poolside/laguna-xs-2.1:free
+    litellm_params:
+      model: openrouter/poolside/laguna-xs-2.1:free
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 1800
 
@@ -258,6 +256,12 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
+  - model_name: gemini/gemini-3-flash-preview
+    litellm_params:
+      model: gemini/gemini-3-flash-preview
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
   - model_name: gemini/gemini-3.1-flash-lite-preview
     litellm_params:
       model: gemini/gemini-3.1-flash-lite-preview
@@ -267,6 +271,12 @@ model_list:
   - model_name: gemini/gemini-3.1-flash-lite
     litellm_params:
       model: gemini/gemini-3.1-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 1800
+
+  - model_name: gemini/gemini-3.5-flash
+    litellm_params:
+      model: gemini/gemini-3.5-flash
       api_key: os.environ/GEMINI_API_KEY
       timeout: 1800
 
@@ -319,9 +329,9 @@ router_settings:
   fallbacks:
     - default:
         - "kilo/kilo-auto/free"
-        - "openrouter/inclusionai/ling-3.0-flash-sante:free"
+        - "openrouter/apodex/apodex-1.1-mini:free"
         - "mistral/codestral-latest"
-        - "ministral-3-14b-reasoning"
+        - "qwen3.5-9b-deepseek-v4-flash"
 
 # ── General Settings ─────────────────────────────────────────────────────
 general_settings:

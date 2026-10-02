@@ -13,6 +13,7 @@ so Hermes never routes to a listed-but-dead model.
 """
 
 import argparse
+import concurrent.futures
 import json
 import os
 import shutil
@@ -115,7 +116,11 @@ def post_json(url: str, payload: dict, headers: Optional[dict] = None, timeout: 
 def probe_openai_chat(chat_base: str, model_id: str, api_key: str, timeout: int = 10) -> bool:
     """Tiny chat completion against any OpenAI-compatible endpoint."""
     url = f"{chat_base.rstrip('/')}/chat/completions"
-    payload = {"model": model_id, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}
+    payload = {"model": model_id, "messages": [{"role": "user", "content": "hi"}]}
+    if "o1" in model_id or "o3" in model_id:
+        payload["max_completion_tokens"] = 1
+    else:
+        payload["max_tokens"] = 1
     headers = {"Authorization": f"Bearer {api_key}"}
     return post_json(url, payload, headers=headers, timeout=timeout) is not None
 
@@ -255,6 +260,9 @@ def parse_listing(p_id: str, data: dict, curated: List[str]) -> List[str]:
     elif p_id == "openrouter":
         curated_set = set(curated)
         found_ids = [m for m in found_ids if m in curated_set or m.endswith(":free")][:10]
+    elif curated:
+        curated_set = set(curated)
+        found_ids = [m for m in found_ids if m in curated_set]
     return found_ids
 
 
@@ -270,8 +278,15 @@ def probe_candidates(prov: dict, candidates: List[str], api_key: str) -> List[st
     """Keep only models that answer a tiny inference call."""
     log_info(f"Probing {len(candidates)} {prov['name']} models for liveness...")
     live = []
-    for m_id in candidates:
-        if model_replies(prov, m_id, api_key):
+    
+    def check_model(m_id):
+        return m_id, model_replies(prov, m_id, api_key)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(check_model, candidates))
+
+    for m_id, is_live in results:
+        if is_live:
             live.append(m_id)
         else:
             print(f"    {C_DIM}○ {m_id} (no reply, dropped){C_RESET}")
@@ -331,16 +346,13 @@ def generate_litellm_config(
     primary_models = discovered.get("primary", [])
     primary_chat = primary_models
 
-    # Determine default model. office2-first when reachable; live-cloud (kilo free)
-    # when primary discovery is empty. Rationale (2026-09-25): a dead default hangs
-    # every request for minutes before failover, so `default` must always resolve to
-    # something alive. NOTE: primary discovery skips unauthenticated ("not-needed")
-    # endpoints, so office2 never appears here — office2 routes are hand-maintained
-    # in llm-gateway/config.yaml (OFFLINE-LAST-RESORT section); hand-restore
-    # office2 entries after the box wakes.
+    # Determine default model. User explicit first; live-cloud (kilo free) next; local primary last.
     if explicit_default and explicit_default != "default":
         selected_default = explicit_default
         default_via_office2 = True
+    elif "kilo" in discovered and "kilo-auto/free" in discovered["kilo"]:
+        selected_default = "kilo/kilo-auto/free"
+        default_via_office2 = False
     elif primary_chat:
         selected_default = primary_chat[0]
         default_via_office2 = True
@@ -394,11 +406,9 @@ def generate_litellm_config(
             "",
         ])
     else:
-        # Box unreachable at sync time: point default at live kilo free.
-        # Next sync with the box up restores the office2 default automatically.
         lines.extend([
-            "  # TEMPORARY (auto-managed): primary box unreachable at sync time — `default`",
-            "  # points at kilo free. Re-run sync after waking office2 to restore local default.",
+            "  # Default points at Kilo Free to save local resources.",
+            "  # To override, set OPENAI_COMPATIBLE_MODEL in .env and re-run sync.",
             "  - model_name: default",
             "    litellm_params:",
             "      model: mistral/kilo-auto/free",

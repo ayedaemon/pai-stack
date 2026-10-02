@@ -133,3 +133,6 @@ design-config:  ## Validate merged OpenDesign compose configuration
 
 sync:  ## Sync models from keyed providers (liveness-probed), reload gateway
 	python3 scripts/sync-models.py
+
+sync-dry:  ## Preview synced models without writing config or reloading gateway
+	python3 scripts/sync-models.py --dry-run
