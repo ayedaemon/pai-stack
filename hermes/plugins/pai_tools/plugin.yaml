@@ -6,3 +6,4 @@ provides_tools:
   - pai_notebook_ops
   - pai_adr_ops
   - pai_docker_ops
+  - pai_ops_design_ops

@@ -9,10 +9,11 @@
 # - Daemon state stays in named volume `open_design_data:/app/.od` (SQLite, config,
 #   artifacts index). Never bind-mount `.od` into the workspace — avoids SQLite
 #   lock contention with Hermes and keeps code-intel index clean.
-# - `${WORKSPACE_DIR}` (same var Hermes uses) is bind-mounted at `/workspace:rw`.
-#   In the OpenDesign UI use "Import folder" -> `/workspace/<project>`; the daemon
-#   records it as an imported-folder project (`metadata.baseDir`), so generated
-#   files land as real files in the host workspace where Hermes code-intel sees them.
+# - `${WORKSPACE_DIR}` (same var Hermes uses) is bind-mounted at `/opt/data/workspace:rw`
+#   (matches Hermes mount path exactly). In the OpenDesign UI use "Import folder" ->
+#   `/opt/data/workspace/<project>`; the daemon records it as an imported-folder
+#   project (`metadata.baseDir`), so generated files land as real files in the host
+#   workspace where Hermes code-intel sees them.
 # - Host macOS `opencode` (Mach-O/arm64) CANNOT be bind-mounted into this Alpine
 #   Linux container (exec-format error). Linux CLI bundling is Phase 2
 #   (Dockerfile installing linux opencode + libc6-compat, mirroring upstream
@@ -61,6 +62,8 @@ services:
       OD_API_TOKEN: ${OD_API_TOKEN:-}
       OD_DISABLE_API_AUTH: ${OPEN_DESIGN_DISABLE_API_AUTH:-}
       OD_CODEX_SANDBOX: ${OD_CODEX_SANDBOX:-}
+      OPENAI_API_KEY=${LITELLM_MASTER_KEY:-not-needed}
+      OPENAI_BASE_URL=http://llm-gateway:4000/v1
     ports:
       # Host bind IP defaults to loopback. Set OPEN_DESIGN_BIND_IP=0.0.0.0 to
       # reach the UI via LAN IP / DNS name (pair with OPEN_DESIGN_ALLOWED_ORIGINS).
@@ -69,7 +72,7 @@ services:
       - open_design_data:/app/.od
       - type: bind
         source: ${WORKSPACE_DIR}
-        target: /workspace
+        target: /opt/data/workspace
         read_only: false
         bind:
           create_host_path: false

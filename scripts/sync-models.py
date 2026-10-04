@@ -113,7 +113,7 @@ def post_json(url: str, payload: dict, headers: Optional[dict] = None, timeout: 
         return None
 
 
-def probe_openai_chat(chat_base: str, model_id: str, api_key: str, timeout: int = 10) -> bool:
+def probe_openai_chat(chat_base: str, model_id: str, api_key: str, timeout: int = 10) -> Optional[dict]:
     """Tiny chat completion against any OpenAI-compatible endpoint."""
     url = f"{chat_base.rstrip('/')}/chat/completions"
     payload = {"model": model_id, "messages": [{"role": "user", "content": "hi"}]}
@@ -122,25 +122,25 @@ def probe_openai_chat(chat_base: str, model_id: str, api_key: str, timeout: int 
     else:
         payload["max_tokens"] = 1
     headers = {"Authorization": f"Bearer {api_key}"}
-    return post_json(url, payload, headers=headers, timeout=timeout) is not None
+    return post_json(url, payload, headers=headers, timeout=timeout)
 
 
-def probe_gemini(model_id: str, api_key: str, timeout: int = 10) -> bool:
+def probe_gemini(model_id: str, api_key: str, timeout: int = 10) -> Optional[dict]:
     """Tiny generateContent call (Gemini has no OpenAI-compatible chat shape here)."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={api_key}"
     payload = {"contents": [{"parts": [{"text": "hi"}]}], "generationConfig": {"maxOutputTokens": 1}}
-    return post_json(url, payload, headers={"x-goog-api-key": api_key}, timeout=timeout) is not None
+    return post_json(url, payload, headers={"x-goog-api-key": api_key}, timeout=timeout)
 
 
-def probe_anthropic(model_id: str, api_key: str, timeout: int = 10) -> bool:
+def probe_anthropic(model_id: str, api_key: str, timeout: int = 10) -> Optional[dict]:
     """Tiny Messages call (Anthropic has no /chat/completions shape)."""
     url = "https://api.anthropic.com/v1/messages"
     payload = {"model": model_id, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
     headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
-    return post_json(url, payload, headers=headers, timeout=timeout) is not None
+    return post_json(url, payload, headers=headers, timeout=timeout)
 
 
-def model_replies(prov: dict, model_id: str, api_key: str) -> bool:
+def model_replies(prov: dict, model_id: str, api_key: str) -> Optional[dict]:
     """Route the liveness probe to the right API shape for this provider."""
     p_id = prov["id"]
     if p_id == "gemini":
@@ -148,6 +148,28 @@ def model_replies(prov: dict, model_id: str, api_key: str) -> bool:
     if p_id == "anthropic":
         return probe_anthropic(model_id, api_key)
     return probe_openai_chat(prov["chat_base"], model_id, api_key)
+
+
+def extract_response_preview(data: Optional[dict]) -> str:
+    """Extract a short human-readable preview from a provider response."""
+    if not data:
+        return ""
+    try:
+        if "choices" in data:
+            msg = data["choices"][0].get("message", {})
+            content = msg.get("content", "")
+            return content[:60] if content else str(data)[:60]
+        if "content" in data:
+            parts = data["content"]
+            if isinstance(parts, list) and parts:
+                return str(parts[0].get("text", ""))[:60]
+        if "candidates" in data:
+            parts = data["candidates"][0].get("content", {}).get("parts", [])
+            if parts:
+                return str(parts[0].get("text", ""))[:60]
+    except Exception:
+        pass
+    return str(data)[:60]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -278,16 +300,18 @@ def probe_candidates(prov: dict, candidates: List[str], api_key: str) -> List[st
     """Keep only models that answer a tiny inference call."""
     log_info(f"Probing {len(candidates)} {prov['name']} models for liveness...")
     live = []
-    
+
     def check_model(m_id):
         return m_id, model_replies(prov, m_id, api_key)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         results = list(executor.map(check_model, candidates))
 
-    for m_id, is_live in results:
-        if is_live:
+    for m_id, response in results:
+        if response:
             live.append(m_id)
+            preview = extract_response_preview(response)
+            print(f"    {C_GREEN}✓ {m_id}{C_RESET} → {C_DIM}{preview}{C_RESET}")
         else:
             print(f"    {C_DIM}○ {m_id} (no reply, dropped){C_RESET}")
     return live
