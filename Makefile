@@ -5,7 +5,9 @@
 
 .PHONY: help check-workspace \
 	up down restart logs status build clean config sync \
-	design-up design-down design-logs design-config design-build design-perms design-import
+	design-up design-down design-logs design-config design-build design-perms design-import \
+	dsh-up dsh-down dsh-logs dsh-config dsh-build dsh-perms dsh-password \
+	terrain-up terrain-down terrain-logs terrain-config terrain-build terrain-perms terrain-index terrain-ask
 
 WORKSPACE_DIR ?= $(shell grep -E '^WORKSPACE_DIR=' .env 2>/dev/null | cut -d= -f2- | tr -d '\"' | tr -d "'")
 # Expand a leading ~ to $HOME: neither make recipes nor compose tilde-expand raw
@@ -19,13 +21,37 @@ GID ?= $(shell id -g)
 export UID
 export GID
 
+# Host GID owning /var/run/docker.sock, so the dsh container can connect to it.
+# Hermes needs no equivalent: it runs as root inside the container, which
+# bypasses the socket's permission bits. DSH does not — it runs as uid 1000
+# under cap_drop:[ALL], so it must belong to the socket's group or every API
+# call fails with EACCES.
+# Precedence mirrors WORKSPACE_DIR above, and it has to: compose resolves the
+# shell environment ahead of .env, so a plain `export` of the detected value
+# would silently override a DOCKER_GID the user set in .env. .env first, then
+# `stat`, then 999 (the usual Debian/Ubuntu docker group).
+DOCKER_GID ?= $(shell grep -E '^DOCKER_GID=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")
+DOCKER_GID := $(or $(DOCKER_GID),$(shell stat -c %g /var/run/docker.sock 2>/dev/null || echo 999))
+export DOCKER_GID
+
 COMPOSE := docker compose -f docker-compose.yaml
 DESIGN_COMPOSE := docker compose -f docker-compose.yaml -f docker-compose.opendesign.yaml
+DSH_COMPOSE := docker compose -f docker-compose.yaml -f docker-compose.dsh.yaml
+TERRAIN_COMPOSE := docker compose -f docker-compose.yaml -f docker-compose.terrain.yaml
 
 # Deterministic open-design volume name: $(COMPOSE_PROJECT_NAME)_open_design_data.
 COMPOSE_PROJECT_NAME ?= pai-stack
 export COMPOSE_PROJECT_NAME
 DESIGN_VOLUME := $(COMPOSE_PROJECT_NAME)_open_design_data
+
+# Deterministic dsh volume names: $(COMPOSE_PROJECT_NAME)_dsh_{programs,data}.
+DSH_PROGRAMS_VOLUME := $(COMPOSE_PROJECT_NAME)_dsh_programs
+DSH_DATA_VOLUME := $(COMPOSE_PROJECT_NAME)_dsh_data
+
+# Deterministic terrain volume name: $(COMPOSE_PROJECT_NAME)_terrain_data.
+# Holds ~/.terrain/registry.json — terrain's project registry, which lives
+# outside any repo and must stay off the shared workspace bind mount.
+TERRAIN_DATA_VOLUME := $(COMPOSE_PROJECT_NAME)_terrain_data
 
 # ── Help ──
 
@@ -43,6 +69,15 @@ help:  ## Show this help message
 	@echo "\033[1;34mDesign:\033[0m"
 	@printf "  \033[36m%-16s\033[0m %s\n" "design-up" "Start open-design (docs/opendesign.md)"
 	@printf "  \033[36m%-16s\033[0m %s\n" "design-import" "Import folder: d=/workspace/<dir> [n=<name>]"
+	@echo ""
+	@echo "\033[1;34mDSH:\033[0m"
+	@printf "  \033[36m%-16s\033[0m %s\n" "dsh-up" "Start DSH agent (docs/dsh.md)"
+	@printf "  \033[36m%-16s\033[0m %s\n" "dsh-password" "Print one-time first-boot admin password"
+	@echo ""
+	@echo "\033[1;34mCode intel:\033[0m"
+	@printf "  \033[36m%-16s\033[0m %s\n" "terrain-up" "Start terrain index service (docs/terrain.md)"
+	@printf "  \033[36m%-16s\033[0m %s\n" "terrain-build" "Build terrain image from Rust source (slow first build)"
+	@printf "  \033[36m%-16s\033[0m %s\n" "terrain-index" "Index a project: d=/opt/data/<dir> [n=<slug>]"
 	@echo ""
 	@echo "\033[1;34mMaintenance:\033[0m"
 	@printf "  \033[36m%-16s\033[0m %s\n" "build" "Rebuild images (s=<service>)"
@@ -128,6 +163,76 @@ design-logs:  ## Tail open-design logs
 
 design-config:  ## Validate merged OpenDesign compose configuration
 	$(DESIGN_COMPOSE) --profile design config
+
+# ── DSH (see docs/dsh.md) ──
+
+dsh-up: check-workspace dsh-perms  ## Start dsh alongside core stack
+	$(DSH_COMPOSE) --profile dsh up -d --build dsh
+
+dsh-perms:  ## Create volumes + fix ownership to host UID:GID
+	docker volume create $(DSH_PROGRAMS_VOLUME) >/dev/null
+	docker volume create $(DSH_DATA_VOLUME) >/dev/null
+	docker run --rm -v $(DSH_PROGRAMS_VOLUME):/data alpine chown -R $(UID):$(GID) /data
+	docker run --rm -v $(DSH_DATA_VOLUME):/data alpine chown -R $(UID):$(GID) /data
+
+dsh-password:  ## Print the one-time login token URL (host port)
+	@TOKEN=$$(docker logs dsh 2>&1 | grep -o '?token=[^[:space:]]*' | tail -1 | sed 's/.*token=//'); \
+	if [ -z "$$TOKEN" ]; then echo "[ERROR] No token in 'docker logs dsh' yet — is dsh booted?"; exit 1; fi; \
+	PORT="$${DSH_PORT:-$$(grep -E '^DSH_PORT=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")}"; \
+	PORT="$${PORT:-9229}"; \
+	echo "http://127.0.0.1:$$PORT/?token=$$TOKEN"
+
+dsh-build:  ## Build dsh image (bundled mnemon CLI)
+	$(DSH_COMPOSE) --profile dsh build dsh
+
+dsh-down:  ## Stop dsh only (workspace + volumes untouched)
+	$(DSH_COMPOSE) stop dsh
+
+dsh-logs:  ## Tail dsh logs
+	$(DSH_COMPOSE) logs -f dsh
+
+dsh-config:  ## Validate merged DSH compose configuration
+	$(DSH_COMPOSE) --profile dsh config
+
+# ── Terrain code intel (see docs/terrain.md) ──
+
+terrain-up: check-workspace terrain-perms  ## Start terrain alongside core stack
+	$(TERRAIN_COMPOSE) --profile terrain up -d --build terrain
+
+terrain-perms:  ## Create volume + fix ownership to the container's terrain uid
+	docker volume create $(TERRAIN_DATA_VOLUME) >/dev/null
+# NOT $(UID):$(GID) like dsh-perms. terrain runs as the fixed in-image user
+# `terrain` (uid 1000, set by USER in terrain/Dockerfile), so chowning the
+# volume to the host uid would leave it unable to write its project registry at
+# ~/.terrain/registry.json. dsh-perms can get away with the host uid because the
+# dsh entrypoint re-chowns both volumes to its runtime uid on every boot; terrain
+# only chowns at BUILD time, which the named-volume mount shadows.
+	docker run --rm -v $(TERRAIN_DATA_VOLUME):/data alpine chown -R 1000:1000 /data
+
+terrain-build:  ## Build terrain image (Rust from source — slow first build)
+	$(TERRAIN_COMPOSE) --profile terrain build terrain
+
+terrain-down:  ## Stop terrain only (workspace + volume untouched)
+	$(TERRAIN_COMPOSE) stop terrain
+
+terrain-logs:  ## Tail terrain logs
+	$(TERRAIN_COMPOSE) logs -f terrain
+
+terrain-config:  ## Validate merged terrain compose configuration
+	$(TERRAIN_COMPOSE) --profile terrain config
+
+# `scan` only — no LLM, no token cost. Writes .terrain/ inside the repo.
+terrain-index:  ## Index a project: d=/opt/data/workspace/<dir> [n=<slug>]
+	@if [ -z "$(d)" ]; then echo "Usage: make terrain-index d=/opt/data/workspace/<folder> [n=<slug>] (container path, not host path)"; exit 1; fi
+	@SLUG=""; if [ -n "$(n)" ]; then SLUG="--slug $(n)"; fi; \
+	docker exec terrain terrain scan "$(d)" $$SLUG
+
+# Needs TERRAIN_ALLOW_LLM=1 — keyless Zen models via opencode acp,
+# NOT the gateway and NOT your tokens.
+terrain-ask:  ## Knowledge Q&A: q="<question>" [n=<slug>]  (keyless, no tokens)
+	@if [ -z "$(q)" ]; then echo "Usage: make terrain-ask q=\"<question>\" [n=<slug>]"; exit 1; fi
+	@SLUG=""; if [ -n "$(n)" ]; then SLUG="--project $(n)"; fi; \
+	docker exec terrain terrain ask query "$(q)" $$SLUG
 
 # ── Models (see docs/llm-gateway.md) ──
 

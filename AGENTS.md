@@ -6,7 +6,7 @@
 ## What this is
 
 Two core Docker services that give an AI agent (Hermes) a complete local development environment:
-in-process code intelligence, semantic search, read-write workspace access, and native procedural skills —
+read-write workspace access, persistent local memory, and native procedural skills —
 no sidecar containers needed for tools.
 
 ## Services & Ports
@@ -16,15 +16,27 @@ no sidecar containers needed for tools.
 | **hermes** | 9119 / 8642 | AI agent gateway + web dashboard (native Mnemosyne memory, native `pai_*` tools, native skills) |
 | **llm-gateway** | 4000 | Unified LLM Gateway: LiteLLM proxy (routes, fallbacks, provider credentials) |
 
+Optional profiles (start explicitly; `make up` never starts these):
+
+| Profile | Service | Port | Role |
+|---|---|---|---|
+| `dsh` | **dsh** | 9229 | DeepSeek Harness agent — second agent on the same workspace |
+| `open-design` | **open-design** | 7456 | Design generation / mockup bridge |
+| `terrain` | **terrain** | 7878 | Code intelligence — the single index owner (see below) |
+
 ## Container Mounts
 
 | Host path | Container path | Service | Access |
 |---|---|---|---|
-| `$WORKSPACE_DIR` | `/opt/data/workspace` | hermes | **read-write** (`research/` vault + code intelligence indexing) |
+| `$WORKSPACE_DIR` | `/opt/data/workspace` | hermes | **read-write** (`research/` vault + project files) |
+| `$WORKSPACE_DIR` | `/opt/data/workspace` | terrain | **read-write** (writes `.terrain/` into the repo it indexes) |
 
-Hermes mounts the workspace at `/opt/data/workspace` and runs code intelligence
-in-process (tree-sitter index over the entire workspace, file changes detected
-in real-time). Hermes writes helper scripts and scratch tools to `/opt/data`.
+Hermes mounts the workspace at `/opt/data/workspace`. Hermes writes helper scripts
+and scratch tools to `/opt/data`.
+
+Terrain's *project registry* deliberately does **not** live on that mount — it sits
+in the `terrain_data` volume at `/var/lib/terrain/.terrain/registry.json`, because
+it is host state, not repo content.
 
 > Research Brain is a root-level wiki (SCHEMA.md, index.md, log.md, raw/, entities/, concepts/, comparisons/, queries/)
 > at `$WORKSPACE_DIR/${RESEARCH_SUBDIR:-research}` (container `$RESEARCH_DIR == $WIKI_PATH`), with legacy
@@ -35,14 +47,23 @@ in real-time). Hermes writes helper scripts and scratch tools to `/opt/data`.
 
 ```
 hermes ──→ [Mnemosyne: SQLite]  local persistent memory (working/episodic memory, knowledge graph)
-hermes ──→ [pai_tools plugin]   native tools: pai_code_intel, pai_notebook_ops, pai_adr_ops, pai_docker_ops
+hermes ──→ [pai_tools plugin]   native tools: pai_notebook_ops, pai_adr_ops, pai_docker_ops, pai_ops_design_ops
+hermes ──→ [pai_terrain_ops]    code intelligence → terrain:7878/call  (HTTP)
+dsh    ──→ [dsh-mcp-client]     code intelligence → terrain:7878/mcp   (MCP)
 hermes ──→ [skills: /opt/pai/skills]  native procedural skills via skills_list / skill_view
 hermes ──→ llm-gateway:4000     ONLY gateway for LLM completions & reasoning
 hermes (pai_notebook_ops) ──→ /opt/data/workspace/research/ (file vault)
 hermes (ask_notebook) ──→ llm-gateway:4000 (synthesis)
+terrain ──→ <repo>/.terrain/    the ONLY writer of index artifacts
+terrain ──→ opencode acp (ACP)  only when TERRAIN_ALLOW_LLM=1 (ask/init)
+         └─ NOT llm-gateway. Terrain holds no gateway link and no provider key:
+            its ACP agent runs OpenCode's keyless Zen models. Do NOT re-add
+            OPENAI_API_KEY — it makes opencode pin the ACP session to a catalog
+            OpenAI model and both ask/init die. See docs/terrain.md.
 ```
 
-All model inference routes through `llm-gateway:4000` (LiteLLM).
+All model inference routes through `llm-gateway:4000` (LiteLLM), except the two
+keyless-Zen cases noted under *LLM routing posture* below.
 `pai_notebook_ops` runs in-process in Hermes, operating directly on Markdown files in the workspace.
 
 ### LLM routing posture (gateway-only)
@@ -51,7 +72,9 @@ All model inference routes through `llm-gateway:4000` (LiteLLM).
   templates). Never add direct provider keys, auxiliary providers, or Hermes-level
   fallbacks — Models.dev catalog reads are metadata-only and fine.
 - Known exceptions: `opencode-delegate` calls Zen free models directly (keyless,
-  documented in its skill); Langfuse receives traces (it IS the audit trail).
+  documented in its skill); Terrain's ACP agent (`opencode acp`) does the same for
+  `ask`/`init`, which is why terrain carries no gateway link at all; Langfuse
+  receives traces (it IS the audit trail).
 - Secrets caveat: provider keys are absent from the hermes container *environment*,
   but `.env` lives inside the mounted workspace — file-capable tools can still read
   it. `*.env` reads are hard-denied for delegates; treat Hermes-side reads as auditable.
@@ -63,18 +86,33 @@ Mnemosyne runs embedded inside Hermes using local ONNX fastembed and SQLite (`he
 
 ## How Hermes Uses Each Service
 
-### Code Intelligence — primary retrieval (use before reading raw files)
+### Code Intelligence — Terrain (opt-in profile)
 
-The main token-efficiency mechanism. Converts "read 200 files" into "native tool query".
+Code intelligence is provided by [Terrain](https://github.com/sopaco/terrain), run as
+a **single container that owns the index**. It replaces the removed `pai_code_intel`,
+which built an in-process tree-sitter index over the whole workspace (42% of which was
+a leaked Go toolchain, and far more than DSH's 1.2 GB heap could hold).
 
 ```
-pai_code_intel(find_code)       → find implementation details and explanations
-pai_code_intel(file_api)        → inspect file method/type signatures without bodies
-pai_code_intel(trace_calls)     → inspect callers/callees and blast radius
-pai_code_intel(find_all)        → regex search grouped by symbol
-pai_code_intel(repo_map)        → high-level repo orientation and hubs
-pai_code_intel(check_freshness) → verify index freshness
+agent ──→ terrain:7878 ──→ terrain CLI ──→ <repo>/.terrain/
+                            (one writer)      agent context, knowledge docs, source pack
 ```
+
+- **Single index owner.** Only the `terrain` container writes `.terrain/`. Agents
+  trigger jobs and read the result — neither keeps a private in-memory index, so the
+  DSH heap cap is a non-issue.
+- **Per-repo by construction.** Each scan writes `.terrain/` *inside* the repo it
+  indexes, which structurally enforces the `EXECUTION_DIR` boundary below.
+- **Indexing is free.** `index`/`refresh` make no LLM call. `refresh` explicitly skips
+  Litho, Terrain's LLM doc generator. Only `ask` and `init` invoke an LLM — via
+  Terrain's own ACP agent on keyless Zen models, not the gateway — and the service
+  refuses them unless `TERRAIN_ALLOW_LLM=1`.
+- **Degrades cleanly.** Terrain is optional. `pai_terrain_ops` probes `/healthz` and
+  hides itself when the service is down; without it, locate code with `grep` + targeted
+  reads. Nothing breaks.
+- **`.terrain/` is gitignored.** The index is per-host, not per-repo-lifetime.
+
+Start it with `make terrain-up`; see [`docs/terrain.md`](docs/terrain.md).
 
 ### Skills — procedural knowledge (native Hermes skills)
 
@@ -89,14 +127,13 @@ Skills are markdown files in `./skills/`, mounted read-only into Hermes via `ski
 | `react` | React discovery router → `vercel-react-best-practices` et al. |
 | `nodejs` | Node.js discovery → `senior-backend` for backend authoring |
 | `sql` | DB discovery router → `supabase-postgres-best-practices` for depth |
-| `planning` | Planning router → `writing-plans` + `executing-plans` (superpowers plugin) |
+| `planning` | Planning discipline: paths, 2-op rule, 3-strike, plus plan authorship + execution with verification gates (self-contained) |
 | `system-design` | System design methodology, capacity planning, and trade-off matrices |
-| `gitops` | Git safety router → `using-git-worktrees` et al. (superpowers plugin) |
+| `gitops` | Git safety + mechanics: topology, `.worktrees/` sandboxing, confirmation gate, test-first merge (self-contained) |
 | `vercel-react-best-practices` / `vercel-composition-patterns` / `frontend-design` | Vendored React/perf/design depth (MIT/MIT/Apache-2.0) |
 | `supabase-postgres-best-practices` / `senior-backend` / `docker-development` | Vendored Postgres/backend/Docker depth + scripts (MIT) |
 | `web-design-guidelines` / `webapp-testing` / `mcp-builder` | Vendored UI-audit / browser-testing / MCP scaffolding (MIT/Apache-2.0) |
 | `code-reviewer` / `skill-security-auditor` | Vendored review rubrics + skill supply-chain gate (MIT) |
-| `code-intel` | Code intelligence query procedures and tools reference |
 | `mermaid` | Mermaid diagram authoring guide (type selection, syntax safety, C4 abstraction protocol) |
 | `research` | Root-level wiki (SCHEMA/index/log, ingest/query/lint) — load for wiki/kb/notes tasks |
 | `opencode-delegate` | Keyless OpenCode delegation (background+poll, branch review) — load for implementation handoffs |
@@ -109,7 +146,8 @@ Skills are markdown files in `./skills/`, mounted read-only into Hermes via `ski
 | `pai_docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
 | `pai_notebook_ops` | Query and manage Research Brain (native file vault in `research/`) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 | `pai_adr_ops` | Living ADR creation & code symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
-| `pai_code_intel` | Code intelligence: symbol search, call graphs, impact analysis | `find_code`, `file_api`, `trace_calls`, `find_all`, `repo_map`, `check_freshness` |
+| `pai_ops_design_ops` | OpenDesign visual generation / mockups bridge | (see `opendesign-integration` skill) |
+| `pai_terrain_ops` | Code intelligence via the Terrain service (opt-in; hidden when down) | `index`, `refresh`, `search`, `read`, `overview`, `projects`, `unregister`, `source`, `init`, `ask` |
 | `skill_view` | Load a procedural skill by name | `name="<skill>"` |
 | `skills_list` | Discover all available native skills | (none) |
 
@@ -127,8 +165,7 @@ using embedded SQLite (`/opt/hermes/data/mnemosyne/data/mnemosyne.db`) and local
 
 | Retrieval System | Scope | Storage | Role |
 |---|---|---|---|
-| **Code Intelligence** | Workspace code & files | In-process tree-sitter index in hermes | AST symbols, semantic search (native tool) |
-| **Research Brain** | External knowledge & notes | `$WORKSPACE_DIR/research/` | RFCs, API docs, papers, research notes in Markdown + code intelligence search |
+| **Research Brain** | External knowledge & notes | `$WORKSPACE_DIR/research/` | RFCs, API docs, papers, research notes in Markdown |
 | **Mnemosyne** | Agent experience | `/opt/hermes/data/mnemosyne` | Decisions, prior fixes, session continuity, user preferences |
 
 ## Startup Protocol: Workspace Understanding & Boundaries
@@ -141,10 +178,11 @@ On **Turn 1 of every session**:
 1. **Discover skills**: Call `skills_list()` to confirm `research` and other skills are available.
 2. **Recall Known Boundaries + services (parallel)**: Call `mnemosyne_recall(query="workspace projects structure boundaries")` and `pai_docker_ops(action="list")`.
 3. **Survey Directory Structure**: List `/opt/data/workspace` (depth 1) to identify project subdirectories and identify root markers (`.git/`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Makefile`).
-4. **Map with Code Intelligence**: Call `code_intel(repo_map)` to orient on code hubs and symbol hierarchies. If the stack is unknown, load the `stack-discovery` skill first.
+4. **Orient on the stack**: If the stack is unknown, load the `stack-discovery` skill first; otherwise read the project's manifest (`pyproject.toml`, `package.json`, …).
 5. **Orient on wiki (IFF research task OR `$RESEARCH_DIR/SCHEMA.md` exists)**: Load `skill_view(name="research")`, then read `SCHEMA.md` + `index.md` + `log.md` tail-20 only (index-first, top-3 pages max).
 6. **Persist Boundaries**: Record discovered project boundaries using `mnemosyne_remember(content="Workspace Project: '<name>' at /opt/data/workspace/<name>...")`.
 7. **Enforce Boundary Isolation**: Strictly avoid cross-project contamination of files, git branches, or planning files.
+8. **Check the index (if terrain is running)**: `pai_terrain_ops(action="projects")`. If `EXECUTION_DIR` is absent from the list, `pai_terrain_ops(action="index", path="<project>")` before code work — it costs no LLM tokens.
 
 ## Execution Directory Invariant
 
@@ -166,7 +204,7 @@ Hermes must strictly isolate its operations to a single project execution direct
 | App state (DB, sessions) | `hermes-data` Docker volume | Automatically — never touches workspace |
 
 Planning files (`task_plan.md`, `findings.md`, `progress.md`) are developer artifacts.
-They live in the project, get indexed by code intelligence, and are searchable in future sessions.
+They live in the project and are searchable with `grep` in future sessions.
 
 ## Planning Discipline (planning-with-files)
 
@@ -192,7 +230,10 @@ See the `planning` skill for the full discipline.
 |---|---|
 | [`hermes/config.yaml`](hermes/config.yaml) | System prompt, model providers, skills, knowledgebase |
 | [`docker-compose.yaml`](docker-compose.yaml) | All service definitions, mounts, resource limits |
-| [`hermes/plugins/pai_tools/`](hermes/plugins/pai_tools/) | Native Hermes tools: `pai_code_intel`, `pai_notebook_ops`, `pai_adr_ops`, `pai_docker_ops` |
+| [`hermes/plugins/pai_tools/`](hermes/plugins/pai_tools/) | Native Hermes tools: `pai_notebook_ops`, `pai_adr_ops`, `pai_docker_ops`, `pai_ops_design_ops` |
+| [`hermes/plugins/pai_terrain_ops/`](hermes/plugins/pai_terrain_ops/) | Code-intel tool: `pai_terrain_ops` → terrain service |
+| [`terrain/`](terrain/) | Terrain multi-stage image + HTTP/MCP shim |
+| [`docker-compose.terrain.yaml`](docker-compose.terrain.yaml) | Opt-in `terrain` profile |
 | [`skills/`](skills/) | Bundled SKILL.md files (one per skill, mounted into Hermes) |
 | [`skills/agents/SKILL.md`](skills/agents/SKILL.md) | Ground rules injected into Hermes context |
 | [`.env.example`](.env.example) | Template for `WORKSPACE_DIR`, LLM config, API keys |
@@ -203,7 +244,7 @@ See the `planning` skill for the full discipline.
 2. Read [`skills/agents/SKILL.md`](skills/agents/SKILL.md) for operational ground rules
 3. Read [`hermes/config.yaml`](hermes/config.yaml) for the full system prompt
 4. Check [`docker-compose.yaml`](docker-compose.yaml) for current mount paths and port bindings
-5. For code questions: query code intelligence via Hermes directly (e.g. `pai_code_intel(action="find_code")`, `pai_code_intel(action="trace_calls")`)
+5. For code questions: prefer `pai_terrain_ops(action="search"|"source")` if the repo is indexed; otherwise `grep`, then read only the files that match.
 
 
 ## System Architecture Maintenance Protocol

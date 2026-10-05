@@ -1,0 +1,43 @@
+# pai-stack — DSH custom provider: route models through llm-gateway:4000.
+# Copy into the data volume once per fresh volume:
+#   docker cp dsh/settings.yaml dsh:/data/dsh/settings.yaml
+# (No restart needed — adapters re-read on the next request.)
+# The Models page merges UI edits into the same file; model rows added in the
+# UI persist here. Provider ID is permanent — sessions reference it.
+# Model IDs are verbatim llm-gateway/config.yaml names (gateway does not
+# advertise them to DSH — every ID must be listed). After `make sync` adds or
+# renames gateway models, mirror the change here.
+llm-pi-ai:
+  providers:
+    pai-gateway:
+      api: openai-completions
+      baseURL: http://llm-gateway:4000/v1
+      apiKeyEnv: OPENAI_API_KEY
+      models:
+        - id: default
+        - id: qwen3.8-27b-uncensored
+        - id: kilo/kilo-auto/free
+        - id: kilo/stepfun/step-3.7-flash:free
+        - id: kilo/nvidia/nemotron-3-ultra-550b-a55b:free
+        - id: kilo/dots-studio/dots-3-note-preview:free
+        - id: kilo/poolside/laguna-s-2.1:free
+        - id: kilo/apodex/apodex-1.1-mini:free
+        - id: kilo/inclusionai/ling-3.0-flash-sante:free
+        - id: kilo/qwen/qwen3.8-27b:free
+        - id: kilo/liquid/lfm-2.5-2.6b:free
+        - id: kilo/nvidia/nemotron-3.5-lightning:free
+        - id: kilo/cohere/north-mini-code:free
+        - id: kilo/nvidia/nemotron-3.5-content-safety:free
+        - id: kilo/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+        - id: kilo/nvidia/nemotron-3-super-120b-a12b:free
+        - id: kilo/kilo-auto/small
+        - id: openrouter/apodex/apodex-1.1-mini:free
+        - id: openrouter/inclusionai/ling-3.0-flash-sante:free
+        - id: openrouter/qwen/qwen3.8-27b:free
+        - id: openrouter/dots-studio/dots-3-note-preview:free
+        - id: openrouter/liquid/lfm-2.5-2.6b:free
+        - id: openrouter/nvidia/nemotron-3.5-lightning:free
+        - id: openrouter/poolside/laguna-s-2.1:free
+        - id: openrouter/poolside/laguna-xs-2.1:free
+        - id: mistral/codestral-latest
+        - id: mistral/ministral-8b-latest

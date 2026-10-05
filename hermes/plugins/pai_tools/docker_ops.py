@@ -21,7 +21,12 @@ import time
 from datetime import datetime, timezone
 
 PROJECT = os.environ.get("COMPOSE_PROJECT_NAME", "pai-stack")
-ALLOWED_SERVICES = ("hermes", "llm-gateway")
+# Every container this stack can start: core, plus all three opt-in profiles.
+# The docker socket is a deliberate, accepted grant (D7) — agents must be able to
+# control the host containers they own, including `make terrain-down` then back
+# up. Scoped to *pai-stack's own* services; a container belonging to another
+# project is reached with that project's compose CLI, not through this tool.
+ALLOWED_SERVICES = ("hermes", "llm-gateway", "terrain", "dsh", "open-design")
 ALLOWED_ACTIONS = ("list", "status", "logs", "restart", "start", "stop", "exec")
 LOG_DIR = os.environ.get("LOG_DIR", "/opt/hermes/data/logs")
 LOG_FILE = os.path.join(LOG_DIR, "docker-ops.log")

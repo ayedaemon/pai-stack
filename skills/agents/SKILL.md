@@ -16,7 +16,6 @@ and builds planning artifacts — working like a developer, not a separate knowl
 | `/opt/data/workspace` | (bind mount) | Multi-project workspace mounted from host — read-write |
 | `/opt/data` | (local dir) | Scratch tools, helper scripts, and agent utilities |
 | **llm-gateway** | `http://llm-gateway:4000` | Unified LLM Gateway: LiteLLM proxy for all completions, fallbacks, and tool calls |
-| **pai_code_intel** | (native tool, `pai` toolset) | Primary code intelligence: AST + semantic search, in-process |
 | **skills** | (native, `skills_list` / `skill_view`) | Bundled procedural skills plus native tools (`pai_docker_ops`, `pai_notebook_ops`, `pai_adr_ops`) |
 | **mnemosyne** | (internal SQLite) | Local agent memory: decisions, prior fixes, session continuity, project boundaries |
 | **research** | `$RESEARCH_DIR == $WIKI_PATH` (`/opt/data/workspace/${RESEARCH_SUBDIR:-research}`) | Root-level wiki vault: SCHEMA/index/log + raw/entities/concepts/comparisons/queries (`pai_notebook_ops`, `research` skill). Legacy `<notebook>/{notes/,sources/}` kept readable |
@@ -34,7 +33,7 @@ On **turn 1 of every session** (or whenever entering an unfamiliar directory):
    - Version control: `.git/` directory
    - Manifests: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pom.xml`, `Makefile`
    - Configs: `.env`, `docker-compose.yml`, `tsconfig.json`
-3. **Orient with Code Intelligence**: Call `pai_code_intel(action="repo_map")` to understand symbol hubs and high-level structure. If the project stack is unknown, fetch `skill_view(name="stack-discovery")` before reading code.
+3. **Orient on the stack**: If the project stack is unknown, fetch `skill_view(name="stack-discovery")` before reading code.
 4. **Persist boundaries**: Record newly discovered boundaries with `mnemosyne_remember(content="Workspace Project: '<name>' at /opt/data/workspace/<name>. Markers: [...], Stack: [...]")`.
 5. **Enforce boundary isolation**: Never mix files, git branches, planning files, or build artifacts across different project subdirectories.
 
@@ -71,13 +70,13 @@ Mnemosyne is the long-term associative memory. Do NOT pollute it with transient 
 ## Retrieval Strategy
 
 1. **Prior lessons/decisions** → `mnemosyne_recall` first to check known solutions and constraints
-2. **Code/symbol questions** → Code intelligence first (`pai_code_intel(action="find_code")`, `pai_code_intel(action="trace_calls")`)
-3. **Doc/note/wiki questions** → `skill_view(name="research")` orient (SCHEMA + index + log tail-20) first, then code intelligence
+2. **Code/symbol questions** → search first (`grep` for symbol names, then read the surrounding file)
+3. **Doc/note/wiki questions** → `skill_view(name="research")` orient (SCHEMA + index + log tail-20) first
 4. **Unknown stack** → `skill_view(name="stack-discovery")` before reading any files
 5. **Procedure needed** → fetch the relevant skill (via `skill_view`); discover via `skills_list` on Turn 1
-6. **Router pattern** — local shims (`planning`, `gitops`, `react`, `nodejs`, `python`, `sql`, `docker`) own discovery + Hermes glue; THEY delegate authoring depth. When a shim names an upstream, load it:
-   - plan authoring/execution → `writing-plans` / `executing-plans` (superpowers, plugin)
-   - git isolation/finish → `using-git-worktrees` / `finishing-a-development-branch` (superpowers, plugin)
+6. **Router pattern** — local shims (`planning`, `gitops`, `react`, `nodejs`, `python`, `sql`, `docker`) own discovery + Hermes glue. Most delegate authoring depth to a vendored skill; load it when the shim names one:
+   - plan authoring/execution → owned by `planning` itself (no upstream)
+   - git isolation/finish → owned by `gitops` itself (no upstream)
    - React authoring/perf → `vercel-react-best-practices` / `vercel-composition-patterns` / `frontend-design`
    - backend authoring → `senior-backend` (scripts under `/opt/pai/skills/senior-backend/scripts/`)
    - Postgres depth → `supabase-postgres-best-practices` (`references/`)
@@ -102,7 +101,6 @@ Never bulk-read a directory without a prior code intelligence search.
 2. **Wait** for explicit confirmation
 3. **Write** to `<EXECUTION_DIR>/<file>`
 4. **Update** `progress.md` with what changed
-5. **Reindex** if new files were added: call `pai_code_intel(action="check_freshness")`
 
 Never write raw secrets to any file. Use references (env var name, vault path).
 
@@ -124,16 +122,15 @@ Planning files live in the project like developer artifacts:
 | Skill | Purpose |
 |---|---|
 | `stack-discovery` | Detect tech stack — run first on any unknown codebase |
-| `code-intel` | Code intelligence query procedures and tools reference |
 | `mermaid` | Mermaid diagram authoring guide (type selection, syntax safety, C4 abstraction protocol) |
 | `python` | Python discovery router (env, framework, uv-run) → delegates authoring to `senior-backend` |
 | `docker` | Docker discovery router (services, volumes) → delegates to `docker-development` |
 | `react` | React discovery router (toolchain, routes, state) → delegates to `vercel-react-best-practices` et al. |
 | `nodejs` | Node.js discovery (runtime, manager, framework) → backend authoring to `senior-backend` |
 | `sql` | DB discovery router (service, ORM, schema) → delegates depth to `supabase-postgres-best-practices` |
-| `planning` | Planning router (paths, 2-op rule, 3-strike) → delegates rigor to `writing-plans` + `executing-plans` |
+| `planning` | Planning discipline (paths, 2-op rule, 3-strike) + plan authorship + execution with verification gates — self-contained |
 | `system-design` | System design methodology, capacity planning, and trade-off matrices |
-| `gitops` | Git safety router (topology, worktrees, confirmation gate) → delegates to `using-git-worktrees` et al. |
+| `gitops` | Git safety + mechanics (topology, worktrees, confirmation gate, test-first merge) — self-contained |
 | `vercel-react-best-practices` | 70 React/Next.js perf rules + `rules/*.md` (vendored, MIT) |
 | `vercel-composition-patterns` | 8 composition rules + `rules/*.md` (vendored, MIT) |
 | `frontend-design` | Anti-generic visual direction (vendored, Apache-2.0) |
@@ -145,7 +142,6 @@ Planning files live in the project like developer artifacts:
 | `mcp-builder` | MCP server scaffolding for external integrations (vendored, Apache-2.0; eval script needs `anthropic` SDK) |
 | `code-reviewer` | PR rubrics + 13-language gout + 3 stdlib analyzers (vendored, MIT; complements builtin review flow) |
 | `skill-security-auditor` | Pre-install skill supply-chain gate, stdlib-only (vendored, MIT; WARNs on message-strings are noise — review, don't auto-block) |
-| `superpowers:*` | Methodology skills via plugin (`writing-plans`, `brainstorming`, `using-git-worktrees`, …) — bootstrap injected Turn 1 |
 | `research` | Root-level wiki vault (SCHEMA/index/log, ingest/query/lint) — load for any wiki, knowledge-base, or notes task |
 | `opencode-delegate` | Delegate coding tasks to keyless OpenCode free models (background+poll, branch review) — load before handing off implementation |
 | `agents` | This file (ground rules, injected at session start) |
@@ -189,7 +185,7 @@ This prevents duplicate research and builds a persistent knowledge graph across 
 
 1. **Workspace Discovery on Turn 1**: survey `/opt/data/workspace`, check `mnemosyne_recall`, determine project boundaries, and set `EXECUTION_DIR`.
 2. **Anchor to EXECUTION_DIR**: all terminal commands, planning files, and edits must run strictly within `<EXECUTION_DIR>`. Never pollute workspace root.
-3. **Retrieve before reading**: Code intelligence first (`pai_code_intel(action="find_code")`, `pai_code_intel(action="trace_calls")`), raw files second.
+3. **Retrieve before reading**: search narrow with `grep`, then read only the files that match — never sweep a whole directory blindly.
 4. **Cite everything**: `path:line` relative to `<EXECUTION_DIR>`, skill names for native skills.
 5. **Propose before writing**: show the user what you will write and wait for confirmation.
 6. **Plan for complex tasks**: `task_plan.md` is non-negotiable for 3+ step work.
@@ -209,15 +205,17 @@ This prevents duplicate research and builds a persistent knowledge graph across 
 When you fetch this skill on Turn 1, **you are activating your full autonomous research mode**.
 The following capabilities are built directly into the pai-stack:
 
-### 🧠 TRI-BRAIN ARCHITECTURE — Three Brains, One Agent
+### 🧠 DUAL-BRAIN ARCHITECTURE — Two Brains, One Agent
 
 | Brain | Service | Primary Tools | What It Gives You |
 |---|---|---|---|
-| **Code Brain** | Code Intelligence (in-process, `pai` toolset) | `pai_code_intel(action="find_code")`, `pai_code_intel(action="trace_calls")`, `pai_code_intel(action="repo_map")`, `pai_code_intel(action="check_freshness")` | AST symbols, semantic search, call graphs, impact analysis, drift detection |
 | **Research Brain** | File Vault (`research/`) | `pai_notebook_ops` (10 actions) | Native Markdown vault: RFCs, papers, API docs, notes, grounded RAG (`ask_notebook`) |
 | **Memory Brain** | Mnemosyne (SQLite) | `mnemosyne_recall`, `mnemosyne_remember`, `mnemosyne_triple_*`, `mnemosyne_sleep` | Episodic memory, decisions, prior fixes, user preferences, knowledge graph triples |
 
-**YOUR JOB**: Synthesize across all three. Never use just one.
+Code intelligence was removed from pai-stack on 2026-10-04 and is replaced by a
+dedicated lightweight tool. Until that lands, locate code with `grep` + targeted reads.
+
+**YOUR JOB**: Synthesize across both brains. Never use just one.
 
 ### 🔗 SYMBOLIC RESEARCH ANCHORS — The Universal Glue
 
@@ -235,7 +233,7 @@ The following capabilities are built directly into the pai-stack:
   mnemosyne_triple_query(predicate="anchors_symbol", object="@symbol:path:Symbol")
   ```
   If results exist → read those notes first → avoid duplicate research.
-- **Native file vault**: Notes live in `research/` → automatically indexed by code intelligence → searchable via `pai_code_intel(action="find_code")`.
+- **Native file vault**: Notes live in `research/` → plain Markdown on the mounted workspace, searchable with `grep`.
 
 ### 🔬 EMPIRICAL LAB NOTEBOOK — Test, Don't Guess
 
@@ -301,10 +299,9 @@ After loading the `agents` skill, immediately:
 1. **skills_list()** — confirm `research` and other skills are available
 2. **Parallel: pai_docker_ops(list) + mnemosyne_recall("workspace projects structure boundaries")** — services + memory in one round-trip
 3. **Survey `/opt/data/workspace`** — find project boundaries, declare `EXECUTION_DIR`
-4. **pai_code_intel(action="repo_map")** — orient on code hubs
-5. **IFF research task OR `$RESEARCH_DIR/SCHEMA.md` exists**: `skill_view(name="research")`, then read SCHEMA.md + index.md + log.md tail-20 only (index-first, top-3 pages max, never bulk-read)
-6. **For deep research tasks**: additionally load `skill_view(name="autonomous-tech-learner")` for empirical probes and inquiry trees
-7. **Report**: EXECUTION_DIR, active services, ready tools, available skills, Kanban patterns
+4. **IFF research task OR `$RESEARCH_DIR/SCHEMA.md` exists**: `skill_view(name="research")`, then read SCHEMA.md + index.md + log.md tail-20 only (index-first, top-3 pages max, never bulk-read)
+5. **For deep research tasks**: additionally load `skill_view(name="autonomous-tech-learner")` for empirical probes and inquiry trees
+6. **Report**: EXECUTION_DIR, active services, ready tools, available skills, Kanban patterns
 
 ### 💡 KEY INSIGHTS FOR EFFECTIVE OPERATION
 
