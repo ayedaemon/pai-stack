@@ -37,19 +37,19 @@ C_RESET = "\033[0m"
 
 
 def log_ok(msg: str):
-    print(f"  {C_GREEN}✓{C_RESET} {msg}")
+    print(f"  {C_GREEN}✓{C_RESET} {msg}", flush=True)
 
 
 def log_info(msg: str):
-    print(f"  {C_CYAN}ℹ{C_RESET} {msg}")
+    print(f"  {C_CYAN}ℹ{C_RESET} {msg}", flush=True)
 
 
 def log_skip(msg: str):
-    print(f"  {C_DIM}○ {msg}{C_RESET}")
+    print(f"  {C_DIM}○ {msg}{C_RESET}", flush=True)
 
 
 def log_warn(msg: str):
-    print(f"  {C_YELLOW}⚠{C_RESET} {msg}")
+    print(f"  {C_YELLOW}⚠{C_RESET} {msg}", flush=True)
 
 
 def parse_env_file(path: Path) -> dict:
@@ -173,9 +173,9 @@ def extract_response_preview(data: Optional[dict]) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Providers: key in .env → list models → probe each → keep repliers.
-# `curated` doubles as the candidate set when a /models listing fails, and as
-# the allowlist filter for firehose endpoints (OpenRouter lists hundreds).
+# Providers: key in .env → list ALL models → probe each → keep repliers.
+# No curated allowlists — if a model is exhausted, it simply won't be listed
+# the next time the script runs.
 # ══════════════════════════════════════════════════════════════════════════════
 
 PROVIDERS = [
@@ -194,7 +194,6 @@ PROVIDERS = [
         "endpoint": "https://api.kilo.ai/api/gateway/models",
         "chat_base": "https://api.kilo.ai/api/gateway",
         "prefix": "kilo",
-        "curated": ["kilo-auto/free", "poolside/laguna-s-2.1:free", "stepfun/step-3.7-flash:free"],
     },
     {
         "id": "openrouter",
@@ -203,14 +202,6 @@ PROVIDERS = [
         "endpoint": "https://openrouter.ai/api/v1/models",
         "chat_base": "https://openrouter.ai/api/v1",
         "prefix": "openrouter",
-        "curated": [
-            "openai/gpt-4o-mini",
-            "anthropic/claude-3.5-sonnet",
-            "deepseek/deepseek-chat",
-            "deepseek/deepseek-r1",
-            "meta-llama/llama-3.3-70b-instruct",
-            "qwen/qwen-2.5-coder-32b-instruct",
-        ],
     },
     {
         "id": "mistral",
@@ -219,7 +210,6 @@ PROVIDERS = [
         "endpoint": "https://api.mistral.ai/v1/models",
         "chat_base": "https://api.mistral.ai/v1",
         "prefix": "mistral",
-        "curated": ["codestral-latest", "mistral-large-latest", "ministral-8b-latest"],
     },
     {
         "id": "groq",
@@ -228,7 +218,6 @@ PROVIDERS = [
         "endpoint": "https://api.groq.com/openai/v1/models",
         "chat_base": "https://api.groq.com/openai/v1",
         "prefix": "groq",
-        "curated": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "deepseek-r1-distill-llama-70b"],
     },
     {
         "id": "deepseek",
@@ -237,7 +226,6 @@ PROVIDERS = [
         "endpoint": "https://api.deepseek.com/models",
         "chat_base": "https://api.deepseek.com/v1",
         "prefix": "deepseek",
-        "curated": ["deepseek-chat", "deepseek-reasoner"],
     },
     {
         "id": "openai",
@@ -246,7 +234,6 @@ PROVIDERS = [
         "endpoint": "https://api.openai.com/v1/models",
         "chat_base": "https://api.openai.com/v1",
         "prefix": "openai",
-        "curated": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
     },
     {
         "id": "anthropic",
@@ -254,7 +241,6 @@ PROVIDERS = [
         "env_key": "ANTHROPIC_API_KEY",
         "endpoint": "https://api.anthropic.com/v1/models",
         "prefix": "anthropic",
-        "curated": ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
     },
     {
         "id": "gemini",
@@ -262,13 +248,20 @@ PROVIDERS = [
         "env_key": "GEMINI_API_KEY",
         "endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
         "prefix": "gemini",
-        "curated": ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+    },
+    {
+        "id": "zen",
+        "name": "OpenCode Zen",
+        "env_key": "",
+        "endpoint": "https://opencode.ai/zen/v1/models",
+        "chat_base": "https://opencode.ai/zen/v1",
+        "prefix": "zen",
     },
 ]
 
 
-def parse_listing(p_id: str, data: dict, curated: List[str]) -> List[str]:
-    """Extract candidate model ids from a /models response, applying volume filters."""
+def parse_listing(p_id: str, data: dict) -> List[str]:
+    """Extract all model ids from a /models response."""
     found_ids: List[str] = []
     if p_id == "gemini" and isinstance(data.get("models"), list):
         for m in data["models"]:
@@ -276,15 +269,6 @@ def parse_listing(p_id: str, data: dict, curated: List[str]) -> List[str]:
                 found_ids.append(m["name"].replace("models/", ""))
     elif isinstance(data.get("data"), list):
         found_ids = [m.get("id") for m in data["data"] if isinstance(m, dict) and m.get("id")]
-
-    if p_id == "kilo":
-        found_ids = [m for m in found_ids if m.startswith("kilo-auto/") or ":free" in m]
-    elif p_id == "openrouter":
-        curated_set = set(curated)
-        found_ids = [m for m in found_ids if m in curated_set or m.endswith(":free")][:10]
-    elif curated:
-        curated_set = set(curated)
-        found_ids = [m for m in found_ids if m in curated_set]
     return found_ids
 
 
@@ -293,6 +277,8 @@ def auth_headers(prov: dict, api_key: str) -> dict:
         return {"x-goog-api-key": api_key}
     if prov["id"] == "anthropic":
         return {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+    if prov["id"] == "zen":
+        return {}
     return {"Authorization": f"Bearer {api_key}"}
 
 
@@ -305,15 +291,15 @@ def probe_candidates(prov: dict, candidates: List[str], api_key: str) -> List[st
         return m_id, model_replies(prov, m_id, api_key)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        results = list(executor.map(check_model, candidates))
-
-    for m_id, response in results:
-        if response:
-            live.append(m_id)
-            preview = extract_response_preview(response)
-            print(f"    {C_GREEN}✓ {m_id}{C_RESET} → {C_DIM}{preview}{C_RESET}")
-        else:
-            print(f"    {C_DIM}○ {m_id} (no reply, dropped){C_RESET}")
+        futures = {executor.submit(check_model, m_id): m_id for m_id in candidates}
+        for future in concurrent.futures.as_completed(futures):
+            m_id, response = future.result()
+            if response:
+                live.append(m_id)
+                preview = extract_response_preview(response)
+                print(f"    {C_GREEN}✓ {m_id}{C_RESET} → {C_DIM}{preview}{C_RESET}", flush=True)
+            else:
+                print(f"    {C_DIM}○ {m_id} (no reply, dropped){C_RESET}", flush=True)
     return live
 
 
@@ -349,13 +335,12 @@ def discover_provider_models(prov: dict, env: dict) -> Tuple[bool, List[str]]:
     if prov.get("type") == "openai_compatible":
         return discover_primary(prov, env)
 
-    api_key = env.get(prov["env_key"], "").strip()
-    if not api_key or api_key == "not-needed":
+    api_key = env.get(prov["env_key"], "").strip() if prov.get("env_key") else ""
+    if prov.get("env_key") and (not api_key or api_key == "not-needed"):
         return False, []
 
-    curated = prov.get("curated", [])
     data = fetch_json(prov["endpoint"], headers=auth_headers(prov, api_key), timeout=6) or {}
-    candidates = parse_listing(prov["id"], data, curated) or list(curated)
+    candidates = parse_listing(prov["id"], data)
     if not candidates:
         return True, []
     return True, probe_candidates(prov, candidates, api_key)
@@ -448,6 +433,15 @@ def generate_litellm_config(
                     "      timeout: 1800",
                     "",
                 ])
+            elif p_id == "zen":
+                lines.extend([
+                    f"  - model_name: {alias}",
+                    "    litellm_params:",
+                    f"      model: openai/{clean}",
+                    "      api_base: https://opencode.ai/zen/v1",
+                    "      timeout: 1800",
+                    "",
+                ])
             else:
                 lines.extend([
                     f"  - model_name: {alias}",
@@ -515,7 +509,7 @@ def main():
     env_file = args.env if args.env.is_absolute() else (repo_root / args.env)
     output_file = args.output if args.output.is_absolute() else (repo_root / args.output)
 
-    print(f"\n{C_BOLD}pai-stack — Model Synchronizer{C_RESET}")
+    print(f"\n{C_BOLD}pai-stack — Model Synchronizer{C_RESET}", flush=True)
 
     env = parse_env_file(env_file)
     for k, v in os.environ.items():
@@ -538,7 +532,7 @@ def main():
     yaml_content = generate_litellm_config(discovered, env)
 
     if args.dry_run:
-        print(f"\n{C_BOLD}── Preview (Dry Run) ──{C_RESET}\n{yaml_content}")
+        print(f"\n{C_BOLD}── Preview (Dry Run) ──{C_RESET}\n{yaml_content}", flush=True)
         return
 
     # Backup & Write
@@ -549,11 +543,11 @@ def main():
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(yaml_content)
 
-    print()
+    print(flush=True)
     log_ok(f"Saved configuration to {output_file.relative_to(repo_root)}")
 
     restart_gateway(repo_root)
-    print()
+    print(flush=True)
 
 
 if __name__ == "__main__":
