@@ -24,7 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 # Terminal colors
 C_CYAN = "\033[36m"
@@ -364,86 +364,18 @@ def discover_provider_models(prov: dict, env: dict) -> Tuple[bool, List[str]]:
 def generate_litellm_config(
     discovered: Dict[str, List[str]],
     env: dict,
-    explicit_default: Optional[str] = None,
-) -> Tuple[str, str, List[str]]:
-    """Generate LiteLLM config.yaml string, returning (yaml, selected_default, fallbacks)."""
-    primary_models = discovered.get("primary", [])
-    primary_chat = primary_models
-
-    # Determine default model. User explicit first; live-cloud (kilo free) next; local primary last.
-    if explicit_default and explicit_default != "default":
-        selected_default = explicit_default
-        default_via_office2 = True
-    elif "kilo" in discovered and "kilo-auto/free" in discovered["kilo"]:
-        selected_default = "kilo/kilo-auto/free"
-        default_via_office2 = False
-    elif primary_chat:
-        selected_default = primary_chat[0]
-        default_via_office2 = True
-    else:
-        selected_default = "kilo/kilo-auto/free"
-        default_via_office2 = False
-
-    # Determine working fallbacks: live cloud FIRST, office2-local LAST by policy
-    # (2026-09-25: box offline; last-resort only, after all other providers exhaust).
-    fallbacks = []
-    # 1. Configured cloud fallbacks (independent live upstreams first)
-    if "kilo" in discovered and discovered["kilo"]:
-        fallbacks.append("kilo/kilo-auto/free")
-    if "openrouter" in discovered and discovered["openrouter"]:
-        # Reference a live-discovered group: a hardcoded id may not be emitted
-        # (dangling fallback), same pattern as groq below.
-        fallbacks.append(f"openrouter/{discovered['openrouter'][0]}")
-    if "mistral" in discovered and discovered["mistral"]:
-        fallbacks.append("mistral/codestral-latest")
-    if "groq" in discovered and discovered["groq"]:
-        fallbacks.append(f"groq/{discovered['groq'][0]}")
-    if "deepseek" in discovered and discovered["deepseek"]:
-        fallbacks.append("deepseek/deepseek-chat")
-    # 2. Secondary local chat models from primary provider — LAST (offline box
-    # must never head the chain; when the box is up these are still tried).
-    for sec_m in primary_chat[1:]:
-        clean_sec = sec_m.rstrip("/")
-        short = clean_sec.split("/")[-1] if "/" in clean_sec else clean_sec
-        if short and short not in fallbacks and sec_m not in fallbacks:
-            fallbacks.append(short)
-
-    # Build YAML
+) -> str:
+    """Generate LiteLLM config.yaml string with all discovered models as independent entries."""
     lines = [
         "# LiteLLM Proxy Configuration for pai-stack",
-        "# Centralized LLM gateway managing all model routing, fallbacks, and provider credentials.",
+        "# Centralized LLM gateway managing all model routing and provider credentials.",
         "# NOTE: routes use mistral/ provider mapping (not openai/) so reasoning params",
         "# are stripped pre-flight — see note at primary-models section below.",
         "",
         "model_list:",
-        "  # ── Primary Default Routing ───────────────────────────────────────────",
     ]
-    if default_via_office2:
-        lines.extend([
-            "  - model_name: default",
-            "    litellm_params:",
-            f"      model: mistral/{selected_default}",
-            "      api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL",
-            "      api_key: os.environ/OPENAI_COMPATIBLE_API_KEY",
-            "      timeout: 1800",
-            "      drop_params: true",
-            "",
-        ])
-    else:
-        lines.extend([
-            "  # Default points at Kilo Free to save local resources.",
-            "  # To override, set OPENAI_COMPATIBLE_MODEL in .env and re-run sync.",
-            "  - model_name: default",
-            "    litellm_params:",
-            "      model: mistral/kilo-auto/free",
-            "      api_base: https://api.kilo.ai/api/gateway",
-            "      api_key: os.environ/KILO_GATEWAY_API_KEY",
-            "      timeout: 1800",
-            "      drop_params: true",
-            "",
-        ])
 
-    seen = {"default"}
+    seen = set()
 
     # 1. Primary language models (clean short canonical names, no duplicates)
     # NOTE (2026-09-25): primary routes are mistral-mapped (not openai/) + drop_params
@@ -451,6 +383,7 @@ def generate_litellm_config(
     # `reasoning_effort` value, and strict OpenAI-compatible upstreams 400 on the pair.
     # The mistral provider spec excludes reasoning params so they are stripped pre-flight
     # (verified live: 200 + forced tool-call + SSE streaming).
+    primary_models = discovered.get("primary", [])
     primary_chat_unique = []
     for m_id in primary_models:
         clean_id = m_id.rstrip("/")
@@ -496,8 +429,6 @@ def generate_litellm_config(
             seen.add(alias)
 
             if p_id == "kilo":
-                # mistral-mapped + drop_params: strips reasoning params pre-flight
-                # (openai-mapped routes 400 on LiteLLM's synthesized nested object).
                 lines.extend([
                     f"  - model_name: {alias}",
                     "    litellm_params:",
@@ -527,22 +458,12 @@ def generate_litellm_config(
                     "",
                 ])
 
-    # Router Settings & Fallbacks
+    # Router Settings (no fallbacks — user switches models manually on failure)
     lines.extend([
-        "# ── Router & Fallback Settings ───────────────────────────────────────────",
+        "# ── Router Settings ─────────────────────────────────────────────────────",
         "router_settings:",
         "  timeout: 1800              # 30m request timeout for large models & deep reasoning",
         "  stream_timeout: 1800       # 30m chunk timeout for slow reasoning token streams",
-    ])
-    if fallbacks:
-        lines.append("  fallbacks:")
-        lines.append("    - default:")
-        for fb in fallbacks:
-            lines.append(f'        - "{fb}"')
-    else:
-        lines.append("  fallbacks: []")
-
-    lines.extend([
         "",
         "# ── General Settings ─────────────────────────────────────────────────────",
         "general_settings:",
@@ -551,7 +472,7 @@ def generate_litellm_config(
         "",
     ])
 
-    return "\n".join(lines), selected_default, fallbacks
+    return "\n".join(lines)
 
 
 def restart_gateway(repo_root: Path) -> bool:
@@ -614,14 +535,7 @@ def main():
         else:
             log_skip(f"{p_name:<26} (no key in .env, skipped)")
 
-    explicit_default = env.get("OPENAI_COMPATIBLE_MODEL", "").strip()
-    yaml_content, selected_default, fallbacks = generate_litellm_config(
-        discovered, env, explicit_default=explicit_default
-    )
-
-    print(f"\n  {C_BOLD}Active Primary Model:{C_RESET} {C_CYAN}{selected_default}{C_RESET}")
-    if fallbacks:
-        print(f"  {C_BOLD}Fallback Route:{C_RESET}       {C_DIM}{' → '.join(fallbacks)}{C_RESET}")
+    yaml_content = generate_litellm_config(discovered, env)
 
     if args.dry_run:
         print(f"\n{C_BOLD}── Preview (Dry Run) ──{C_RESET}\n{yaml_content}")
