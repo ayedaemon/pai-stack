@@ -17,9 +17,10 @@ RUN apt-get update && \
 # Install Mnemosyne memory provider and langfuse SDK
 RUN uv pip install --python /opt/hermes/.venv/bin/python mnemosyne-hermes langfuse
 
-# Install pai_tools backends: tree-sitter code intelligence + web extraction.
-# tree-sitter is pinned: pai_code_intel targets the 0.7.0 API exactly.
-RUN uv pip install --python /opt/hermes/.venv/bin/python "mcp-server-tree-sitter==0.7.0" "trafilatura>=2.0"
+# Install pai_tools backend: web extraction for pai_notebook_ops.
+# `pai_code_intel` (and its mcp-server-tree-sitter dep) was removed 2026-10-04 —
+# code intelligence is now provided by a dedicated lightweight tool.
+RUN uv pip install --python /opt/hermes/.venv/bin/python "trafilatura>=2.0"
 
 # Install Playwright (on-demand browser automation ONLY — Hermes uses it only when
 # the user explicitly asks; nothing auto-loads it). Upstream image already sets
@@ -70,9 +71,15 @@ RUN uv pip install --python /opt/hermes/.venv/bin/python langid
 COPY plugins/compressor /opt/hermes/plugins/compressor
 RUN chown -R 1000:1000 /opt/hermes/plugins/compressor
 
-# Install pai_tools plugin (native code-intel, research vault, ADR, docker ops)
+# Install pai_tools plugin (native research vault, ADR, docker ops, OpenDesign bridge)
 COPY plugins/pai_tools /opt/hermes/plugins/pai_tools
 RUN chown -R 1000:1000 /opt/hermes/plugins/pai_tools
+
+# Install pai_terrain_ops plugin (code intel via the optional `terrain` profile).
+# Its check_fn probes http://terrain:7878/healthz and hides the tool when that
+# service is not running, so it is safe to bake in unconditionally.
+COPY plugins/pai_terrain_ops /opt/hermes/plugins/pai_terrain_ops
+RUN chown -R 1000:1000 /opt/hermes/plugins/pai_terrain_ops
 
 # Install OpenCode v2 (pinned, keyless free-model delegation to Hermes projects)
 # Stock installer needs only tar+npm; --no-modify-path keeps shell configs untouched.

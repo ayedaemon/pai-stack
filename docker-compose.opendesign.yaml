@@ -8,12 +8,12 @@
 # - `profiles: ["design"]` keeps `make up` unaffected (opt-in only).
 # - Daemon state stays in named volume `open_design_data:/app/.od` (SQLite, config,
 #   artifacts index). Never bind-mount `.od` into the workspace — avoids SQLite
-#   lock contention with Hermes and keeps code-intel index clean.
+#   lock contention with Hermes.
 # - `${WORKSPACE_DIR}` (same var Hermes uses) is bind-mounted at `/opt/data/workspace:rw`
 #   (matches Hermes mount path exactly). In the OpenDesign UI use "Import folder" ->
 #   `/opt/data/workspace/<project>`; the daemon records it as an imported-folder
 #   project (`metadata.baseDir`), so generated files land as real files in the host
-#   workspace where Hermes code-intel sees them.
+#   workspace where Hermes sees them.
 # - Host macOS `opencode` (Mach-O/arm64) CANNOT be bind-mounted into this Alpine
 #   Linux container (exec-format error). Linux CLI bundling is Phase 2
 #   (Dockerfile installing linux opencode + libc6-compat, mirroring upstream

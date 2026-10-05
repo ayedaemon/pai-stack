@@ -50,7 +50,7 @@ Delegate complex research to specialized workers (configured in `hermes/config.y
 - Every evidence note → `@symbol:` anchors → `mnemosyne_triple_add`
 - L-ADRs reference validation probes from Phase 4
 - Synthesizer applies dialectical lens (COUNTERPOINT:)
-- **Native file vault**: Notes live in `research/` → automatically indexed by code intelligence → searchable via `pai_code_intel(action="find_code")`.
+- **Native file vault**: Notes live in `research/` → plain Markdown on the mounted workspace, searchable with `grep`.
 
 **When to use each mode:**
 | Task Type | Approach |
@@ -343,7 +343,8 @@ Each `@symbol:` anchor includes a content hash at decision time:
 - `@symbol:src/cache/redis_client.py:RedisClient#sha256:a1b2c3d4...`
 - `@symbol:src/cache/__init__.py:get_cache#sha256:e5f6g7h8...`
 
-On code changes, pai_code_intel can detect hash mismatches and flag ADRs for review.
+Symbol drift is detected by `pai_adr_ops(action="check_drift")`, which recomputes
+SHA-256 hashes against active workspace code.
 
 ## Validation Probes (Phase 4)
 - Probe: `redis-cache-latency-p99` — validates p99 < 5ms
@@ -358,14 +359,13 @@ On code changes, pai_code_intel can detect hash mismatches and flag ADRs for rev
 
 #### Symbol Hash Computation
 ```bash
-# Compute hash for a symbol (function, class, type)
-pai_code_intel(action="file_api", file_path="src/cache/redis_client.py") \
-  | sha256sum | cut -d' ' -f1
+# Extract a symbol's body and hash it
+sed -n '/class RedisClient/,/^class /p' src/cache/redis_client.py | sha256sum | cut -d' ' -f1
 # → a1b2c3d4e5f6...
 ```
 
 #### Drift Detection Workflow
-1. On `pai_code_intel(action="check_freshness")` or code change: recompute hashes for all symbols in ADRs
+1. On code change: recompute hashes for all symbols in ADRs
 2. If mismatch: flag ADR with `DRIFT_DETECTED` in `findings.md`
 3. Trigger review: re-run validation probes, update ADR or supersede
 

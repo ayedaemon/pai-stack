@@ -5,3 +5,12 @@ hermes-data/
 *.bak
 .planning/
 __pycache__/
+
+
+# Added by cargo
+
+/target
+
+# Terrain code-intelligence index — per-repo, regenerated on demand, not source.
+# Written only by the `terrain` container; see docs/terrain.md.
+.terrain/

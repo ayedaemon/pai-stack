@@ -41,7 +41,7 @@ Layer 1 raw = immutable. Layer 2 wiki = agent-owned. Layer 3 SCHEMA = rules.
 1. Read `SCHEMA.md` (domain, conventions, tags).
 2. Read `index.md` (what exists).
 3. Read last 20 lines of `log.md` (recent activity).
-4. For 100+ pages, `pai_code_intel(find_code)` / `search` the topic before creating anything.
+4. For 100+ pages, `pai_notebook_ops(action="search")` the topic before creating anything.
 
 Skipping this causes duplicates and missed cross-refs.
 
@@ -65,7 +65,7 @@ Skipping this causes duplicates and missed cross-refs.
 ## Ingest (URL, file, paste)
 
 1. Capture raw → `raw/<articles|papers|...>/<slug>.md` with frontmatter. Re-ingest: recompute sha, skip if same, flag drift if different. Never modify `raw/` afterwards.
-2. Check existing: `index.md` + `pai_notebook_ops(search)` + `pai_code_intel(find_code)` for mentioned entities.
+2. Check existing: `index.md` + `pai_notebook_ops(action="search")` for mentioned entities.
 3. Write/update Layer-2 pages per thresholds. Cross-ref ≥2 `[[wikilinks]]` (both directions). Tags from taxonomy. Append `^[raw/...]` provenance on 3+-source syntheses. Set `confidence` honestly.
 4. Update `index.md` (alphabetical, count, date) + append `log.md` (`ingest | Title — files created/updated`).
 5. Report files changed. If 10+ pages touched, confirm scope with user first.
@@ -75,7 +75,7 @@ Tool mapping: `add_source_url`/`add_source_file` → raw capture; `add_note` →
 
 ## Query
 
-1. `index.md` → relevant pages (+ `search_files`/code_intel for 100+ pages).
+1. `index.md` → relevant pages (+ `pai_notebook_ops(action="search")` for 100+ pages).
 2. Read top-3 pages max (never bulk-read).
 3. Synthesize with citations (`[[page]]`, `@symbol:` for code).
 4. File back substantial novel synthesis to `queries/` or `comparisons/` (skip trivial lookups).
@@ -87,7 +87,7 @@ Check and report grouped by severity (broken links > orphans > drift > contested
 
 ## Hermes Integration
 
-- Vault is indexed by code intelligence — new pages searchable after `pai_code_intel(check_freshness)`.
+- Vault is plain Markdown on the mounted workspace — new pages are immediately searchable with `grep`.
 - Planning files (`task_plan/findings/progress.md`) stay in `<EXECUTION_DIR>/.planning/`; research conclusions graduate to wiki + Living ADRs (`.planning/research/ADR-XXX.md` via `pai_adr_ops`).
 - Probes: `/opt/data/probes/<slug>/` scripts; results ingested as `EVIDENCE:` notes with `@symbol:` anchors.
 - Turn 1: load this skill only when research task or `SCHEMA.md` exists; orient reads are SCHEMA + index + log-tail-20 only.

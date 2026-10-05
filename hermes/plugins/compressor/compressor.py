@@ -32,7 +32,7 @@ DEDUP_WINDOW = 10
 
 # ── Tool output patterns ─────────────────────────────────────────────────────
 
-TOOL_OUTPUT_START = re.compile(r'^\[(terminal|file|search|docker|notebook|code_intel)\]', re.IGNORECASE)
+TOOL_OUTPUT_START = re.compile(r'^\[(terminal|file|search|docker|notebook)\]', re.IGNORECASE)
 TOOL_OUTPUT_ERROR = re.compile(r'(error|failed|exception|traceback)', re.IGNORECASE)
 
 

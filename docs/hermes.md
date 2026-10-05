@@ -11,7 +11,7 @@ You are operating inside the pai-stack Docker Compose environment. Execute your 
 
 1. Read ground rules: skill_view(name='agents'), then skills_list().
 2. Parallel: pai_docker_ops(action='list') + mnemosyne_recall(query='workspace projects structure boundaries').
-3. List /opt/data/workspace and run pai_code_intel(action="repo_map") to declare your EXECUTION_DIR.
+3. List /opt/data/workspace and declare your EXECUTION_DIR from root markers.
 4. IFF research task OR $RESEARCH_DIR/SCHEMA.md exists: skill_view(name='research'), then read SCHEMA.md + index.md + log.md tail-20 only.
 5. Report EXECUTION_DIR, active services, ready tools, available skills.
 ```
@@ -22,17 +22,20 @@ What this accomplishes: pins Hermes to one `EXECUTION_DIR` (never treat the mult
 
 | Tool | Purpose | Actions |
 |---|---|---|
-| `pai_code_intel` | Symbols, call graphs, impact analysis — use **before** reading raw files | `find_code`, `file_api`, `trace_calls`, `find_all`, `repo_map`, `check_freshness` |
 | `pai_notebook_ops` | Research vault ops on `research/` | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 | `pai_adr_ops` | Living ADRs + symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 | `pai_docker_ops` | Manage pai-stack containers (audited to `/opt/hermes/data/logs/docker-ops.log`) | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
+| `pai_ops_design_ops` | OpenDesign visual generation / mockups bridge | (see `opendesign-integration` skill) |
 | `skill_view` / `skills_list` | Load / discover procedural skills | `name="<skill>"` |
+
+> `pai_code_intel` was removed 2026-10-04. A dedicated lightweight code intelligence
+> tool replaces it; until then use `grep` + targeted reads.
 
 ## Skills
 
 Load via `skill_view(name="<name>")` before working on an unknown stack. Files live in `./skills/`, mounted read-only.
 
-Routers/shims: `stack-discovery`, `python`, `docker`, `react`, `nodejs`, `sql`, `planning`, `gitops`, `code-intel`, `research`, `opencode-delegate`, `agents`. Vendored depth: `vercel-react-best-practices`, `vercel-composition-patterns`, `frontend-design`, `supabase-postgres-best-practices`, `senior-backend`, `docker-development`, `web-design-guidelines`, `webapp-testing`, `mcp-builder`, `code-reviewer`, `skill-security-auditor`.
+Routers/shims: `stack-discovery`, `python`, `docker`, `react`, `nodejs`, `sql`, `planning`, `gitops`, `research`, `opencode-delegate`, `agents`. Vendored depth: `vercel-react-best-practices`, `vercel-composition-patterns`, `frontend-design`, `supabase-postgres-best-practices`, `senior-backend`, `docker-development`, `web-design-guidelines`, `webapp-testing`, `mcp-builder`, `code-reviewer`, `skill-security-auditor`.
 
 ## Memory (Mnemosyne)
 

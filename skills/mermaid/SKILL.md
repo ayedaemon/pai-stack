@@ -271,7 +271,7 @@ docs/
 | ADR-embedded diagram | Inline in `<EXECUTION_DIR>/.planning/research/ADR-XXX.md` |
 | Scratch / draft diagram | `<EXECUTION_DIR>/.planning/<date-slug>/diagram-draft.md` |
 
-**Rule:** never create a new file without first checking whether an existing file already contains a diagram for the same scope. Run `pai_code_intel(action="find_code", query="mermaid diagram <scope>")` first.
+**Rule:** never create a new file without first checking whether an existing file already contains a diagram for the same scope. Grep for `mermaid` under `docs/` and `<EXECUTION_DIR>/.planning/` first.
 
 ---
 

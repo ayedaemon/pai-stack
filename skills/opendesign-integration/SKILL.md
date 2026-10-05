@@ -67,7 +67,7 @@ When Hermes needs OpenDesign to generate something:
 1. **Hermes designs** — writes spec to `.planning/<slug>/design.md`
 2. **Hermes triggers** — `pai_ops_design_ops(action="create_project", name="<slug>")`
 3. **OpenDesign generates** — files land in `/opt/data/workspace/<project>`
-4. **Hermes reviews** — code_intel indexes the new files, code-reviewer checks quality
+4. **Hermes reviews** — code-reviewer checks the new files for quality
 5. **Hermes iterates** — if changes needed, update spec and re-trigger
 
 ---
@@ -79,7 +79,6 @@ When Hermes needs OpenDesign to generate something:
 | `full-stack-workflow` | Orchestrates the overall design → implement → review flow |
 | `system-design` | Produces the spec that OpenDesign consumes |
 | `code-reviewer` | Reviews OpenDesign output |
-| `pai_code_intel` | Indexes OpenDesign-generated files |
 | `ponytail` | Keeps OpenDesign prompts minimal |
 
 ---

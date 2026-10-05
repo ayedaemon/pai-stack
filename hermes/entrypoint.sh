@@ -113,7 +113,12 @@ fi
 
 export HERMES_CONFIG=/opt/hermes/data/hermes-config.yaml
 
-# Ensure all created files/plugins are owned by the correct user before dropping privileges
+# Own the volume by the HOST uid/gid (Makefile: UID/GID = id -u/id -g) so files
+# hermes creates land on the host as the host user instead of as root.
+# This is NOT a privilege drop: the gateway stays uid 0 (verified via
+# /proc/1/status -> "Uid: 0 0 0 0"), which is precisely what reaches the
+# root:root docker socket. Contrast dsh, which runs uid 1000 and therefore
+# needs the DOCKER_GID / etc-group machinery in dsh/Dockerfile.
 chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" /opt/hermes/data 2>/dev/null || true
 
 exec /opt/hermes/docker/entrypoint-dispatch.sh "$@"

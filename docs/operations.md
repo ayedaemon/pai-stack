@@ -14,6 +14,7 @@
 | `make config` | Validate resolved compose |
 | `make clean` | Stop + remove volumes (**destroys hermes state**) |
 | `make design-up` / `make design-down` / `make design-logs` / `make design-config` / `make design-build` / `make design-perms` / `make design-import d=/workspace/<dir> [n=<name>]` | OpenDesign ([opendesign.md](opendesign.md)) |
+| `make dsh-up` / `make dsh-down` / `make dsh-logs` / `make dsh-config` / `make dsh-build` / `make dsh-perms` / `make dsh-password` | DSH agent ([dsh.md](dsh.md)) |
 
 UID/GID auto-detect (`id -u` / `id -g`) keeps bind-mounted files owned by you. Override per-invocation: `make up UID=1000 GID=1000`.
 
@@ -30,6 +31,7 @@ UID/GID auto-detect (`id -u` / `id -g`) keeps bind-mounted files owned by you. O
 | `RESEARCH_SUBDIR` | Vault subdir (default `research`) |
 | `TELEGRAM_*` | Bot token + numeric-ID allowlists; empty = disabled; restart hermes after change |
 | `OPEN_DESIGN_IMAGE`, `OPEN_DESIGN_PORT`, `OD_API_TOKEN` | Design profile (see [opendesign.md](opendesign.md)) |
+| `DSH_IMAGE`, `DSH_PORT`, `DSH_BIND_IP`, `DEEPSEEK_API_KEY`, `DSH_ADMIN_PASSWORD`, `DSH_SETUP_REMOTE`, `DSH_TRUSTED_HOSTS` | DSH profile (see [dsh.md](dsh.md)) |
 
 Template with generation hints: [.env.example](../.env.example)
 
@@ -38,6 +40,7 @@ Template with generation hints: [.env.example](../.env.example)
 - Hermes UI: http://localhost:9119
 - LLM Gateway: http://localhost:4000 (`/health/liveliness`)
 - OpenDesign (when up): http://localhost:7456
+- DSH (when up): http://localhost:9229
 
 ## Repo layout
 
@@ -52,3 +55,5 @@ Template with generation hints: [.env.example](../.env.example)
 | `skills/agents/SKILL.md` | Ground rules injected at session start |
 | `llm-gateway/config.yaml` + `scripts/sync-models.py` | Routes + model sync |
 | `opendesign/Dockerfile` | Local open-design build |
+| `docker-compose.dsh.yaml` | DSH profile override |
+| `dsh/Dockerfile` | Local dsh build (bundled mnemon CLI) |

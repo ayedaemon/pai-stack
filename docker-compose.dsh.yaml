@@ -1,0 +1,193 @@
+# pai-stack — DSH optional override (DeepSeek Harness agent).
+# Usage:
+#   make dsh-up        # start dsh (profile: dsh) alongside core stack
+#   make dsh-config     # validate merged compose configuration
+#   make dsh-password   # print the one-time first-boot admin password
+#   make dsh-down       # stop dsh only (workspace + volumes untouched)
+#
+# Design decisions:
+# - `profiles: ["dsh"]` keeps `make up` unaffected (opt-in only).
+# - Image: built locally as pai-stack-dsh:latest (upstream base + Mnemon CLI
+#   for dsh-mnemon; see ./dsh/Dockerfile). Set DSH_IMAGE to run stock upstream
+#   (memory plugin then has no `mnemon` binary). Pin the base via
+#   --build-arg DSH_BASE=ghcr.io/steven-stack-s/dsh-docker-server:<ver|digest>.
+# - Program + data stay in named volumes `dsh_programs:/opt/dsh` and
+#   `dsh_data:/data/dsh`. Never bind-mount either into the workspace — avoids
+#   SQLite lock contention with Hermes.
+# - `${WORKSPACE_DIR}` (same var Hermes uses) is bind-mounted at
+#   `/opt/data/workspace:rw` (matches Hermes mount path exactly). DSH sessions
+#   operate directly on it; generated files land as real files in the host
+#   workspace where Hermes sees them.
+# - Models: DSH points at llm-gateway:4000 (same proxy Hermes uses).
+#   DEEPSEEK_API_KEY mirrors OPENAI_COMPATIBLE_API_KEY; DEEPSEEK_BASE_URL is
+#   hardcoded to the gateway service (same compose network). `depends_on`
+#   healthy gateway so DSH never boots against a dead proxy.
+# - NO `user:` line (deliberate divergence from open-design): the entrypoint
+#   must start as root to chown the volumes, then setpriv-drops to
+#   USER_UID:USER_GID. Setting `user:` would break first-boot init.
+#   Ownership matches host via UID/GID (same Makefile auto-detect as Hermes).
+# - HOME=/opt/data/workspace: pnpm needs a writable HOME (not /root), and the
+#   session picker defaults to $HOME — workspace root shows projects at once.
+# - Auth: dsh-remote plugin is ON by default (DSH_SETUP_REMOTE). First boot
+#   creates `admin` + random 16-char password, printed ONCE to the logs
+#   (`make dsh-password`). Set DSH_ADMIN_PASSWORD to choose your own.
+#   Default bind is 127.0.0.1 (loopback only).
+# - Telegram: same TELEGRAM_BOT_TOKEN as Hermes, notifications only (no
+#   long-running conversations — one token = one long-polling consumer).
+#   Split to a dedicated token if update conflicts appear.
+# - Memory: dsh-mnemon plugin (installed post-boot); `mnemon` binary is baked
+#   into the image (see ./dsh/Dockerfile) since the root FS is read-only.
+# - Skills: ./skills mounted read-only at /data/dsh/.agents/skills, which is
+#   DSH_AGENTS_HOME/skills (see below). Path verified: 30/31 skills parse.
+#   `agents` is the one that does not — it has no YAML frontmatter (it is an
+#   AGENTS.md-style doc for Hermes' always-on injection, not a DSH skill), so
+#   dsh-skill-filesystem ignores it. Harmless; add frontmatter if you ever want
+#   it loadable in DSH.
+# - Docker socket: mounted read-only, exactly like hermes, so DSH agents can
+#   manage pai-stack's own containers and run isolated compose clusters for
+#   project stacks (`docker compose -p <project>` — see the `docker` skill).
+#   DELIBERATE, and the one grant here that is not containment: the docker
+#   API is root-equivalent on the host, so anything reaching this socket can
+#   start a container that bind-mounts / and reads it. The blast radius equals
+#   the host's. It was previously documented as a blocker (option 1 of 3 in
+#   docs/dsh.md) and is now accepted so DSH agents are not the only blind spot.
+#   It stays scoped to pai-stack's own cluster + opt-in project stacks; the
+#   `docker` skill's "never add a socket mount to project stacks" rule is about
+#   third-party stacks, and still applies there.
+#   Access needs `group_add: [DOCKER_GID]` because dsh is uid 1000 while hermes
+#   is root — see the Makefile's auto-detect. Removing this mount reverts dsh
+#   to socket-less; nothing else in this file depends on it.
+# - Memory: uncapped on purpose (no mem_limit default in this override —
+#   set MEM_LIMIT if the host is constrained). pids_limit stays.
+
+services:
+  dsh:
+    build:
+      context: ./dsh
+      args:
+        # Baked into /etc/group so the node user belongs to the socket's group.
+        # Needed in addition to `group_add` below, not instead of it: the base
+        # entrypoint ends with `setpriv --reuid --regid --init-groups`, and
+        # initgroups(3) REPLACES the supplementary group list with whatever
+        # /etc/group says. Docker's group_add would be silently discarded, and
+        # the read-only root FS leaves no runtime way to fix it up.
+        # The Makefile exports DOCKER_GID from `stat -c %g /var/run/docker.sock`;
+        # set it in .env for a non-standard socket.
+        DOCKER_GID: ${DOCKER_GID:-999}
+    image: ${DSH_IMAGE:-pai-stack-dsh:latest}
+    container_name: dsh
+    restart: unless-stopped
+    profiles:
+      - dsh
+    depends_on:
+      llm-gateway:
+        condition: service_healthy
+    environment:
+      DSH_HOME: /data/dsh
+      HOME: /opt/data/workspace
+      # Skills root. dsh-skill-filesystem resolves its user-agents root as
+      #   $DSH_AGENTS_HOME/skills  ??  $HOME/.agents/skills
+      # HOME is /opt/data/workspace (pnpm needs a writable HOME), which would
+      # otherwise scan /opt/data/workspace/.agents/skills — an empty path that
+      # does not exist. Without this var the ./skills bind mount below is
+      # invisible and the catalog comes back empty (verified: every
+      # `skill` call returned "unknown or no longer available").
+      # Points at the mount target, not the host path; do not add a /skills
+      # suffix — the plugin appends it.
+      DSH_AGENTS_HOME: /data/dsh/.agents
+      # Fixed to the image's `node` user (deliberate divergence from the
+      # host-UID pattern): the entrypoint's setpriv drop requires a
+      # passwd-resolvable uid, and anything else crash-loops the container
+      # (verified: host uid 502 → `setpriv: --[re]gid requires ...`, exit 1).
+      # On Docker Desktop file sharing, workspace writes land correctly
+      # regardless of the container uid.
+      USER_UID: 1000
+      USER_GID: 1000
+      NODE_OPTIONS: --max-old-space-size=${NODE_MAX_OLD_SPACE:-1024}
+      TZ: ${TZ:-Asia/Shanghai}
+      NPM_CONFIG_CACHE: /opt/dsh/.npm-cache
+      NARB_DISABLE_NATIVE_CACHE: 1
+      TMPDIR: /data/dsh/tmp
+      # Toolchain caches (python3+uv, go, rust/cargo — installed into the image
+      # by ./dsh/Dockerfile). Each of these would otherwise default under $HOME,
+      # which is the /opt/data/workspace bind mount — that would scatter build
+      # artifacts into the shared host workspace that Hermes also reads. They go
+      # on the dsh_data volume instead, which the entrypoint chowns to the
+      # runtime uid on every boot. The toolchains themselves stay read-only in
+      # the image under /usr/local; only mutable state lands here. Each
+      # directory is created on first use by the tool that owns it.
+      GOCACHE: /data/dsh/toolchains/go/build
+      GOMODCACHE: /data/dsh/toolchains/go/mod
+      GOPATH: /data/dsh/toolchains/go/path
+      CARGO_HOME: /data/dsh/toolchains/cargo
+      UV_CACHE_DIR: /data/dsh/toolchains/uv/cache
+      UV_PYTHON_INSTALL_DIR: /data/dsh/toolchains/uv/python
+      UV_TOOL_DIR: /data/dsh/toolchains/uv/tools
+      UV_TOOL_BIN_DIR: /data/dsh/toolchains/uv/bin
+      PIP_CACHE_DIR: /data/dsh/toolchains/pip
+      # The uv cache is on /data/dsh while project venvs are created in the
+      # workspace bind mount — different devices, so hardlinking is impossible.
+      UV_LINK_MODE: copy
+      # Where the docker CLI keeps its config/context state. HOME is the
+      # /opt/data/workspace bind mount, so the default ~/.docker would
+      # scatter a .docker/ dir into the shared host workspace Hermes reads.
+      DOCKER_CONFIG: /data/dsh/.docker
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?Set DEEPSEEK_API_KEY in .env (mirrors OPENAI_COMPATIBLE_API_KEY)}
+      DEEPSEEK_BASE_URL: http://llm-gateway:4000/v1
+      DSH_TRUSTED_HOSTS: ${DSH_TRUSTED_HOSTS:-}
+      DSH_SETUP_REMOTE: ${DSH_SETUP_REMOTE:-on}
+      DSH_DEFAULT_ADMIN_USER: ${DSH_DEFAULT_ADMIN_USER:-admin}
+      DSH_ADMIN_PASSWORD: ${DSH_ADMIN_PASSWORD:-}
+      DSH_TELEGRAM_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-not-needed}
+      OPENAI_BASE_URL: http://llm-gateway:4000/v1
+    ports:
+      - "${DSH_BIND_IP:-127.0.0.1}:${DSH_PORT:-9229}:3080"
+    volumes:
+      - dsh_programs:/opt/dsh
+      - dsh_data:/data/dsh
+      # Docker socket — mirrors hermes (docker-compose.yaml). `:ro` is
+      # cosmetic on a socket: it does not restrict the API, it only stops the
+      # mount being opened as a regular file. Reachability, not the mode, is
+      # what grants access.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - type: bind
+        source: ${WORKSPACE_DIR}
+        target: /opt/data/workspace
+        read_only: false
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./skills
+        target: /data/dsh/.agents/skills
+        read_only: true
+    # Belt-and-braces alongside the build arg above: covers a host whose socket
+    # GID was re-detected after the image was built, and any future entrypoint
+    # that stops passing --init-groups. Harmless when it duplicates.
+    group_add:
+      - "${DOCKER_GID:-999}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,exec
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(3081,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  dsh_programs:
+  dsh_data:
