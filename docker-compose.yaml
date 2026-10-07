@@ -44,20 +44,21 @@ services:
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
       - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
-      - TELEGRAM_GROUP_ALLOWED_USERS=${TELEGRAM_GROUP_ALLOWED_USERS:-}
-      - TELEGRAM_GROUP_ALLOWED_CHATS=${TELEGRAM_GROUP_ALLOWED_CHATS:-}
+      - TELEGRAM_BOT_TOKEN=${HERMES_TELEGRAM_BOT_TOKEN:-${TELEGRAM_BOT_TOKEN:-}}
+      - TELEGRAM_ALLOWED_USERS=${HERMES_TELEGRAM_ALLOWED_USERS:-${TELEGRAM_ALLOWED_USERS:-}}
+      - TELEGRAM_GROUP_ALLOWED_USERS=${HERMES_TELEGRAM_GROUP_ALLOWED_USERS:-${TELEGRAM_GROUP_ALLOWED_USERS:-}}
+      - TELEGRAM_GROUP_ALLOWED_CHATS=${HERMES_TELEGRAM_GROUP_ALLOWED_CHATS:-${TELEGRAM_GROUP_ALLOWED_CHATS:-}}
       # The terrain profile is opt-in and may not be running; the
       # client defaults to http://terrain:7878 and self-hides when
       # it cannot reach it, so this is explicit rather than required.
       - TERRAIN_URL=http://terrain:7878
     ports:
       # Loopback by default: nothing outside this host needs the agent
-      # dashboard or API. Set BIND_IP=0.0.0.0 to widen (e.g. you reach
+      # dashboard or API. Set HERMES_BIND_IP=0.0.0.0 to widen (e.g. you reach
       # the dashboard from another machine) — one variable, both ports.
-      - "${BIND_IP:-127.0.0.1}:9119:9119"
-      - "${BIND_IP:-127.0.0.1}:8642:8642"
+      # Falls back to legacy BIND_IP for pre-rename .env files.
+      - "${HERMES_BIND_IP:-${BIND_IP:-127.0.0.1}}:9119:9119"
+      - "${HERMES_BIND_IP:-${BIND_IP:-127.0.0.1}}:8642:8642"
     volumes:
       - hermes-data:/opt/hermes/data
       - ./hermes/config.yaml:/tmp/hermes-config.yaml.host:ro
@@ -90,8 +91,9 @@ services:
     ports:
       # Loopback by default. The gateway holds every provider key
       # in its config, so it should never be reachable off-host
-      # unless you deliberately widen it (BIND_IP=0.0.0.0).
-      - "${BIND_IP:-127.0.0.1}:4000:4000"
+      # unless you deliberately widen it (LLM_GATEWAY_BIND_IP=0.0.0.0,
+      # legacy BIND_IP as fallback).
+      - "${LLM_GATEWAY_BIND_IP:-${BIND_IP:-127.0.0.1}}:4000:4000"
     command: [ "--config", "/app/config.yaml", "--port", "4000" ]
     environment:
       - PORT=4000

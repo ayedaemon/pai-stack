@@ -321,7 +321,7 @@ def auth_headers(prov: dict, api_key: str) -> dict:
 
 
 def probe_candidates(prov: dict, candidates: List[str], api_key: str) -> List[str]:
-    """Keep only models that answer a tiny inference call."""
+    """Keep only models that answer a tiny inference call (sorted for determinism)."""
     log_info(f"Probing {len(candidates)} {prov['name']} models for liveness...")
     live = []
 
@@ -338,6 +338,9 @@ def probe_candidates(prov: dict, candidates: List[str], api_key: str) -> List[st
                 print(f"    {C_GREEN}✓ {m_id}{C_RESET} → {C_DIM}{preview}{C_RESET}", flush=True)
             else:
                 print(f"    {C_DIM}○ {m_id} (no reply, dropped){C_RESET}", flush=True)
+    # Sort here so per-provider results are deterministic regardless of
+    # thread completion order; generate_litellm_config re-sorts globally.
+    live.sort(key=lambda a: (a.casefold(), a))
     return live
 
 
@@ -390,21 +393,27 @@ def generate_litellm_config(
 ) -> Tuple[str, List[str]]:
     """Generate LiteLLM config.yaml string with all discovered models as independent entries.
 
-    Returns (config_text, ordered_aliases) — the alias list (emission order)
-    doubles as the `default` fallback chain and the DSH seed model list.
+    Returns (config_text, ordered_aliases) — the alias list is alphabetically
+    sorted (case-insensitive) and doubles as the `default` fallback chain and
+    the DSH seed model list, so every downstream consumer (gateway config,
+    DSH seed, future agents) inherits the same deterministic order.
     """
     lines = [
         "# LiteLLM Proxy Configuration for pai-stack",
         "# Centralized LLM gateway managing all model routing and provider credentials.",
         "# NOTE: routes use mistral/ provider mapping (not openai/) so reasoning params",
         "# are stripped pre-flight — see note at primary-models section below.",
+        "# NOTE: model entries are alphabetically sorted (case-insensitive) — do not",
+        "# hand-reorder; re-running scripts/sync-models.py regenerates this order.",
         "",
         "model_list:",
     ]
 
     seen = set()
-    ordered_aliases: List[str] = []
     alias_params: Dict[str, List[str]] = {}
+    alias_section: Dict[str, str] = {}
+
+    PRIMARY_SECTION = "  # ── Upstream Language Models (Clean Canonical Names) ──────────────────"
 
     # 1. Primary language models (clean short canonical names, no duplicates)
     # NOTE (2026-09-25): primary routes are mistral-mapped (not openai/) + drop_params
@@ -423,26 +432,18 @@ def generate_litellm_config(
             seen.add(short_name)
             primary_chat_unique.append((short_name, m_id))
 
-    if primary_chat_unique:
-        lines.append("  # ── Upstream Language Models (Clean Canonical Names) ──────────────────")
-        for short_name, m_id in primary_chat_unique:
-            block = [
-                f"      model: mistral/{m_id}",
-                "      api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL",
-                "      api_key: os.environ/OPENAI_COMPATIBLE_API_KEY",
-                "      timeout: 1800",
-                "      drop_params: true",
-            ]
-            alias_params.setdefault(short_name, block)
-            ordered_aliases.append(short_name)
-            lines.extend([
-                f"  - model_name: {short_name}",
-                "    litellm_params:",
-                *block,
-                "",
-            ])
+    for short_name, m_id in primary_chat_unique:
+        block = [
+            f"      model: mistral/{m_id}",
+            "      api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL",
+            "      api_key: os.environ/OPENAI_COMPATIBLE_API_KEY",
+            "      timeout: 1800",
+            "      drop_params: true",
+        ]
+        alias_params.setdefault(short_name, block)
+        alias_section.setdefault(short_name, PRIMARY_SECTION)
 
-    # 2. Other providers (clean prefixed names, no aliases)
+    # 2. Other providers (clean prefixed names, no aliases) — collect only.
     for prov in PROVIDERS:
         p_id = prov["id"]
         if p_id == "primary":
@@ -453,7 +454,7 @@ def generate_litellm_config(
 
         prefix = prov["prefix"]
         env_key = prov["env_key"]
-        lines.append(f"  # ── {prov['name']} ───────────────────────────────────────────────────")
+        section = f"  # ── {prov['name']} ───────────────────────────────────────────────────"
 
         strip_prefix = prov.get("strip_prefix")  # ids carrying their own vendor prefix (nvidia/, aion-labs/)
 
@@ -513,18 +514,34 @@ def generate_litellm_config(
                     "      timeout: 1800",
                 ]
             alias_params.setdefault(alias, block)
-            ordered_aliases.append(alias)
-            lines.extend([
-                f"  - model_name: {alias}",
-                "    litellm_params:",
-                *block,
-                "",
-            ])
+            alias_section.setdefault(alias, section)
 
-    # 3. Default alias — Hermes/DSH `model: default` must always resolve.
-    # Primary deployment mirrors the first live model; router fallbacks walk
-    # every remaining live model in order until one replies. Regenerated on
-    # every run so `default` never goes stale after `make sync`.
+    # 3. Single canonical order: alphabetically sorted (case-insensitive).
+    # Every downstream artifact (model_list emission, `default` fallbacks,
+    # DSH seed) iterates this list, so sorting here guarantees sorted output
+    # everywhere without each consumer re-sorting.
+    ordered_aliases: List[str] = sorted(alias_params.keys(), key=lambda a: (a.casefold(), a))
+
+    # Emit model_list in that sorted order; provider comment follows the entry
+    # (emitted once per contiguous provider run) for readability only.
+    last_section: Optional[str] = None
+    for alias in ordered_aliases:
+        section = alias_section.get(alias)
+        if section and section != last_section:
+            lines.append(section)
+            last_section = section
+        lines.extend([
+            f"  - model_name: {alias}",
+            "    litellm_params:",
+            *alias_params[alias],
+            "",
+        ])
+
+    # 4. Default alias — Hermes/DSH `model: default` must always resolve.
+    # Pinned last (outside the sorted order). Deployment mirrors the first
+    # sorted model; router fallbacks walk every remaining sorted model until
+    # one replies. Regenerated on every run so `default` never goes stale
+    # after `make sync`.
     if ordered_aliases:
         first = ordered_aliases[0]
         lines.append("  # ── Default (all live models via fallbacks) ──────────────────────────")
@@ -570,9 +587,11 @@ def generate_dsh_seed(ordered_aliases: List[str]) -> str:
     """Generate the dsh/settings.yaml seed snippet from the live gateway alias list.
 
     Single source of truth: every `make sync` regenerates this, so the DSH
-    model picker never drifts from the gateway. `default` (full fallback
-    chain) is always first, so DSH keeps working even if its live volume
-    copy is stale — run `make dsh-refresh` to push the full list.
+    model picker never drifts from the gateway. `ordered_aliases` arrives
+    alphabetically sorted from generate_litellm_config — emitted as-is so DSH
+    (and any future consumer) stays sorted without re-sorting. `default`
+    (full fallback chain) is always first, so DSH keeps working even if its
+    live volume copy is stale — run `make dsh-refresh` to push the full list.
     """
     lines = [
         "# GENERATED by scripts/sync-models.py — do not hand-edit.",

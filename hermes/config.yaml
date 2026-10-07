@@ -297,8 +297,9 @@ memory:
 
 # ── Platforms ────────────────────────────────────────────────────────────
 # Telegram credentials + allowlists come from env (see .env.example §6):
-# TELEGRAM_BOT_TOKEN (required), TELEGRAM_ALLOWED_USERS (DM+group IDs),
-# TELEGRAM_GROUP_ALLOWED_USERS (group senders only), TELEGRAM_GROUP_ALLOWED_CHATS.
+# HERMES_TELEGRAM_BOT_TOKEN (required, mapped to TELEGRAM_BOT_TOKEN in
+# compose), HERMES_TELEGRAM_ALLOWED_USERS (DM+group IDs),
+# HERMES_TELEGRAM_GROUP_ALLOWED_USERS (group senders only), HERMES_TELEGRAM_GROUP_ALLOWED_CHATS.
 platforms:
   telegram:
     enabled: true

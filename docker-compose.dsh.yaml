@@ -71,6 +71,10 @@ services:
         WITH_AUTOMATION_PLUGIN: ${DSH_WITH_AUTOMATION_PLUGIN:-true}
         AUTOMATION_PLUGIN_VERSION: ${DSH_AUTOMATION_PLUGIN_VERSION:-0.1.54}
         AUTOMATION_PLUGIN_NAME: ${DSH_AUTOMATION_PLUGIN_NAME:-@michengai/dsh-automation}
+        # First-party Telegram plugin (in-repo plugins/dsh-pai-telegram,
+        # joint tree built in final; no registry, no version to pin)
+        WITH_TELEGRAM_PLUGIN: ${DSH_WITH_TELEGRAM_PLUGIN:-true}
+        TELEGRAM_PLUGIN_NAME: dsh-pai-telegram
     image: ${DSH_IMAGE:-pai-stack-dsh:custom}
     container_name: dsh
     restart: unless-stopped
@@ -108,10 +112,19 @@ services:
       # Durable automation (cron that fires with no chat open). "false" skips
       # the seed install; the joint tree stays available in the image.
       DSH_WITH_AUTOMATION: ${DSH_WITH_AUTOMATION:-true}
+      # First-party Telegram poller (dsh-pai-telegram seed). "false" skips
+      # the seed install; the joint tree stays available in the image.
+      DSH_WITH_TELEGRAM: ${DSH_WITH_TELEGRAM:-true}
       DSH_DEFAULT_ADMIN_USER: ${DSH_DEFAULT_ADMIN_USER:-admin}
       DSH_ADMIN_PASSWORD: ${DSH_ADMIN_PASSWORD:-}
-      # Telegram (same token as Hermes, notifications only)
-      DSH_TELEGRAM_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # Telegram — separate DSH bot (see .env.example §9). DSH_TELEGRAM_TOKEN
+      # kept as alias for the planned first-party notifier; falls back to
+      # legacy shared TELEGRAM_BOT_TOKEN for pre-rename .env files.
+      DSH_TELEGRAM_TOKEN: ${DSH_TELEGRAM_BOT_TOKEN:-${TELEGRAM_BOT_TOKEN:-}}
+      DSH_TELEGRAM_BOT_TOKEN: ${DSH_TELEGRAM_BOT_TOKEN:-${TELEGRAM_BOT_TOKEN:-}}
+      DSH_TELEGRAM_ALLOWED_USERS: ${DSH_TELEGRAM_ALLOWED_USERS:-${TELEGRAM_ALLOWED_USERS:-}}
+      DSH_TELEGRAM_GROUP_ALLOWED_USERS: ${DSH_TELEGRAM_GROUP_ALLOWED_USERS:-${TELEGRAM_GROUP_ALLOWED_USERS:-}}
+      DSH_TELEGRAM_GROUP_ALLOWED_CHATS: ${DSH_TELEGRAM_GROUP_ALLOWED_CHATS:-${TELEGRAM_GROUP_ALLOWED_CHATS:-}}
       # Trusted hosts for LAN/DNS access (if DSH_BIND_IP=0.0.0.0)
       DSH_TRUSTED_HOSTS: ${DSH_TRUSTED_HOSTS:-}
       # Timezone

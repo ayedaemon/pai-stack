@@ -292,6 +292,10 @@ ARG MNEMON_PLUGIN_NAME=dsh-mnemon
 ARG WITH_AUTOMATION_PLUGIN=true
 ARG AUTOMATION_PLUGIN_VERSION=0.1.54
 ARG AUTOMATION_PLUGIN_NAME=@michengai/dsh-automation
+# First-party Telegram plugin (in-repo source at plugins/dsh-pai-telegram,
+# joint tree built here in final alongside automation)
+ARG WITH_TELEGRAM_PLUGIN=true
+ARG TELEGRAM_PLUGIN_NAME=dsh-pai-telegram
 
 # The /opt/dsh-remote-seed directory is already present from the remote-plugin-seed stage
 # (which is an ancestor of docker-cli). Verify it exists.
@@ -350,6 +354,47 @@ RUN set -eux; \
         mkdir -p /opt/dsh-auto-seed; \
     fi
 
+# ── First-party Telegram seed (dsh-pai-telegram, joint tree) ─────────────
+# In-repo source (no registry): extends the automation joint tree the same
+# way — copy + `pnpm add file:<src>`, `--ignore-scripts`, bundle-shape gate.
+# Built here in final so toolchain layers stay cached. Phase 3 scaffold is
+# host-only (inject:[]) so it cannot red-screen the web UI.
+COPY plugins/dsh-pai-telegram /tmp/dsh-pai-telegram-src
+RUN set -eux; \
+    if [ "${WITH_TELEGRAM_PLUGIN:-true}" = "true" ]; then \
+        echo "[seed] Installing dsh-pai-telegram (joint with auto seed) via pnpm file:"; \
+        staging=/opt/dsh-telegram-seed; \
+        tmp_profile=/tmp/telegram-seed-profile; \
+        pnpm_bin=/usr/local/bin/pnpm; \
+        if [ ! -x "${pnpm_bin}" ]; then \
+            echo "[seed] FATAL: ${pnpm_bin} not found" >&2; exit 1; \
+        fi; \
+        rm -rf "${staging}" "${tmp_profile}"; \
+        mkdir -p "${staging}" "${tmp_profile}"; \
+        cp -a /opt/dsh-auto-seed/. "${tmp_profile}/"; \
+        node -p "require('${tmp_profile}/package.json').name" | grep -q "seed" || exit 1; \
+        cd "${tmp_profile}"; \
+        export NPM_CONFIG_CACHE=/root/.npm; \
+        "${pnpm_bin}" add --store-dir /root/.pnpm-store --ignore-scripts "file:/tmp/dsh-pai-telegram-src"; \
+        cp -a "${tmp_profile}/node_modules" "${staging}/node_modules"; \
+        cp -a "${tmp_profile}/package.json" "${staging}/package.json"; \
+        for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
+            if [ -f "${tmp_profile}/${f}" ]; then cp -a "${tmp_profile}/${f}" "${staging}/${f}"; fi; \
+        done; \
+        test -f "${staging}/node_modules/${TELEGRAM_PLUGIN_NAME}/package.json"; \
+        test -f "${staging}/node_modules/${TELEGRAM_PLUGIN_NAME}/cordis.patch.yml"; \
+        test -f "${staging}/node_modules/${TELEGRAM_PLUGIN_NAME}/lib/index.js"; \
+        node -e "const p=require('${staging}/node_modules/${TELEGRAM_PLUGIN_NAME}/package.json'); if(!p.dsh||!p.dsh.bundle||!p.dsh.bundle.patch) throw new Error('not a DSH bundle: '+p.name); console.log('[seed] telegram plugin', p.name+'@'+p.version, 'bundle patch:', p.dsh.bundle.patch)"; \
+        node --check "${staging}/node_modules/${TELEGRAM_PLUGIN_NAME}/lib/index.js"; \
+        chmod -R a+rX "${staging}"; \
+        rm -rf "${tmp_profile}" /tmp/dsh-pai-telegram-src; \
+        echo '[seed] telegram plugin staged at /opt/dsh-telegram-seed (joint tree)'; \
+    else \
+        echo "[seed] WITH_TELEGRAM_PLUGIN=false, skipping telegram seed"; \
+        mkdir -p /opt/dsh-telegram-seed; \
+        rm -rf /tmp/dsh-pai-telegram-src; \
+    fi
+
 # Automation tasks (official experimental schedule bundle). Ships inside the
 # @deepseek-ai/dsh package itself — no seed copy needed, the entrypoint only
 # appends it to the web profile's bundles list. Gate fails the build if a
@@ -389,7 +434,9 @@ RUN set -eux; \
     # Also ensure memory plugin seed is readable
     if [ -d /opt/dsh-mnemon-seed ]; then chmod -R a+rX /opt/dsh-mnemon-seed; fi; \
     # Also ensure automation plugin seed is readable
-    if [ -d /opt/dsh-auto-seed ]; then chmod -R a+rX /opt/dsh-auto-seed; fi
+    if [ -d /opt/dsh-auto-seed ]; then chmod -R a+rX /opt/dsh-auto-seed; fi; \
+    # Also ensure telegram plugin seed is readable
+    if [ -d /opt/dsh-telegram-seed ]; then chmod -R a+rX /opt/dsh-telegram-seed; fi
 
 # Single canonical home: /data/dsh/home lives on the data volume, so it is
 # writable at runtime (the image layer is read_only:true). Session cwd comes

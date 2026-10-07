@@ -548,32 +548,29 @@ vendored.
 
 ## Plugins
 
-### Telegram Bot
+### Telegram bot (first-party `dsh-pai-telegram`, Phase 3 scaffold live)
 
-**`dsh-telegram-control`** (jackControls) — runs inside the DSH process, long-polling, zero runtime dependencies.
+No third-party Telegram plugin is installed. `dsh-telegram-notify` 0.2.0 was
+evaluated Oct-2026 and **removed**: its client entry hard-injects the
+`settingsScope` service, which DSH removed in the 0.1.7 settings migration
+(replaced by `settingsSchema` + `configForms`), so the web UI refused to boot
+(`1 entry did not activate / pending (waiting for service: settingsScope)`)
+while server-side sends kept working. `hi-wenw/dsh-telegram-channel` 0.3.5 was
+also rejected — peer-pinned to DSH `0.1.x`, installer blocks it on
+`0.2.0-rc.2`.
 
-| Feature | Detail |
-|---|---|
-| Remote control | Send messages as follow-ups to agent sessions; replies stream back to Telegram |
-| Commands | `/status`, `/agents`, `/agent <id>`, `/jobs`, `/kill <id>`, `/cancel`, `/watch`, `/unwatch`, `/chatid`, `/help` |
-| Approval on phone | Sandbox/permission requests arrive with Allow/Reject inline buttons |
-| Auth | Chat allowlist — unknown chats get an onboarding hint with their chat id |
-| Output | HTML-escaped, split at Telegram's 4096-char limit |
-
-Install:
-
-```bash
-dsh plugin --profile web add github:jackControls/dsh-telegram-control
-```
-
-Configure via env in `docker-compose.dsh.yaml`:
-
-```yaml
-environment:
-  DSH_TELEGRAM_TOKEN: ${TELEGRAM_BOT_TOKEN}
-```
-
-Reuses the same `TELEGRAM_BOT_TOKEN` as Hermes — notifications only, no long-running conversations (avoids long-polling fights over one token). Allowed chat IDs configured in DSH settings or via the plugin config. If update conflicts appear, split to a dedicated bot token.
+In-repo replacement `dsh/plugins/dsh-pai-telegram` (host-only, no client
+bundle) is seeded into the image joint tree and installed into the web
+profile on boot (gate `DSH_WITH_TELEGRAM=false` to skip; version bumps
+re-install via the entrypoint upgrade path). Phase 3 scope: long-poll
+`getUpdates` + allowlist + chat→session binding + `/workspace` + `/status`.
+Agent driving, live drafts, inline approvals/questions land in Phase 4.
+Separate DSH bot token per `.env.example` §9 (`DSH_TELEGRAM_BOT_TOKEN`,
+`DSH_TELEGRAM_ALLOWED_USERS` for owners; `DSH_TELEGRAM_GROUP_ALLOWED_USERS` /
+`DSH_TELEGRAM_GROUP_ALLOWED_CHATS` for group members in listed chats) — a
+send/receive client must not share Hermes's token (single `getUpdates`
+consumer). Groups are mention-gated (`/command`, `@mention`, or reply-to-bot);
+leave BotFather privacy default ON. Forum topics reply in-thread.
 
 ### Automation tasks (scheduled reminders)
 
@@ -748,7 +745,8 @@ Skills mount and tool-naming contract are settled; the plugin code is not writte
 - [x] Default workspace = `/opt/data/workspace` (2026-10-06) — registry pre-seed + native `workspace-controller` `documentsDirectory` override, both ensured by the entrypoint on every boot; survives `dsh-clean`. Replaced the retired `dsh-default-workspace` plugin. See [Default workspace](#default-workspace).
 - [ ] Mark `agents`, `autonomous-tech-learner` with `disable-model-invocation: true` — interim mitigation until Phase 2 ships (see "Porting Hermes Skills")
 - [ ] `dsh-pai-*` TypeScript plugins (notebook, adr, design, docker) — Phase 2. Tool names must mirror Hermes (`pai_notebook_ops` + `action` enum), package names keep the `dsh-` prefix — see [Naming Rule](#naming-rule-binding) and the required action sets. Clear the blocker first: `pai_docker_ops` needs a socket-mount/capability decision.
-- [x] `dsh-mnemon` memory plugin — baked into the image + entrypoint-seeded (no post-boot install). Tools surface as `mnemon_*` (no upstream rename support); shared skills keep `mnemosyne_*` for Hermes — memory-via-skills stays Hermes-only, DSH uses the workbench + direct calls. (`dsh-telegram-control` still pending post-boot install.)
+- [x] `dsh-mnemon` memory plugin — baked into the image + entrypoint-seeded (no post-boot install). Tools surface as `mnemon_*` (no upstream rename support); shared skills keep `mnemosyne_*` for Hermes — memory-via-skills stays Hermes-only, DSH uses the workbench + direct calls.
+- [ ] First-party Telegram notifier — third-party options evaluated and removed Oct-2026 (`dsh-telegram-notify`: dead `settingsScope` client inject; `dsh-telegram-channel`: `0.1.x`-pinned peers). See [Telegram notifications](#telegram-notifications-first-party-plugin-planned).
 
 ## What's NOT Ported
 
@@ -758,7 +756,7 @@ Skills mount and tool-naming contract are settled; the plugin code is not writte
 | Mnemosyne memory | `dsh-mnemon` plugin | Graph-backed; CLI baked into image at build |
 | Hermes dashboard | DSH Web UI | Different UI, host port 9229 |
 | Kanban swarms | DSH Agent Teams | Built into DSH (experimental) |
-| Telegram platform | `dsh-telegram-control` plugin | In-process long-polling bot; approval on phone |
+| Telegram platform | *(first-party plugin planned — no third-party install)* | Send-only notifier against the 0.2.x `settingsSchema`/`configForms` APIs |
 | Langfuse tracing | DSH telemetry | Built into DSH |
 | Compressor plugin | DSH compaction | Built into DSH |
 | prompt-optimizer | N/A | Hermes-specific |

@@ -275,6 +275,55 @@ fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
     fi
 fi
 
+# First-party Telegram seed (dsh-pai-telegram, joint tree with automation).
+# Same contract: installed wholesale (last copy wins on fresh volumes, all
+# blocks skip on steady state), manifest merge only ADDS the dep and bundle.
+# cordis.patch.yml is NEVER overwritten. Gate with DSH_WITH_TELEGRAM=false
+# to skip. Host-only plugin (inject:[]) — cannot red-screen the web UI.
+TELEGRAM_SEED_DIR="/opt/dsh-telegram-seed"
+TELEGRAM_SEED_PLUGIN="${TELEGRAM_SEED_DIR}/node_modules/dsh-pai-telegram/package.json"
+if [ "${DSH_WITH_TELEGRAM:-true}" = "true" ] && [ "${RESCUE_PROFILE}" = "web" ] && [ -f "${TELEGRAM_SEED_PLUGIN}" ]; then
+    TELEGRAM_SEED_VER="$(node -p "require('${TELEGRAM_SEED_PLUGIN}').version" 2>/dev/null || echo "")"
+    TELEGRAM_LIVE_VER="$(node -p "require('${WEB_DIR}/node_modules/dsh-pai-telegram/package.json').version" 2>/dev/null || echo "")"
+    if [ -n "${TELEGRAM_SEED_VER}" ] && [ "${TELEGRAM_SEED_VER}" = "${TELEGRAM_LIVE_VER}" ] \
+       && node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('dsh-pai-telegram'))) process.exit(1)" 2>/dev/null \
+       && [ -f "${WEB_DIR}/node_modules/dsh-pai-telegram/package.json" ]; then
+        elog "[entrypoint] telegram plugin seed already installed, skipping"
+    else
+        if [ -n "${TELEGRAM_LIVE_VER}" ] && [ "${TELEGRAM_SEED_VER}" != "${TELEGRAM_LIVE_VER}" ]; then
+            elog "[entrypoint] Upgrading telegram plugin ${TELEGRAM_LIVE_VER} -> ${TELEGRAM_SEED_VER}"
+        else
+            elog "[entrypoint] Installing telegram plugin seed to web profile"
+        fi
+        mkdir -p "${WEB_DIR}/node_modules"
+        CP="cp -r --no-preserve=mode,ownership,timestamps"
+        rm -rf "${WEB_DIR}/node_modules"
+        ${CP} "${TELEGRAM_SEED_DIR}/node_modules" "${WEB_DIR}/node_modules"
+        for f in pnpm-lock.yaml pnpm-workspace.yaml; do
+            if [ -f "${TELEGRAM_SEED_DIR}/${f}" ]; then
+                ${CP} "${TELEGRAM_SEED_DIR}/${f}" "${WEB_DIR}/${f}"
+            fi
+        done
+        TELEGRAM_SEED_VER="$(node -p "require('${TELEGRAM_SEED_PLUGIN}').version")"
+        node -e "
+const fs=require('fs');
+const pf='${WEB_DIR}/package.json';
+let p={};
+try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; }
+p.name='dsh-profile-web';
+if (p.private!==false) p.private=true;
+p.dependencies=Object.assign({},p.dependencies,{'dsh-pai-telegram':'${TELEGRAM_SEED_VER}'});
+p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{};
+const want=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app','dsh-pai-telegram'];
+const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[];
+for (const b of want) if(!have.includes(b)) have.push(b);
+p.dsh.profile.bundles=have;
+fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
+"
+        elog "[entrypoint] Telegram plugin seed installed"
+    fi
+fi
+
 # Automation tasks (official experimental schedule bundle). Manifest-only:
 # the bundle ships inside the image and resolves from the dsh installation,
 # so no node_modules copy is needed — selecting it in the plugin manager

@@ -16,7 +16,7 @@
 | `make all-up` / `make all-down` / `make all-clean` | Start / stop everything (core + design + dsh + terrain); `all-clean` wipes **all** volumes |
 | `make design-up` / `make design-down` / `make design-logs` / `make design-config` / `make design-build` / `make design-perms` / `make design-import d=/workspace/<dir> [n=<name>]` | OpenDesign ([opendesign.md](opendesign.md)) |
 | `make dsh-up` / `make dsh-down` / `make dsh-logs` / `make dsh-config` / `make dsh-build` / `make dsh-perms` / `make dsh-password` | DSH agent ([dsh.md](dsh.md)) |
-| `make pair-status` / `make pair-claim s=<slug> o=<id>` / `make pair-done s=<slug> v="<verdict>"` / `make pair-poke p=<hermes|dsh>` | Pair blackboard queue ([contract](../pair/AGENT_CONTRACT.md), `pair-*.md` queued tasks) |
+| `make pair-status` / `make pair-claim s=<slug> o=<id>` / `make pair-done s=<slug> v="<verdict>"` / `make pair-poke p=<hermes|dsh>` | Pair blackboard queue ([contract](../.pair/AGENT_CONTRACT.md), `pair-*.md` queued tasks) |
 
 UID/GID auto-detect (`id -u` / `id -g`) keeps bind-mounted files owned by you. Override per-invocation: `make up UID=1000 GID=1000`.
 
@@ -33,7 +33,8 @@ All profiles share one compose project: running a subset (e.g. `make up` while `
 | `LANGFUSE_*` | Optional tracing |
 | `HERMES_DASHBOARD_BASIC_AUTH_*`, `API_SERVER_KEY` | Dashboard login + API bearer (generate with `openssl rand -hex 32`) |
 | `RESEARCH_SUBDIR` | Vault subdir (default `research`) |
-| `TELEGRAM_*` | Bot token + numeric-ID allowlists; empty = disabled; restart hermes after change |
+| `HERMES_TELEGRAM_*` | Hermes bot token + numeric-ID allowlists; empty = disabled; restart hermes after change |
+| `DSH_TELEGRAM_*` | Separate DSH bot token + allowlists; empty = disabled |
 | `OPEN_DESIGN_IMAGE`, `OPEN_DESIGN_PORT`, `OD_API_TOKEN` | Design profile (see [opendesign.md](opendesign.md)) |
 | `DSH_IMAGE`, `DSH_PORT`, `DSH_BIND_IP`, `DEEPSEEK_API_KEY`, `DSH_ADMIN_PASSWORD`, `DSH_SETUP_REMOTE`, `DSH_TRUSTED_HOSTS` | DSH profile (see [dsh.md](dsh.md)) |
 

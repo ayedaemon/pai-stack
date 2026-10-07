@@ -8,9 +8,9 @@ hold the docker socket, so `docker exec <sibling> ...` works both ways.
 Transport: DETACHED docker exec + poll file. Foreground runs were tried and
 timed out (DSH headless needs >60s per run; the exec cap kills the client).
 So poke launches detached (`docker exec -d`), the peer writes stdout/stderr
-to pair/pokes/<peer>-<ts>.log, and the reporter polls that file:
+to .pair/pokes/<peer>-<ts>.log, and the reporter polls that file:
 
-    docker exec <peer-container> cat <repo>/pair/pokes/<peer>-<ts>.log
+    docker exec <peer-container> cat <repo>/.pair/pokes/<peer>-<ts>.log
 
 DSH one-shots always carry --patch scripts/pair/dsh-headless-gateway.yml
 (pins headless to the stack gateway; without it headless defaults to
@@ -18,15 +18,20 @@ deepseek-flash, which the gateway does not serve). Unknown peer ids are
 logged but not launched (their next poll picks the task up) — this keeps
 future drop-in agents working unchanged.
 """
+import os
 import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pairlib import find_pair  # noqa: E402
+
+PAIR = find_pair()
+ROOT = PAIR.parent
 REPO_CONTAINER = "/opt/data/workspace/github.com/ayedaemon/pai-stack"
-DEFAULT_PROMPT = "check pair/queue and claim runnable pending tasks"
+DEFAULT_PROMPT = "check .pair/queue and claim runnable pending tasks"
 # Container-view absolute path (valid inside hermes, dsh, and via docker exec
 # from the host — the repo sits at the same mount point in every container).
 OVERLAY = REPO_CONTAINER + "/scripts/pair/dsh-headless-gateway.yml"
@@ -49,8 +54,8 @@ def main(argv: list[str]) -> int:
     if peer in LAUNCH:
         container, base = LAUNCH[peer]
         logname = f"{peer}-{ts}.log"
-        logpath = f"{REPO_CONTAINER}/pair/pokes/{logname}"
-        inner = f"mkdir -p {REPO_CONTAINER}/pair/pokes && {base} {shlex.quote(prompt)} > {logpath} 2>&1"
+        logpath = f"{REPO_CONTAINER}/.pair/pokes/{logname}"
+        inner = f"mkdir -p {REPO_CONTAINER}/.pair/pokes && {base} {shlex.quote(prompt)} > {logpath} 2>&1"
         try:
             subprocess.run(["docker", "exec", "-d", container, "sh", "-c", inner],
                            timeout=60, check=False)
@@ -63,7 +68,7 @@ def main(argv: list[str]) -> int:
         print(f"poke: unknown peer '{peer}' — logged only, poll will deliver",
               file=sys.stderr)
     tslog = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
-    with (ROOT / "pair" / "log.md").open("a", encoding="utf-8") as f:
+    with (PAIR / "log.md").open("a", encoding="utf-8") as f:
         f.write(f"{tslog} | human | poke {peer} | - | {prompt}\n")
     return 0
 

@@ -4,6 +4,11 @@ hermes-data/
 *.log
 *.bak
 .planning/
+# Pair blackboard — shared-volume operational state (queue/claims/done/log),
+# hidden + untracked by design. The lock is os.rename on the shared mount,
+# not git. See .pair/AGENT_CONTRACT.md.
+.pair/
+.pair/telegram-groups.local.md
 __pycache__/
 .DS_Store
 
