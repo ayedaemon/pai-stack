@@ -13,10 +13,14 @@
 | `make build` | Rebuild images (`s=<service>`) |
 | `make config` | Validate resolved compose |
 | `make clean` | Stop + remove volumes (**destroys hermes state**) |
+| `make all-up` / `make all-down` / `make all-clean` | Start / stop everything (core + design + dsh + terrain); `all-clean` wipes **all** volumes |
 | `make design-up` / `make design-down` / `make design-logs` / `make design-config` / `make design-build` / `make design-perms` / `make design-import d=/workspace/<dir> [n=<name>]` | OpenDesign ([opendesign.md](opendesign.md)) |
 | `make dsh-up` / `make dsh-down` / `make dsh-logs` / `make dsh-config` / `make dsh-build` / `make dsh-perms` / `make dsh-password` | DSH agent ([dsh.md](dsh.md)) |
+| `make pair-status` / `make pair-claim s=<slug> o=<id>` / `make pair-done s=<slug> v="<verdict>"` / `make pair-poke p=<hermes|dsh>` | Pair blackboard queue ([contract](../pair/AGENT_CONTRACT.md), `pair-*.md` queued tasks) |
 
 UID/GID auto-detect (`id -u` / `id -g`) keeps bind-mounted files owned by you. Override per-invocation: `make up UID=1000 GID=1000`.
+
+All profiles share one compose project: running a subset (e.g. `make up` while `dsh` runs) prints a benign `Found orphan containers` warning — use `make all-down` / `make all-clean` for full-stack stops. Volumes created before the compose-label fix still print `not created by Docker Compose` until recreated (e.g. via `make all-clean`, which destroys state).
 
 ## `.env` keys
 

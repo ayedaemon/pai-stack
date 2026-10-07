@@ -6,6 +6,9 @@ services:
     image: pai-stack-hermes:latest
     container_name: hermes
     restart: unless-stopped
+    # Session cwd: agent shell/delegates boot here, same path DSH uses
+    # (dsh working_dir) — one shared root, no per-agent translation.
+    working_dir: /opt/data/workspace
     depends_on:
       llm-gateway:
         condition: service_healthy
@@ -103,6 +106,9 @@ services:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - OLLAMA_CLOUD_API_KEY=${OLLAMA_CLOUD_API_KEY:-}
+      - AION_LABS_API_KEY=${AION_LABS_API_KEY:-}
       - LITELLM_MASTER_KEY
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}

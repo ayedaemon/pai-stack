@@ -30,8 +30,9 @@ Optional profiles (start explicitly; `make up` never starts these):
 |---|---|---|---|
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | hermes | **read-write** (`research/` vault + project files) |
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | terrain | **read-write** (writes `.terrain/` into the repo it indexes) |
+| `$WORKSPACE_DIR` | `/opt/data/workspace` | dsh | **read-write** (same container path as hermes — shared filepaths) |
 
-Hermes mounts the workspace at `/opt/data/workspace`. Hermes writes helper scripts
+Hermes and dsh both mount the workspace at `/opt/data/workspace`. Hermes writes helper scripts
 and scratch tools to `/opt/data`.
 
 Terrain's *project registry* deliberately does **not** live on that mount — it sits
@@ -50,6 +51,7 @@ hermes ──→ [Mnemosyne: SQLite]  local persistent memory (working/episodic 
 hermes ──→ [pai_tools plugin]   native tools: pai_notebook_ops, pai_adr_ops, pai_docker_ops, pai_ops_design_ops
 hermes ──→ [pai_terrain_ops]    code intelligence → terrain:7878/call  (HTTP)
 dsh    ──→ [dsh-mcp-client]     code intelligence → terrain:7878/mcp   (MCP)
+hermes ←─→ [pair/ blackboard] ←─→ dsh   peer queue: pair/queue → claim.py → worktree → done.py; wake via poke.py (docker exec headless)
 hermes ──→ [skills: /opt/pai/skills]  native procedural skills via skills_list / skill_view
 hermes ──→ llm-gateway:4000     ONLY gateway for LLM completions & reasoning
 hermes (pai_notebook_ops) ──→ /opt/data/workspace/research/ (file vault)
@@ -134,9 +136,11 @@ Skills are markdown files in `./skills/`, mounted read-only into Hermes via `ski
 | `supabase-postgres-best-practices` / `senior-backend` / `docker-development` | Vendored Postgres/backend/Docker depth + scripts (MIT) |
 | `web-design-guidelines` / `webapp-testing` / `mcp-builder` | Vendored UI-audit / browser-testing / MCP scaffolding (MIT/Apache-2.0) |
 | `code-reviewer` / `skill-security-auditor` | Vendored review rubrics + skill supply-chain gate (MIT) |
+| `gstack` + 25 `gstack-*` | Vendored gstack workflow suite: router, office-hours/spec/autoplan, plan reviews (ceo/eng/design/devex), review/investigate/cso/health, ship/land-and-deploy/document-*, learn/retro/context-*, careful/freeze/guard (MIT; provenance in `skills/gstack/VENDORED.md`) |
 | `mermaid` | Mermaid diagram authoring guide (type selection, syntax safety, C4 abstraction protocol) |
 | `research` | Root-level wiki (SCHEMA/index/log, ingest/query/lint) — load for wiki/kb/notes tasks |
 | `opencode-delegate` | Keyless OpenCode delegation (background+poll, branch review) — load for implementation handoffs |
+| `pair-programming` | Peer shared-blackboard queue (poll/claim/worktree/done, poke wake-up) — load when `pair/` exists |
 | `agents` | Ground rules injected at session start |
 
 #### Tools (native `pai` toolset, `pai_tools` plugin)

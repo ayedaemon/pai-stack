@@ -124,6 +124,37 @@ make dsh-password   # http://127.0.0.1:9229/?token=<one-time-token>
 
 Later visits log in as `admin` + password. Password source of truth is `DSH_ADMIN_PASSWORD` in `.env` — it seeds the account DB on first boot and persists in the `dsh_data` volume (`auth/store.json`), so it survives restarts and rebuilds. Leave it empty for a random one-time password (printed once under `first-boot admin credentials`). To rotate: `make dsh-down`, delete `auth/store.json` from the `dsh_data` volume, set the new value, `make dsh-up`. Deliberately NOT baked into the image (image ENVs are readable via `docker inspect`).
 
+### Lifeboat (token gate instead of login)
+
+If the UI shows `dsh web authentication required; reopen the URL printed by dsh
+web` instead of the admin login, DSH is in its **lifeboat** profile (no
+third-party plugins, so the `dsh-remote` login is absent). Fresh volumes land
+here deterministically: `remote-setup` installs the auth plugin as root
+*after* the entrypoint's ownership pass, so the first `web` boot dies on
+`EACCES ... cordis.patch.yml` and lifeboat (which is sticky) takes over.
+`make dsh-up` runs `dsh-ensure-web` after start, which detects the lifeboat
+marker in the current boot's logs, re-aligns both volumes to `1000:1000` from
+outside, and restarts back to `web` — fully automatic, verified on a real
+`all-clean` + `all-up` cycle.
+
+### LAN / DNS access (e.g. Tailscale names)
+
+The port bind alone (`DSH_BIND_IP=0.0.0.0`) is not enough: DSH's `/api`
+browser-trust fence rejects any `Host` it doesn't know, so over another name
+the UI shell loads but every API call (login included) fails. Add each name
+you browse by to `.env`:
+
+```bash
+DSH_TRUSTED_HOSTS="office1:9229,office1,127.0.0.1:9229,127.0.0.1,localhost:9229,localhost"
+```
+
+Both bare-host and `host:port` forms are accepted; keep the loopback entries
+or localhost stops working too (setting the var replaces the implicit
+loopback trust). Recreate after changing (`docker compose ... up -d dsh` —
+env-only, no rebuild needed). Verified: identical status codes on `/` and
+`/api/*` via `127.0.0.1` and the DNS name, plus a working `POST /auth/login`
++ cookie round-trip over the DNS name.
+
 ## LLM Gateway
 
 DSH connects to the same `llm-gateway:4000` LiteLLM proxy that Hermes uses (manually verified). Model key and base URL reuse the existing gateway vars — no new provider credentials.
@@ -141,23 +172,58 @@ DEEPSEEK_BASE_URL=http://llm-gateway:4000/v1
 > Env vars alone do NOT connect DSH: the built-in `deepseek-official` route
 > is Anthropic-protocol pinned to `api.deepseek.com` and only reads the *key*
 > from env. The gateway needs a **custom provider** (`openai-completions`
-> protocol). Canonical copy: `dsh/settings.yaml` → `/data/dsh/settings.yaml`
-> in the volume (one-time per fresh volume; UI edits merge into the same file,
-> no restart needed):
+> protocol) on the `llm-pi-ai` profile entry. Canonical copy:
+> `dsh/settings.yaml` — a Cordis **profile-patch snippet** (entry-list
+> dialect), applied to `profiles/web/cordis.patch.yml`, the same file the
+> Models page writes to:
 >
 > ```yaml
-> llm-pi-ai:
->   providers:
->     pai-gateway:          # provider ID is permanent — sessions reference it
->       api: openai-completions
->       baseURL: http://llm-gateway:4000/v1
->       apiKeyEnv: OPENAI_API_KEY
->       models:
->         - id: default   # + every other gateway model ID, verbatim —
->                         # DSH never queries the endpoint, so unlisted IDs
->                         # are rejected with UNKNOWN_MODEL. After `make sync`
->                         # changes the gateway list, mirror it in dsh/settings.yaml.
+> - id: llm-pi-ai
+>   config:
+>     providers:
+>       pai-gateway:          # provider ID is permanent — sessions reference it
+>         api: openai-completions
+>         baseURL: http://llm-gateway:4000/v1
+>         apiKeyEnv: OPENAI_API_KEY
+>         models:
+>           - id: default   # full gateway fallback chain — always works
+>           - id: <every live gateway alias, verbatim>
 > ```
+> DSH never queries the endpoint, so unlisted IDs are rejected with
+> UNKNOWN_MODEL. The list is **generated, not hand-maintained**:
+> every `make sync` rebuilds `dsh/settings.yaml` from the same
+> liveness-probed alias list as `llm-gateway/config.yaml`
+> (`generate_dsh_seed`, `default` first). Push it into the running
+> volume with:
+>
+> ```bash
+> make dsh-refresh   # replace the llm-pi-ai entry live, restart only on change
+> ```
+>
+> The merge is surgical: only the seed-managed entries are replaced;
+> the managed auth block and all other entries are preserved byte-for-byte
+> (script: `scripts/refresh-dsh-models.py`). `default` keeps working even
+> between refreshes, because its fallback chain lives gateway-side.
+>
+> Gateway-only by default: the seed also carries three static overlays —
+> `llm-deepseek` and `llm-deepseek-account` set `disabled: true`, and
+> `agent-default-model` is pinned to `pai-gateway` / `default`. A user-patch
+> row addresses a base row by id with last-write-wins, so the native
+> `deepseek-official` provider never registers and the picker shows only
+> the gateway (verified via `dsh --profile web --dump-config`). The only
+> remaining DeepSeek-tied rows are `web` / `web-search-deepseek` (the
+> auxiliary web_search tool, which needs its own key and base-URL override —
+> out of scope for chat routing).
+>
+> Applied automatically: `make dsh-up` runs `dsh-settings` after boot, which
+> appends the snippet iff `pai-gateway` is absent (never duplicates, never
+> clobbers UI edits) and restarts. (HMR *is* active — a `cordis.patch.yml`
+> edit hot-reloads live, which is how the [default-workspace plugin](#default-workspace)
+> activates with no restart. The restart here is for the provider list:
+> credentials are re-read per request, the provider list is not.)
+> Do NOT use `$DSH_HOME/settings.yaml` for this: the legacy user-layer import
+> consumes the file without merging providers (verified: renamed to
+> `.imported`, tree unchanged, UI still DeepSeek-only).
 >
 > Then select the `pai-gateway` provider in the model picker. `DEEPSEEK_BASE_URL`
 > is intentionally unset — no DSH adapter honors it.
@@ -167,6 +233,85 @@ DEEPSEEK_BASE_URL=http://llm-gateway:4000/v1
 `${WORKSPACE_DIR}` is mounted at `/opt/data/workspace:rw` — the **same path** Hermes uses. DSH sessions operate directly on the mounted workspace; generated files land as real files on the host where Hermes sees them.
 
 DSH user data (sessions, configs, plugins, memory) stays in the `dsh_data` volume (`/data/dsh`) — never bind-mount into the workspace.
+
+### Default workspace
+
+The dashboard's workspace registry lives in the `dsh_data` volume
+(`storages/workspace.json`, domain spec version 2). The directory the
+dashboard opens is **not** a config value — it is whichever workspace the
+registry lists as most recently used (the workspace whose sessions have the
+latest `updatedAt`, falling back to `createdAt`). On a volume that already
+holds active agent sessions, that is the busiest project workspace, not the
+workspace mount root.
+
+**How the mount root becomes the default workspace — no plugin.**
+Oct-2026 research (`.planning/2026-10-06-dsh-workspace-root-research/`,
+verified against image `@deepseek-ai/dsh@0.2.0-rc.2`) showed the stock
+first-use flow can never succeed here: with no `documentsDirectory` override
+the Linux path runs `xdg-user-dir DOCUMENTS`, which is not installed in the
+image, so `initializeDefault` throws and the dashboard shows "Unable to
+create default workspace". (`$HOME` is never consulted on this path — the
+desktop `~/Documents/...` behavior simply doesn't apply in the container.)
+An earlier `dsh-default-workspace` plugin worked around this and has been
+removed; the entrypoint now uses two native levers instead:
+
+- **Registry pre-seed** — on boot, if `storages/workspace.json` is absent the
+  entrypoint writes it with `/opt/data/workspace` as the sole workspace and
+  `defaultWorkspaceId` set (exact DSH-written schema). The mount root is
+  therefore registered from the first boot, and stock creation stays
+  ineligible forever after. (Briefly removed Oct-2026 in favor of the stock
+  subdir fallback; restored by explicit user choice — the mount root as the
+  default makes more sense than a `deepseek-harness/default-workspace`
+  subdir.) Existing volumes are untouched.
+- **Native controller override** — a `- id: workspace-controller` patch row
+  sets the code-documented *"explicit deployment override"*
+  `documentsDirectory: /opt/data/workspace`. The fixed
+  `deepseek-harness/default-workspace` suffix still applies, so this can
+  never yield the mount root itself — it is a safety net only: if the seeded
+  registration is ever deleted, the stock fallback creates under the mount
+  instead of throwing.
+
+Entry points: `seed_workspace_registry`, `ensure_workspace_controller_row`,
+`retire_default_workspace_plugin` in `dsh/docker-entrypoint.sh` (the last one
+is one-time cleanup of the removed plugin's patch entry + stale volume copy).
+If `DSH_VERSION` is bumped, re-verify the pre-seed schema against a
+live-written `workspace.json`.
+
+> **Do not empty the registry.** DSH recreates a default workspace on every
+> load while the registry is empty (verified Oct-2026: deleting the last
+> entry just respawns `deepseek-harness/default-workspace`, shown localized
+> as "Default Workspace"). To get rid of it: add the project folder(s) via
+> Choose workspace first, then delete the subdir default once — with ≥1
+> workspace registered, auto-creation stays ineligible forever.
+
+**Caveat — first browser load on a dirty volume.** DSH opens the most
+recently *used* workspace. With a live agent session in a project
+workspace, that session's activity keeps the project workspace "most
+recent", so the first dashboard load still lands there. Opening
+`/opt/data/workspace` once persists the selection for that browser
+(localStorage `dsh.sessions.current`); every load after that opens at the
+mount. On a fresh volume (or after `make dsh-clean`) the first load opens
+at `/opt/data/workspace` automatically. Forcing the first-load target on a
+dirty volume without opening it once would require a DSH-core change to the
+selection rule (`restoreSelection` → `recentWorkspace` in
+`@deepseek-ai/dsh-client-ui-workspace`).
+
+> The fixed `deepseek-harness/default-workspace` suffix is why the
+> `documentsDirectory` row alone can never yield the mount root — the
+> registry pre-seed above is what puts `/opt/data/workspace` itself in.
+
+### Directory picker start directory
+
+The "Select Workspace Directory" browse dialog takes no initial-path input:
+every open lists with no path, and the server resolves that to
+`homedir()` — i.e. it always opened at `$HOME`. The browse backend's config
+is `{ maxEntries }` only, so there is no supported knob. The image carries a
+one-line build-time patch (`dsh-host-directory-picker-browse`: resolve the
+no-path case against `process.env.WORKSPACE_DIR` first, home as fallback),
+and compose sets `WORKSPACE_DIR=/opt/data/workspace` in the container — the
+same value as the workspace mount, no extra vars. Empty/unset keeps the old
+home behavior. If `DSH_VERSION` is bumped, re-verify the patched line
+(`const target = resolve(path ?? home);`) still exists exactly once.
 
 ## Porting Hermes Skills → DSH
 
@@ -194,6 +339,9 @@ Verified in the running container: 30 of 31 skills parse. The exception is
 `skills/agents/SKILL.md`, which has no YAML frontmatter — it is an `AGENTS.md`-style
 ground-rules doc for Hermes' always-on injection, not a loadable DSH skill, so the
 parser skips it. Add frontmatter if you ever want it loadable in DSH.
+(The vendored `skills/gstack/` + 25 `skills/gstack-*/` dirs follow the same
+`name`/`description` frontmatter convention and parse the same way; re-verify
+with `skills_list` after adding skills.)
 
 No conversion needed. The hermes skills (stack-discovery, mermaid, system-design, python, docker, react, nodejs, sql, planning, gitops, research, opencode-delegate, etc.) work as-is — they are procedural markdown that the model reads on demand.
 
@@ -322,7 +470,7 @@ Implement the full Hermes action set where cheap (`pai_notebook_ops` also needs
 
 ### Blockers to clear before Phase 2
 
-**RESOLVED — option 1 taken: socket mount + `group_add`.**
+**RESOLVED — proxy socket (Option A, Oct-2026).**
 
 The blocker used to be that dsh had `read_only: true`, `cap_drop: [ALL]`, no
 `/var/run/docker.sock` in `volumes`, and no docker binary on `PATH`, making
@@ -332,86 +480,34 @@ The blocker used to be that dsh had `read_only: true`, `cap_drop: [ALL]`, no
 2. **Named subset** — a thin shim restricted to pai-stack's own services.
 3. **Defer** — drop `pai_docker_ops` (7 references).
 
-**Option 1 is now implemented.** `/var/run/docker.sock` is mounted `:ro` (exactly
-as hermes has it) and `docker-ce-cli` + `docker-compose-plugin` are baked into
-the image. `CAP_DAC_OVERRIDE` turned out to be unnecessary — see
-[Docker socket](#docker-socket) below.
+**Option 1 is now implemented directly.** `/var/run/docker.sock` is mounted
+`:ro` (exactly as hermes has it), `docker-ce-cli` + `docker-compose-plugin`
+are baked into the image, and compose `user:` + `group_add: [DOCKER_GID]`
+gives the agent user socket access — see [Docker socket](#docker-socket).
+(The earlier socat proxy existed only because the `setpriv` privilege drop
+discarded `group_add`; with `user:` there is no drop, so no proxy.)
 
 ### Docker socket
 
-Mirrors hermes, so both agents can drive the host docker the same way.
+Mirrors hermes: `/var/run/docker.sock` mounted `:ro`, `docker-ce-cli` +
+`docker-compose-plugin` baked into the image. DSH runs as the host user via
+compose `user:` and reaches the socket directly through `group_add`
+(no proxy socket, no setpriv — the old `setpriv --init-groups` drop
+discarded `group_add`, which is why the proxy existed; `user:` preserves it).
 
 ```yaml
 # docker-compose.dsh.yaml
-build:
-  context: ./dsh
-  args:
-    DOCKER_GID: ${DOCKER_GID:-999}   # baked into /etc/group — see below
+user: "${UID:-1000}:${GID:-1000}"
+group_add:
+  - "${DOCKER_GID:-0}"   # Desktop = 0/root, Linux = docker gid (Makefile auto-detects)
 volumes:
   - /var/run/docker.sock:/var/run/docker.sock:ro
-group_add:
-  - "${DOCKER_GID:-999}"
 environment:
-  DOCKER_CONFIG: /data/dsh/.docker   # keeps ~/.docker out of the workspace
+  DOCKER_CONFIG: /data/dsh/home/.docker   # keeps ~/.docker out of the workspace
 ```
-
-`DOCKER_GID` is auto-detected in the Makefile (`stat -c %g /var/run/docker.sock`,
-fallback `999`) and exported, so compose picks it up. Override via `.env` or
-`make up DOCKER_GID=999`.
-
-#### Hosts where the socket is `root:root` → `DOCKER_GID=0`
-
-Not every host gives the socket a dedicated `docker` group. When
-`stat -c %g` reports **0** (common for a rootful daemon started by a distro
-unit or a rootless-less install), the correct value is `0` — and the build then
-resolves `getent group 0` → `root` and runs `usermod -aG root node`, putting the
-uid-1000 process in **group 0**.
-
-That is a deliberate, bounded grant, not an oversight:
-
-- `cap_drop: [ALL]` + `no-new-privileges:true` still block any uid-0
-  transition, so it does **not** make the process root.
-- The marginal power is near zero because the socket is *already* the grant:
-  anyone who can use it can `docker run -v /:/host` and be root on the host
-  anyway (see the tradeoff note below). Group 0 is only the key to that door.
-- The real, if small, residue is DAC access to any *root:root group-writable*
-  file inside the dsh image.
-
-Set it explicitly in `.env` on such hosts rather than relying on the Makefile:
-raw `docker compose` skips the Makefile's `stat` and silently takes the `999`
-fallback, which produces the `EACCES` failure described in the next section
-while the mount still looks correct. Because the value is baked into `/etc/group`
-at build time, changing it needs a rebuild (`make dsh-up` does that).
-
-#### `group_add` alone is NOT enough — this is the subtle part
-
-Hermes needs neither of these: it runs as **root** inside its container, which
-bypasses the socket's permission bits entirely. DSH runs as uid 1000, so it must
-belong to the socket's group.
-
-But `group_add` on its own **silently fails**, for a reason worth writing down:
-
-```
-# /usr/local/bin/dsh-entrypoint, final privilege drop
-exec setpriv --reuid="$RUN_USER_ID" --regid="$RUN_GROUP_ID" --init-groups "$0" "$@"
-```
-
-`--init-groups` calls `initgroups(3)` → `setgroups(2)`, and **setgroups REPLACES
-the supplementary group list rather than adding to it**. Everything Docker
-injected via `group_add` is therefore discarded at the drop, and every docker
-call fails with `EACCES` while the mount still *looks* correct.
-
-There is no runtime fix — the root FS is `read_only: true`, so `/etc/group`
-cannot be edited after boot. The fix has to be baked in, which is why the build
-takes `DOCKER_GID` and runs `usermod -aG` on the `node` user. `initgroups` then
-rebuilds the list *from* `/etc/group` and the socket group survives. `group_add`
-is kept alongside purely as belt-and-braces (it covers a re-detected GID after a
-rebuild, and an entrypoint that someday drops `--init-groups`).
 
 **No capability is involved.** Connecting to a unix socket needs only DAC
-permission on the socket inode, so `cap_drop: [ALL]` is unchanged and
-**`CAP_DAC_OVERRIDE` was never needed** — option 1 in the original blocker list
-over-specified it.
+permission on the socket inode, so `cap_drop: [ALL]` stands alone.
 
 > **The tradeoff, stated once, deliberately.** The docker API is
 > root-equivalent on the host: anything holding this socket can start a container
@@ -430,12 +526,13 @@ docker ps                                    # pai-stack's own containers
 cd "$EXECUTION_DIR" && docker compose -p <project> up -d --build
 ```
 
-Verify after a rebuild — if `id` lacks the socket's GID, the image predates the
-`DOCKER_GID` build arg:
+Verify after a rebuild — if `docker ps` fails with `permission denied`,
+the container predates `group_add` (compose-only change, no rebuild needed —
+just `make dsh-up`):
 
 ```bash
-docker exec dsh id                # expect the docker GID in the groups list
-docker exec dsh docker ps
+docker exec dsh docker ps   # must list containers (already runs as host uid)
+docker exec dsh id          # uid:gid matches host; groups include DOCKER_GID
 ```
 
 ### Decision
@@ -478,6 +575,65 @@ environment:
 
 Reuses the same `TELEGRAM_BOT_TOKEN` as Hermes — notifications only, no long-running conversations (avoids long-polling fights over one token). Allowed chat IDs configured in DSH settings or via the plugin config. If update conflicts appear, split to a dedicated bot token.
 
+### Automation tasks (scheduled reminders)
+
+**Official bundle `@deepseek-ai/dsh-experimental-schedule-bundle`** — ships inside
+the `@deepseek-ai/dsh` image itself (verified at build time by `dsh/Dockerfile`),
+so there is no seed copy and no npm install. The entrypoint enables it the same
+way the plugin manager does: appends the bundle to the web profile's
+`dsh.profile.bundles` iff absent (idempotent, preserves everything else).
+Opt out with `DSH_WITH_SCHEDULE=false` (rebuild not needed — compose-only).
+
+What it adds: `schedule_create` / `schedule_list` / `schedule_update` /
+`schedule_delete` tools for live root agents, the sidebar **Automation tasks**
+page (alarm-clock icon under Plugins), a per-session reminder catalog, and
+`time-context` clock readings. Verify with
+`docker exec dsh dsh --profile web --dump-config` (schedule rows present).
+
+Two caveats, both upstream properties, not container bugs:
+
+* **Session-local delivery.** Timers live in the dsh process; a stopped container
+  or cold session pauses them. This is reminders attached to live sessions, not
+  cron that fires with no chat open — for that, see Durable automation below.
+* **Token cost.** Four tool schemas on every root-agent request plus one durable
+  clock reading per eligible step, even in conversations that never schedule.
+
+#### Durable automation: `@michengai/dsh-automation@0.1.54` (pinned exact)
+
+Cron that fires with nobody watching: each occurrence starts a fresh root agent +
+session (no chat history inherited), with per-task workspace, model, skills, and
+permission preset. UI: sidebar **Scheduled** tab + Settings → Scheduled Tasks;
+agents get `automation_create/list/update/run/pause/resume/delete` tools.
+
+Wired like the other seeds: `dsh/Dockerfile` pnpm-installs it into a joint tree
+on top of the auth+memory seeds (one superset, no runtime merge conflicts),
+and the entrypoint installs that tree wholesale into the web profile iff the
+manifest/tree is absent. Runtime skip via `DSH_WITH_AUTOMATION=false`.
+
+**Review (Oct-2026, against the published tarball — re-audit on version bump):**
+
+* **Compat is exact, not hoped.** Its peerDeps list `0.2.0-rc.2` explicitly for
+  every `@deepseek-ai/dsh-*` package. The alternatives
+  (`@syncended/dsh-automations`, `@alpacachen/dsh-automation`) peer only
+  `<0.2.0`, so pnpm would flag them against this image.
+* **Proper DSH bundle** (`dsh.bundle.patch` + declared web client injects),
+  Apache-2.0, no install scripts (and the seed uses `--ignore-scripts` anyway).
+  Runtime deps are `zod`, `luxon`, and `antd` (client UI — bloats the seed tree,
+  harmless on the volume).
+* **One invasive row, by design.** Its patch overrides the core `connection`
+  row (`inject: [webServer, webRuntime]`). Written for this DSH line, but a
+  DSH bump must re-verify web connectivity, not just the seed gate.
+* **No exfil, no silent mutation.** The only network egress found is an npm
+  registry version check; the only `child_process` use is the user-triggered,
+  loopback-guarded self-update flow (admin clicks update in UI). It never
+  auto-updates, so the seed pin holds. (A UI-triggered update diverges the
+  volume from the pin — same property as the other seeds; the seed skips when
+  valid and never downgrades.)
+* **Trust boundary unchanged.** Runs execute under the task's own workspace +
+  permission preset (sandbox still applies); state lives under `$DSH_HOME` on
+  the `dsh_data` volume. Same blast radius as an interactive session — the
+  docker socket it can reach is the deliberate host-daemon reuse, not new.
+
 ### Local Memory
 
 Six viable plugins compared. All are local-first, no cloud dependency.
@@ -503,24 +659,22 @@ For high-end coding + planning + tuning against designed plans:
 | Link decisions to code | Knowledge graph connects concepts to symbols |
 | No stale clutter | Auto-dedup + importance decay forgets what matters less |
 
-Install:
+Install: baked into the image, no manual step. `dsh/Dockerfile` pnpm-installs
+`dsh-mnemon@${DSH_MNEMON_PLUGIN_VERSION:-0.5.24}` into a seed staging dir
+(jointly resolved with the auth plugin, so the tree mirrors `dsh plugin add`
+exactly), and the entrypoint installs that tree into the web profile on boot
+iff the manifest/tree is absent — same seed pattern as the auth plugin, so
+fresh volumes (and `dsh-clean`) self-heal. Override via
+`DSH_WITH_MNEMON_PLUGIN=false` / `DSH_MNEMON_PLUGIN_VERSION=` (rebuild).
 
-```bash
-dsh plugin --profile web add dsh-mnemon
-```
-
-Requires the Mnemon CLI — baked into the image at build time (`./dsh/Dockerfile`: `FROM` the pinned base + install mnemon binary), not on the host. Three-tier storage: Runtime Memory (hot), Project Documents (searchable), Memory Spaces (long-term). Cross-agent sharing, LLM-supervised writes, knowledge graph, and importance decay. Replaces Hermes's Mnemosyne with a structured, graph-backed alternative.
-
-**Tool-naming requirement (non-negotiable):** the package is `dsh-mnemon`, but the
-tools it registers must be named `mnemosyne_*` — `mnemosyne_recall`,
-`mnemosyne_remember`, `mnemosyne_triple_add`, `mnemosyne_triple_query`,
-`mnemosyne_sleep`, `mnemosyne_stats`. Not `mnemon_*`. Skills call the Mnemosyne
-names directly (**19 references**: 16 in `agents`, 2 in `research`, 1 in
-`autonomous-tech-learner`), so renaming the tools to match the package would
-reintroduce exactly the drift the
-[Naming Rule](#naming-rule-binding) exists to prevent. Package identity and tool
-identity are separate concerns — `dsh-mnemon` wrapping `mnemosyne_*` is the
-intended shape, not an inconsistency.
+**Tool-naming outcome:** the package registers `mnemon_*` tools and offers no
+rename/prefix support (verified against 0.5.24: names are hardcoded literals,
+and a mechanical rename is semantically wrong — `mnemosyne_triple_*`,
+`sleep`, `stats` have no counterparts, arg shapes differ). Shared skills
+therefore keep calling Hermes-native `mnemosyne_*` (see `skills/agents`,
+`skills/research`); on DSH, memory is used via the workbench UI and direct
+`mnemon_*` calls. Revisiting this means either upstream rename support or a
+per-agent skill rewrite — not a text rename.
 
 ## Compose Override
 
@@ -528,15 +682,15 @@ intended shape, not an inconsistency.
 
 - `profiles: ["dsh"]` — opt-in only, never starts with `make up`
 - Same `${WORKSPACE_DIR}` bind mount at `/opt/data/workspace:rw` (matches Hermes mount path exactly)
-- Two named volumes: `dsh_programs:/opt/dsh` (DSH program) + `dsh_data:/data/dsh` (sessions, configs, plugins, memory, toolchain caches)
-- `/var/run/docker.sock:/var/run/docker.sock:ro` + `group_add: ["${DOCKER_GID:-999}"]` — host docker access, same socket hermes has. Also passed as a **build arg** so it survives the entrypoint's `setpriv --init-groups`, which would otherwise discard `group_add`. See [Docker socket](#docker-socket)
-- `DOCKER_CONFIG=/data/dsh/.docker` — keeps the CLI's state off the workspace mount, same rule as the toolchain caches
+- Two named volumes: `dsh_data:/data/dsh` (sessions, configs, plugins, memory) + `dsh_toolchains:/data/dsh/home/.cache` (Go/Rust/uv/pip caches, kept out of the workspace)
+- `/var/run/docker.sock:/var/run/docker.sock:ro` + `group_add: [DOCKER_GID]` — host daemon reuse (same daemon hermes reaches directly). See [Docker socket](#docker-socket)
+- `DOCKER_CONFIG=/data/dsh/home/.docker` — keeps the CLI's state off the workspace mount, same rule as the toolchain caches
 - `depends_on: llm-gateway (service_healthy)`
 - `TMPDIR=/data/dsh/tmp` — inside the data volume, outside the mounted workspace
-- Fixed runtime uid `1000:1000` (image's `node` user — deliberate divergence from the host-UID pattern): the entrypoint's setpriv drop requires a passwd-resolvable uid, and a host uid (e.g. macOS 502) crash-loops the container (`setpriv: --[re]gid requires ...`, verified Oct-2026). Entrypoint still starts as root, chowns both volumes, then drops. No `user:` line (would break root first-boot init)
+- Host UID/GID via `user: "${UID}:${GID}"` (dedicated `dsh` user baked at build, fresh volumes inherit ownership, `make dsh-perms` repairs pre-existing ones once — no per-boot chown, no setpriv)
 - `NARB_DISABLE_NATIVE_CACHE=1` (native bindings load from the executable volume, not noexec `/tmp`)
 - Loopback-only port bind by default (`"${DSH_BIND_IP:-127.0.0.1}:${DSH_PORT:-9229}:3080"` — host 9229 → container 3080)
-- `read_only: true` + `tmpfs /tmp:size=128m,exec` + `no-new-privileges`, `cap_drop: [ALL]` + `CHOWN/DAC_OVERRIDE/SETUID/SETGID`
+- `read_only: true` + `tmpfs /tmp:size=128m,exec` + `no-new-privileges`, `cap_drop: [ALL]` (no extra caps)
 - Healthcheck on internal port 3081 (not the socat-forwarded 3080)
 
 ## Makefile Targets
@@ -546,12 +700,18 @@ intended shape, not an inconsistency.
 
 dsh-up: check-workspace dsh-perms
 	$(DSH_COMPOSE) --profile dsh up -d --build dsh
+	$(MAKE) dsh-ensure-web   # auto-recover a lifeboat landing (see Lifeboat)
+	$(MAKE) dsh-settings     # ensure pai-gateway provider patch (see LLM Gateway)
 
 dsh-perms:
 	docker volume create $(DSH_PROGRAMS_VOLUME) >/dev/null
 	docker volume create $(DSH_DATA_VOLUME) >/dev/null
-	docker run --rm -v $(DSH_PROGRAMS_VOLUME):/data alpine chown -R $(UID):$(GID) /data
-	docker run --rm -v $(DSH_DATA_VOLUME):/data alpine chown -R $(UID):$(GID) /data
+	docker run --rm -v $(DSH_PROGRAMS_VOLUME):/data alpine chown -R 1000:1000 /data
+	docker run --rm -v $(DSH_DATA_VOLUME):/data alpine chown -R 1000:1000 /data
+
+dsh-settings:  # append ./dsh/settings.yaml to cordis.patch.yml iff pai-gateway absent (never duplicates, never clobbers UI edits); restarts only on change
+
+dsh-refresh:  # replace the llm-pi-ai entry with the freshly synced seed (other entries preserved); restarts only on change
 
 dsh-password:  ## Print the one-time first-boot admin password
 	docker logs dsh 2>&1 | grep -A9 'first-boot admin credentials'
@@ -585,9 +745,10 @@ Skills mount and tool-naming contract are settled; the plugin code is not writte
 - [x] Skills mount `./skills:/data/dsh/.agents/skills:ro` — path verified; requires `DSH_AGENTS_HOME=/data/dsh/.agents` (see "Porting Hermes Skills"). 29/30 load; `agents` has no frontmatter and is skipped by design.
 - [x] Tool-naming contract for Phase 2 — package keeps `dsh-`, tool mirrors Hermes, `action` enum per tool ([Naming Rule](#naming-rule-binding)); required action sets extracted from skill usage; `dsh-pai-docker` blocker documented
 - [x] `pai_code_intel` + `skills/code-intel` **removed** (2026-10-04) — code intelligence is out of pai-stack, replaced by a dedicated lightweight tool. Retires the index-staleness blocker.
+- [x] Default workspace = `/opt/data/workspace` (2026-10-06) — registry pre-seed + native `workspace-controller` `documentsDirectory` override, both ensured by the entrypoint on every boot; survives `dsh-clean`. Replaced the retired `dsh-default-workspace` plugin. See [Default workspace](#default-workspace).
 - [ ] Mark `agents`, `autonomous-tech-learner` with `disable-model-invocation: true` — interim mitigation until Phase 2 ships (see "Porting Hermes Skills")
 - [ ] `dsh-pai-*` TypeScript plugins (notebook, adr, design, docker) — Phase 2. Tool names must mirror Hermes (`pai_notebook_ops` + `action` enum), package names keep the `dsh-` prefix — see [Naming Rule](#naming-rule-binding) and the required action sets. Clear the blocker first: `pai_docker_ops` needs a socket-mount/capability decision.
-- [ ] `dsh-telegram-control` + `dsh-mnemon` plugin installs — post-boot via `dsh plugin add`. `dsh-mnemon` must register tools as `mnemosyne_*` to match the 19 skill references.
+- [x] `dsh-mnemon` memory plugin — baked into the image + entrypoint-seeded (no post-boot install). Tools surface as `mnemon_*` (no upstream rename support); shared skills keep `mnemosyne_*` for Hermes — memory-via-skills stays Hermes-only, DSH uses the workbench + direct calls. (`dsh-telegram-control` still pending post-boot install.)
 
 ## What's NOT Ported
 

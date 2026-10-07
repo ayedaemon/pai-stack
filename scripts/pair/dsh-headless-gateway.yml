@@ -1,0 +1,22 @@
+# pair headless gateway overlay — applied via --patch on every headless poke.
+# Pins DSH one-shots to the stack gateway. `default` is the full gateway
+# fallback chain (llm-gateway/config.yaml), so this file never goes stale on
+# `make sync` — unlike dsh/settings.yaml, which lists every live alias.
+# Same entry-list dialect as profiles/*/cordis.patch.yml.
+- id: llm-pi-ai
+  config:
+    providers:
+      pai-gateway:
+        api: openai-completions
+        baseURL: http://llm-gateway:4000/v1
+        apiKeyEnv: OPENAI_API_KEY
+        models:
+          - id: default
+- id: llm-deepseek
+  disabled: true
+- id: llm-deepseek-account
+  disabled: true
+- id: agent-default-model
+  config:
+    provider: pai-gateway
+    model: default

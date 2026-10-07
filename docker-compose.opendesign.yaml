@@ -44,6 +44,11 @@ services:
   open-design:
     build:
       context: ./opendesign
+      args:
+        # Baked into /app/.od ownership (see Dockerfile): fresh named volumes
+        # inherit the image's ownership, so it must match the runtime `user:`.
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
     image: ${OPEN_DESIGN_IMAGE:-pai-stack-open-design:latest}
     container_name: open-design
     restart: unless-stopped
@@ -62,8 +67,8 @@ services:
       OD_API_TOKEN: ${OD_API_TOKEN:-}
       OD_DISABLE_API_AUTH: ${OPEN_DESIGN_DISABLE_API_AUTH:-}
       OD_CODEX_SANDBOX: ${OD_CODEX_SANDBOX:-}
-      OPENAI_API_KEY=${LITELLM_MASTER_KEY:-not-needed}
-      OPENAI_BASE_URL=http://llm-gateway:4000/v1
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY:-not-needed}
+      OPENAI_BASE_URL: http://llm-gateway:4000/v1
     ports:
       # Host bind IP defaults to loopback. Set OPEN_DESIGN_BIND_IP=0.0.0.0 to
       # reach the UI via LAN IP / DNS name (pair with OPEN_DESIGN_ALLOWED_ORIGINS).

@@ -34,6 +34,9 @@ flowchart LR
     WS --> H
     WS --> OD
     WS --> DSH
+    PB["pair/ blackboard<br/>queue/claims/done"]
+    H -->|"claim/done"| PB
+    DSH -->|"claim/done"| PB
     WS -->|"source code"| TR
     H -->|"HTTP /call"| TR
     DSH -->|"MCP /mcp"| TR
@@ -216,7 +219,7 @@ prints every provider key the gateway holds. See [audit.md](audit.md).
 | `dsh_programs` volume | `/opt/dsh` | dsh | DSH program (upgrades land here) |
 | `dsh_data` volume | `/data/dsh` | dsh | sessions, configs, plugins, memory, toolchain caches |
 | `/var/run/docker.sock` | `/var/run/docker.sock` | hermes | host docker daemon (root-equivalent — deliberate) |
-| `/var/run/docker.sock` | `/var/run/docker.sock` | dsh | host docker daemon (root-equivalent — deliberate; needs `group_add`, dsh is uid 1000) |
+| `/var/run/docker.sock` | `/var/run/docker.sock` | dsh | host docker daemon (root-equivalent — deliberate; agent reaches it via a `DOCKER_HOST` proxy socket, dsh is non-root) |
 | `./skills` | `/opt/pai/skills` | hermes | read-only procedural skills |
 | `./skills` | `/data/dsh/.agents/skills` | dsh | read-only (path verified post-boot) |
 

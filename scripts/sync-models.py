@@ -24,7 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 # Terminal colors
 C_CYAN = "\033[36m"
@@ -228,6 +228,44 @@ PROVIDERS = [
         "prefix": "deepseek",
     },
     {
+        "id": "nvidia",
+        "name": "NVIDIA NIM",
+        "env_key": "NVIDIA_API_KEY",
+        "endpoint": "https://integrate.api.nvidia.com/v1/models",
+        "chat_base": "https://integrate.api.nvidia.com/v1",
+        "prefix": "nvidia",
+        # OpenAI-compatible; explicit api_base (LiteLLM's built-in nvidia/ routing
+        # 404s on this endpoint — verified via probe).
+        "api_base": "https://integrate.api.nvidia.com/v1",
+        # Model ids already carry vendor prefixes (nvidia/, meta/, google/...) —
+        # strip the provider's own prefix for clean aliases.
+        "strip_prefix": "nvidia/",
+    },
+    {
+        # Ollama Cloud is OpenAI-compatible at ollama.com/v1 (no cloud.ollama.com).
+        # api_base → emitted as openai/ mapping with explicit base in the config.
+        "id": "ollama_cloud",
+        "name": "Ollama Cloud",
+        "env_key": "OLLAMA_CLOUD_API_KEY",
+        "endpoint": "https://ollama.com/v1/models",
+        "chat_base": "https://ollama.com/v1",
+        "prefix": "ollama",
+        "api_base": "https://ollama.com/v1",
+    },
+    {
+        # Aion Labs (api.aionlabs.ai) — OpenAI-compatible; model ids carry the
+        # aion-labs/ vendor prefix, so openai/ mapping keeps them intact.
+        "id": "aion",
+        "name": "Aion Labs",
+        "env_key": "AION_LABS_API_KEY",
+        "endpoint": "https://api.aionlabs.ai/v1/models",
+        "chat_base": "https://api.aionlabs.ai/v1",
+        "prefix": "aion",
+        "api_base": "https://api.aionlabs.ai/v1",
+        # Model ids carry the aion-labs/ vendor prefix — strip it for aliases.
+        "strip_prefix": "aion-labs/",
+    },
+    {
         "id": "openai",
         "name": "OpenAI",
         "env_key": "OPENAI_API_KEY",
@@ -349,8 +387,12 @@ def discover_provider_models(prov: dict, env: dict) -> Tuple[bool, List[str]]:
 def generate_litellm_config(
     discovered: Dict[str, List[str]],
     env: dict,
-) -> str:
-    """Generate LiteLLM config.yaml string with all discovered models as independent entries."""
+) -> Tuple[str, List[str]]:
+    """Generate LiteLLM config.yaml string with all discovered models as independent entries.
+
+    Returns (config_text, ordered_aliases) — the alias list (emission order)
+    doubles as the `default` fallback chain and the DSH seed model list.
+    """
     lines = [
         "# LiteLLM Proxy Configuration for pai-stack",
         "# Centralized LLM gateway managing all model routing and provider credentials.",
@@ -361,6 +403,8 @@ def generate_litellm_config(
     ]
 
     seen = set()
+    ordered_aliases: List[str] = []
+    alias_params: Dict[str, List[str]] = {}
 
     # 1. Primary language models (clean short canonical names, no duplicates)
     # NOTE (2026-09-25): primary routes are mistral-mapped (not openai/) + drop_params
@@ -382,14 +426,19 @@ def generate_litellm_config(
     if primary_chat_unique:
         lines.append("  # ── Upstream Language Models (Clean Canonical Names) ──────────────────")
         for short_name, m_id in primary_chat_unique:
-            lines.extend([
-                f"  - model_name: {short_name}",
-                "    litellm_params:",
+            block = [
                 f"      model: mistral/{m_id}",
                 "      api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL",
                 "      api_key: os.environ/OPENAI_COMPATIBLE_API_KEY",
                 "      timeout: 1800",
                 "      drop_params: true",
+            ]
+            alias_params.setdefault(short_name, block)
+            ordered_aliases.append(short_name)
+            lines.extend([
+                f"  - model_name: {short_name}",
+                "    litellm_params:",
+                *block,
                 "",
             ])
 
@@ -406,58 +455,102 @@ def generate_litellm_config(
         env_key = prov["env_key"]
         lines.append(f"  # ── {prov['name']} ───────────────────────────────────────────────────")
 
+        strip_prefix = prov.get("strip_prefix")  # ids carrying their own vendor prefix (nvidia/, aion-labs/)
+
         for m in models:
-            clean = m.replace(f"{prefix}/", "")
+            clean = m.replace(strip_prefix, "") if strip_prefix else m.replace(f"{prefix}/", "")
             alias = f"{prefix}/{clean}"
             if alias in seen:
                 continue
             seen.add(alias)
 
             if p_id == "kilo":
-                lines.extend([
-                    f"  - model_name: {alias}",
-                    "    litellm_params:",
+                block = [
                     f"      model: mistral/{clean}",
                     "      api_base: https://api.kilo.ai/api/gateway",
                     f"      api_key: os.environ/{env_key}",
                     "      timeout: 1800",
                     "      drop_params: true",
-                    "",
-                ])
+                ]
             elif p_id == "openrouter":
-                lines.extend([
-                    f"  - model_name: {alias}",
-                    "    litellm_params:",
+                block = [
                     f"      model: openrouter/{clean}",
                     f"      api_key: os.environ/{env_key}",
                     "      timeout: 1800",
-                    "",
-                ])
+                ]
+            elif p_id == "nvidia":
+                # NVIDIA NIM provider prefix is nvidia_nim/ (bare nvidia/
+                # is not a LiteLLM provider and fails router init with
+                # "LLM Provider NOT provided"). Alias keeps the nvidia/
+                # gateway name; only the litellm routing model changes.
+                block = [
+                    f"      model: nvidia_nim/{clean}",
+                    f"      api_key: os.environ/{env_key}",
+                    "      timeout: 1800",
+                ]
             elif p_id == "zen":
-                lines.extend([
-                    f"  - model_name: {alias}",
-                    "    litellm_params:",
+                block = [
                     f"      model: openai/{clean}",
                     "      api_base: https://opencode.ai/zen/v1",
                     "      timeout: 1800",
-                    "",
-                ])
+                ]
+            elif prov.get("api_base"):
+                # OpenAI-compatible providers whose ids carry vendor prefixes
+                # (nvidia/nemotron-*, aion-labs/*, ollama cloud) — openai/ mapping
+                # with explicit api_base keeps the id intact. Use the full id `m`
+                # for routing; `clean` is only used for the alias name above.
+                block = [
+                    f"      model: openai/{m}",
+                    f"      api_base: {prov['api_base']}",
+                    f"      api_key: os.environ/{env_key}",
+                    "      timeout: 1800",
+                    "      drop_params: true",
+                ]
             else:
-                lines.extend([
-                    f"  - model_name: {alias}",
-                    "    litellm_params:",
+                block = [
                     f"      model: {prefix}/{clean}",
                     f"      api_key: os.environ/{env_key}",
                     "      timeout: 1800",
-                    "",
-                ])
+                ]
+            alias_params.setdefault(alias, block)
+            ordered_aliases.append(alias)
+            lines.extend([
+                f"  - model_name: {alias}",
+                "    litellm_params:",
+                *block,
+                "",
+            ])
 
-    # Router Settings (no fallbacks — user switches models manually on failure)
+    # 3. Default alias — Hermes/DSH `model: default` must always resolve.
+    # Primary deployment mirrors the first live model; router fallbacks walk
+    # every remaining live model in order until one replies. Regenerated on
+    # every run so `default` never goes stale after `make sync`.
+    if ordered_aliases:
+        first = ordered_aliases[0]
+        lines.append("  # ── Default (all live models via fallbacks) ──────────────────────────")
+        lines.extend([
+            "  - model_name: default",
+            "    litellm_params:",
+            *alias_params[first],
+            "",
+        ])
+
+    # Router Settings (default fallbacks walk the full live list)
     lines.extend([
         "# ── Router Settings ─────────────────────────────────────────────────────",
         "router_settings:",
         "  timeout: 1800              # 30m request timeout for large models & deep reasoning",
         "  stream_timeout: 1800       # 30m chunk timeout for slow reasoning token streams",
+    ])
+    if ordered_aliases:
+        rest = ordered_aliases[1:]
+        if rest:
+            quoted = ", ".join(f'"{a}"' for a in rest)
+            lines.extend([
+                "  fallbacks:",
+                f'    - {{"default": [{quoted}]}}',
+            ])
+    lines.extend([
         "",
         "# ── General Settings ─────────────────────────────────────────────────────",
         "general_settings:",
@@ -466,6 +559,67 @@ def generate_litellm_config(
         "",
     ])
 
+    return "\n".join(lines), ordered_aliases
+
+
+DSH_ENTRY_ID = "llm-pi-ai"
+DSH_PROVIDER_ID = "pai-gateway"
+
+
+def generate_dsh_seed(ordered_aliases: List[str]) -> str:
+    """Generate the dsh/settings.yaml seed snippet from the live gateway alias list.
+
+    Single source of truth: every `make sync` regenerates this, so the DSH
+    model picker never drifts from the gateway. `default` (full fallback
+    chain) is always first, so DSH keeps working even if its live volume
+    copy is stale — run `make dsh-refresh` to push the full list.
+    """
+    lines = [
+        "# GENERATED by scripts/sync-models.py — do not hand-edit.",
+        "# Rebuilt on every `make sync` from the same liveness-probed alias list",
+        "# as llm-gateway/config.yaml, then pushed live with `make dsh-refresh`.",
+        "#",
+        "# FORMAT: a Cordis profile-patch snippet (entry-list dialect), NOT a",
+        "# $DSH_HOME/settings.yaml document. The legacy user-layer import consumes that",
+        "# path without merging providers (verified: file renamed to .imported, tree",
+        "# unchanged, UI still DeepSeek-only), so this snippet is appended to",
+        "# profiles/web/cordis.patch.yml instead — see `make dsh-settings`, which does",
+        "# it idempotently and restarts (HMR is off, so file edits need a restart;",
+        "# per-request re-read applies to credentials, not to the provider list).",
+        "# The Models page merges UI edits into the same patch file; provider ID is",
+        "# permanent — sessions reference it.",
+        f"- id: {DSH_ENTRY_ID}",
+        "  config:",
+        "    providers:",
+        f"      {DSH_PROVIDER_ID}:",
+        "        api: openai-completions",
+        "        baseURL: http://llm-gateway:4000/v1",
+        "        apiKeyEnv: OPENAI_API_KEY",
+        "        models:",
+        "          - id: default   # full fallback chain — always works, even if stale",
+    ]
+    for alias in ordered_aliases:
+        lines.append(f"          - id: {alias}")
+    lines.extend([
+        "",
+        "# ── Gateway-only overlays (static — same every run) ─────────────────────",
+        "# DSH serves ONLY the stack gateway: the native DeepSeek chat provider is",
+        "# unmounted and the agent default points at the `default` fallback chain.",
+        "# A user-patch row addresses a base row by id with last-write-wins",
+        "# (same mechanism as the documented tool-ralph overlay), so `disabled`",
+        "# here removes deepseek-official from the picker without touching the image.",
+        "- id: llm-deepseek",
+        "  disabled: true",
+        "",
+        "- id: llm-deepseek-account",
+        "  disabled: true",
+        "",
+        "- id: agent-default-model",
+        "  config:",
+        "    provider: pai-gateway",
+        "    model: default",
+        "",
+    ])
     return "\n".join(lines)
 
 
@@ -503,11 +657,13 @@ def main():
     parser.add_argument("--dry-run", "-n", action="store_true", help="Preview generated config without saving.")
     parser.add_argument("--env", type=Path, default=Path(".env"), help="Path to .env (default: .env).")
     parser.add_argument("--output", type=Path, default=Path("llm-gateway/config.yaml"), help="Config destination.")
+    parser.add_argument("--dsh-output", type=Path, default=Path("dsh/settings.yaml"), help="DSH seed snippet destination.")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent
     env_file = args.env if args.env.is_absolute() else (repo_root / args.env)
     output_file = args.output if args.output.is_absolute() else (repo_root / args.output)
+    dsh_output_file = args.dsh_output if args.dsh_output.is_absolute() else (repo_root / args.dsh_output)
 
     print(f"\n{C_BOLD}pai-stack — Model Synchronizer{C_RESET}", flush=True)
 
@@ -529,10 +685,12 @@ def main():
         else:
             log_skip(f"{p_name:<26} (no key in .env, skipped)")
 
-    yaml_content = generate_litellm_config(discovered, env)
+    yaml_content, ordered_aliases = generate_litellm_config(discovered, env)
+    dsh_seed = generate_dsh_seed(ordered_aliases)
 
     if args.dry_run:
         print(f"\n{C_BOLD}── Preview (Dry Run) ──{C_RESET}\n{yaml_content}", flush=True)
+        log_info(f"DSH seed preview: {len(ordered_aliases)} live models + default (not saved).")
         return
 
     # Backup & Write
@@ -545,6 +703,16 @@ def main():
 
     print(flush=True)
     log_ok(f"Saved configuration to {output_file.relative_to(repo_root)}")
+
+    dsh_output_file.parent.mkdir(parents=True, exist_ok=True)
+    if dsh_output_file.exists():
+        shutil.copy2(dsh_output_file, dsh_output_file.with_suffix(".yaml.bak"))
+
+    with open(dsh_output_file, "w", encoding="utf-8") as f:
+        f.write(dsh_seed)
+
+    log_ok(f"Saved DSH seed ({len(ordered_aliases)} models + default) to {dsh_output_file.relative_to(repo_root)}")
+    log_info("Push it live with: make dsh-refresh (DSH must be up)")
 
     restart_gateway(repo_root)
     print(flush=True)

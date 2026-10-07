@@ -117,8 +117,8 @@ export HERMES_CONFIG=/opt/hermes/data/hermes-config.yaml
 # hermes creates land on the host as the host user instead of as root.
 # This is NOT a privilege drop: the gateway stays uid 0 (verified via
 # /proc/1/status -> "Uid: 0 0 0 0"), which is precisely what reaches the
-# root:root docker socket. Contrast dsh, which runs uid 1000 and therefore
-# needs the DOCKER_GID / etc-group machinery in dsh/Dockerfile.
+# root:root docker socket. Contrast dsh, which runs non-root and therefore
+# reaches the daemon via its entrypoint's proxy socket (DOCKER_HOST).
 chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" /opt/hermes/data 2>/dev/null || true
 
 exec /opt/hermes/docker/entrypoint-dispatch.sh "$@"

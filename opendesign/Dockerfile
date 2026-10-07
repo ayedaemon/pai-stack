@@ -24,6 +24,19 @@ FROM ${OPEN_DESIGN_BASE}
 
 USER root
 
+# Align the image-seeded /app/.od ownership with the runtime user.
+# The upstream base ships /app/.od owned by 1001:1001; Docker copies that
+# ownership into a FRESH named volume at container creation — after
+# `make design-perms` already ran — so the daemon (running as host UID:GID
+# via compose `user:`) gets EACCES on first boot, on every host. Baking the
+# host ids in here makes fresh volumes inherit the right owner from the
+# start; design-perms stays as belt-and-braces for pre-existing volumes.
+# Wired through compose build.args (Makefile exports UID/GID); defaults keep
+# plain `docker build` working for the common Linux case.
+ARG UID=1000
+ARG GID=1000
+RUN chown -R ${UID}:${GID} /app/.od
+
 ARG OPENCODE_VERSION=1.18.32
 RUN apk add --no-cache libc6-compat curl tar xz \
     && curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path -v ${OPENCODE_VERSION} \

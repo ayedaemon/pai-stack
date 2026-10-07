@@ -144,6 +144,13 @@ Planning files live in the project like developer artifacts:
 | `skill-security-auditor` | Pre-install skill supply-chain gate, stdlib-only (vendored, MIT; WARNs on message-strings are noise — review, don't auto-block) |
 | `research` | Root-level wiki vault (SCHEMA/index/log, ingest/query/lint) — load for any wiki, knowledge-base, or notes task |
 | `opencode-delegate` | Delegate coding tasks to keyless OpenCode free models (background+poll, branch review) — load before handing off implementation |
+| `gstack` | Router for the vendored gstack suite — load when unsure which `gstack-*` skill fits |
+| `gstack-office-hours` / `gstack-spec` / `gstack-autoplan` | Product framing, backlog-ready specs, fully reviewed plans (vendored, MIT) |
+| `gstack-plan-ceo-review` / `gstack-plan-eng-review` / `gstack-plan-design-review` / `gstack-plan-devex-review` / `gstack-devex-review` / `gstack-design-review` / `gstack-plan-tune` | Plan reviews: CEO, eng, design, DX + question tuning (vendored, MIT) |
+| `gstack-review` / `gstack-investigate` / `gstack-cso` / `gstack-health` | Pre-landing review, root-cause debugging, security audit, quality dashboard (vendored, MIT) |
+| `gstack-ship` / `gstack-land-and-deploy` / `gstack-document-release` / `gstack-document-generate` | Ship, deploy-verify, post-ship docs (vendored, MIT) |
+| `gstack-learn` / `gstack-retro` / `gstack-context-save` / `gstack-context-restore` | Cross-session memory, retros, context save/restore (vendored, MIT) |
+| `gstack-careful` / `gstack-freeze` / `gstack-guard` | Safety guardrails: destructive-command warnings + edit locks (vendored, MIT; advisory-only here — no hooks) |
 | `agents` | This file (ground rules, injected at session start) |
 
 ## Native Tools (`pai` toolset, `pai_tools` plugin)

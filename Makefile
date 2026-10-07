@@ -5,9 +5,11 @@
 
 .PHONY: help check-workspace \
 	up down restart logs status build clean config sync \
+	all-up all-down all-clean \
 	design-up design-down design-logs design-config design-build design-perms design-import \
-	dsh-up dsh-down dsh-logs dsh-config dsh-build dsh-perms dsh-password \
-	terrain-up terrain-down terrain-logs terrain-config terrain-build terrain-perms terrain-index terrain-ask
+	dsh-up dsh-down dsh-logs dsh-config dsh-build dsh-perms dsh-sync-models dsh-ensure-web dsh-password dsh-clean \
+	terrain-up terrain-down terrain-logs terrain-config terrain-build terrain-perms terrain-index terrain-ask \
+	pair-status pair-claim pair-done pair-poke
 
 WORKSPACE_DIR ?= $(shell grep -E '^WORKSPACE_DIR=' .env 2>/dev/null | cut -d= -f2- | tr -d '\"' | tr -d "'")
 # Expand a leading ~ to $HOME: neither make recipes nor compose tilde-expand raw
@@ -21,32 +23,35 @@ GID ?= $(shell id -g)
 export UID
 export GID
 
-# Host GID owning /var/run/docker.sock, so the dsh container can connect to it.
-# Hermes needs no equivalent: it runs as root inside the container, which
-# bypasses the socket's permission bits. DSH does not — it runs as uid 1000
-# under cap_drop:[ALL], so it must belong to the socket's group or every API
-# call fails with EACCES.
-# Precedence mirrors WORKSPACE_DIR above, and it has to: compose resolves the
-# shell environment ahead of .env, so a plain `export` of the detected value
-# would silently override a DOCKER_GID the user set in .env. .env first, then
-# `stat`, then 999 (the usual Debian/Ubuntu docker group).
-DOCKER_GID ?= $(shell grep -E '^DOCKER_GID=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")
-DOCKER_GID := $(or $(DOCKER_GID),$(shell stat -c %g /var/run/docker.sock 2>/dev/null || echo 999))
+# Docker socket GID for dsh `group_add` (host daemon reuse). Docker Desktop
+# forwards the socket as root:root (0); Linux is typically root:docker.
+# `user:` preserves supplementary groups (the old setpriv drop did not,
+# which is why a proxy socket used to exist — now deleted).
+DOCKER_GID ?= $(shell stat -c %g /var/run/docker.sock 2>/dev/null || echo 0)
 export DOCKER_GID
 
 COMPOSE := docker compose -f docker-compose.yaml
 DESIGN_COMPOSE := docker compose -f docker-compose.yaml -f docker-compose.opendesign.yaml
 DSH_COMPOSE := docker compose -f docker-compose.yaml -f docker-compose.dsh.yaml
 TERRAIN_COMPOSE := docker compose -f docker-compose.yaml -f docker-compose.terrain.yaml
+# Merged view of every profile — all-clean uses it so no container or named
+# volume is left behind (core `down -v` only knows hermes-data).
+ALL_COMPOSE := docker compose -f docker-compose.yaml -f docker-compose.dsh.yaml -f docker-compose.opendesign.yaml -f docker-compose.terrain.yaml
+ALL_PROFILES := --profile dsh --profile design --profile terrain
 
 # Deterministic open-design volume name: $(COMPOSE_PROJECT_NAME)_open_design_data.
+# The *-perms targets stamp both compose labels at `docker volume create` so
+# compose recognises these volumes as its own (otherwise every up prints
+# 'already exists but was not created by Docker Compose'). Labels do NOT make
+# them external: down -v still removes them (verified with a throwaway volume).
 COMPOSE_PROJECT_NAME ?= pai-stack
 export COMPOSE_PROJECT_NAME
 DESIGN_VOLUME := $(COMPOSE_PROJECT_NAME)_open_design_data
 
-# Deterministic dsh volume names: $(COMPOSE_PROJECT_NAME)_dsh_{programs,data}.
-DSH_PROGRAMS_VOLUME := $(COMPOSE_PROJECT_NAME)_dsh_programs
+# Deterministic dsh volume names: $(COMPOSE_PROJECT_NAME)_dsh_{data,toolchains}.
+# No more dsh_programs volume — DSH program is baked into the image.
 DSH_DATA_VOLUME := $(COMPOSE_PROJECT_NAME)_dsh_data
+DSH_TOOLCHAINS_VOLUME := $(COMPOSE_PROJECT_NAME)_dsh_toolchains
 
 # Deterministic terrain volume name: $(COMPOSE_PROJECT_NAME)_terrain_data.
 # Holds ~/.terrain/registry.json — terrain's project registry, which lives
@@ -66,18 +71,31 @@ help:  ## Show this help message
 	@printf "  \033[36m%-16s\033[0m %s\n" "logs" "Tail logs (s=<service>)"
 	@printf "  \033[36m%-16s\033[0m %s\n" "sync" "Sync models, reload gateway"
 	@echo ""
+	@echo "\033[1;34mAll:\033[0m"
+	@printf "  \033[36m%-16s\033[0m %s\n" "all-up" "Start everything: core + design + dsh + terrain"
+	@printf "  \033[36m%-16s\033[0m %s\n" "all-down" "Stop everything (volumes untouched)"
+	@printf "  \033[36m%-16s\033[0m %s\n" "all-clean" "Stop + wipe ALL volumes (destroys all state)"
+	@echo ""
 	@echo "\033[1;34mDesign:\033[0m"
 	@printf "  \033[36m%-16s\033[0m %s\n" "design-up" "Start open-design (docs/opendesign.md)"
 	@printf "  \033[36m%-16s\033[0m %s\n" "design-import" "Import folder: d=/workspace/<dir> [n=<name>]"
 	@echo ""
 	@echo "\033[1;34mDSH:\033[0m"
 	@printf "  \033[36m%-16s\033[0m %s\n" "dsh-up" "Start DSH agent (docs/dsh.md)"
+	@printf "  \033[36m%-16s\033[0m %s\n" "dsh-sync-models" "Push synced models into live DSH (restarts only on change)"
 	@printf "  \033[36m%-16s\033[0m %s\n" "dsh-password" "Print one-time first-boot admin password"
+	@printf "  \033[36m%-16s\033[0m %s\n" "dsh-clean" "Stop dsh + wipe dsh volumes (destroys dsh state)"
 	@echo ""
 	@echo "\033[1;34mCode intel:\033[0m"
 	@printf "  \033[36m%-16s\033[0m %s\n" "terrain-up" "Start terrain index service (docs/terrain.md)"
 	@printf "  \033[36m%-16s\033[0m %s\n" "terrain-build" "Build terrain image from Rust source (slow first build)"
 	@printf "  \033[36m%-16s\033[0m %s\n" "terrain-index" "Index a project: d=/opt/data/<dir> [n=<slug>]"
+	@echo ""
+	@echo "\033[1;34mPair:\033[0m"
+	@printf "  \033[36m%-16s\033[0m %s\n" "pair-status" "Show pair queue/claims/done (docs/pair-programming.md)"
+	@printf "  \033[36m%-16s\033[0m %s\n" "pair-claim" "Claim task: s=<slug> o=<hermes|dsh|human>"
+	@printf "  \033[36m%-16s\033[0m %s\n" "pair-done" "Finish claim: s=<slug> v=\"<verdict>\""
+	@printf "  \033[36m%-16s\033[0m %s\n" "pair-poke" "Wake peer: p=<hermes|dsh> [m=\"<prompt>\"]"
 	@echo ""
 	@echo "\033[1;34mMaintenance:\033[0m"
 	@printf "  \033[36m%-16s\033[0m %s\n" "build" "Rebuild images (s=<service>)"
@@ -129,6 +147,23 @@ clean:  ## Stop containers and remove persisted volumes (destroys hermes state)
 config:  ## Validate and view compose config
 	$(COMPOSE) config
 
+# ── All (core + every opt-in profile) ──
+
+all-up: check-workspace  ## Start everything: core + design + dsh + terrain
+	$(MAKE) up
+	$(MAKE) design-up
+	$(MAKE) dsh-up
+	$(MAKE) terrain-up
+
+all-down:  ## Stop everything (profile containers + core, volumes untouched)
+	$(MAKE) dsh-down
+	$(MAKE) design-down
+	$(MAKE) terrain-down
+	$(MAKE) down
+
+all-clean:  ## Stop everything + wipe ALL volumes (destroys hermes/dsh/design/terrain state)
+	$(ALL_COMPOSE) $(ALL_PROFILES) down -v --remove-orphans
+
 # ── OpenDesign (see docs/opendesign.md) ──
 
 design-up: check-workspace design-perms  ## Start open-design alongside core stack
@@ -143,7 +178,7 @@ design-up: check-workspace design-perms  ## Start open-design alongside core sta
 	$(DESIGN_COMPOSE) --profile design up -d --build open-design
 
 design-perms:  ## Create volume + fix ownership to host UID:GID
-	docker volume create $(DESIGN_VOLUME) >/dev/null
+	docker volume create --label com.docker.compose.project=$(COMPOSE_PROJECT_NAME) --label com.docker.compose.volume=open_design_data $(DESIGN_VOLUME) >/dev/null
 	docker run --rm -v $(DESIGN_VOLUME):/data alpine chown -R $(UID):$(GID) /data
 
 design-import:  ## Link a workspace folder: make design-import d=/workspace/<dir> [n=<name>]
@@ -168,12 +203,35 @@ design-config:  ## Validate merged OpenDesign compose configuration
 
 dsh-up: check-workspace dsh-perms  ## Start dsh alongside core stack
 	$(DSH_COMPOSE) --profile dsh up -d --build dsh
+	$(MAKE) dsh-ensure-web
 
-dsh-perms:  ## Create volumes + fix ownership to host UID:GID
-	docker volume create $(DSH_PROGRAMS_VOLUME) >/dev/null
-	docker volume create $(DSH_DATA_VOLUME) >/dev/null
-	docker run --rm -v $(DSH_PROGRAMS_VOLUME):/data alpine chown -R $(UID):$(GID) /data
+dsh-perms:  ## Create volumes + fix ownership once to host UID:GID
+	docker volume create --label com.docker.compose.project=$(COMPOSE_PROJECT_NAME) --label com.docker.compose.volume=dsh_data $(DSH_DATA_VOLUME) >/dev/null
+	docker volume create --label com.docker.compose.project=$(COMPOSE_PROJECT_NAME) --label com.docker.compose.volume=dsh_toolchains $(DSH_TOOLCHAINS_VOLUME) >/dev/null
 	docker run --rm -v $(DSH_DATA_VOLUME):/data alpine chown -R $(UID):$(GID) /data
+	docker run --rm -v $(DSH_TOOLCHAINS_VOLUME):/data alpine chown -R $(UID):$(GID) /data
+	# Fresh volumes inherit the image-baked /data/dsh ownership instead;
+	# this only repairs pre-existing root-owned volumes. The entrypoint
+	# never chowns (it runs as `user:` and owns what it creates).
+
+dsh-sync-models:  ## Push regenerated provider config into live volume (restarts only on change)
+# Seed (dsh/settings.yaml) is rebuilt by every `make sync` from the live
+# gateway alias list. This target merges it into the running volume's
+# profiles/web/cordis.patch.yml: the managed entries are replaced
+# wholesale, every other entry (managed auth block, UI edits elsewhere) is
+# preserved byte-for-byte. Restarts only when the models list actually changed.
+	@OUT=$$(python3 scripts/push-dsh-models.py --volume $(DSH_DATA_VOLUME) --uid $(UID) --gid $(GID) | tail -n 1); \
+	echo "dsh models: $$OUT"; \
+	if [ "$$OUT" = "RESULT:CHANGED" ]; then docker restart dsh >/dev/null && $(MAKE) dsh-ensure-web; fi
+
+dsh-ensure-web:  ## Wait for dsh web boot to be healthy
+	@for i in $$(seq 1 60); do \
+	  if docker exec dsh node -e "require('net').connect(3081,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))" 2>/dev/null; then \
+	    echo "dsh web profile healthy"; exit 0; \
+	  fi; \
+	  sleep 5; \
+	done; \
+	echo "[ERROR] dsh web did not become healthy in time (see: docker logs dsh)"; exit 1
 
 dsh-password:  ## Print the one-time login token URL (host port)
 	@TOKEN=$$(docker logs dsh 2>&1 | grep -o '?token=[^[:space:]]*' | tail -1 | sed 's/.*token=//'); \
@@ -182,11 +240,15 @@ dsh-password:  ## Print the one-time login token URL (host port)
 	PORT="$${PORT:-9229}"; \
 	echo "http://127.0.0.1:$$PORT/?token=$$TOKEN"
 
-dsh-build:  ## Build dsh image (bundled mnemon CLI)
+dsh-build:  ## Build dsh image (from official @deepseek-ai/dsh npm package)
 	$(DSH_COMPOSE) --profile dsh build dsh
 
 dsh-down:  ## Stop dsh only (workspace + volumes untouched)
 	$(DSH_COMPOSE) stop dsh
+
+dsh-clean:  ## Stop dsh + wipe dsh volumes (destroys sessions, auth, plugin state)
+	docker rm -f dsh >/dev/null 2>&1 || true
+	docker volume rm $(DSH_DATA_VOLUME) $(DSH_TOOLCHAINS_VOLUME) >/dev/null
 
 dsh-logs:  ## Tail dsh logs
 	$(DSH_COMPOSE) logs -f dsh
@@ -200,13 +262,12 @@ terrain-up: check-workspace terrain-perms  ## Start terrain alongside core stack
 	$(TERRAIN_COMPOSE) --profile terrain up -d --build terrain
 
 terrain-perms:  ## Create volume + fix ownership to the container's terrain uid
-	docker volume create $(TERRAIN_DATA_VOLUME) >/dev/null
+	docker volume create --label com.docker.compose.project=$(COMPOSE_PROJECT_NAME) --label com.docker.compose.volume=terrain_data $(TERRAIN_DATA_VOLUME) >/dev/null
 # NOT $(UID):$(GID) like dsh-perms. terrain runs as the fixed in-image user
 # `terrain` (uid 1000, set by USER in terrain/Dockerfile), so chowning the
 # volume to the host uid would leave it unable to write its project registry at
-# ~/.terrain/registry.json. dsh-perms can get away with the host uid because the
-# dsh entrypoint re-chowns both volumes to its runtime uid on every boot; terrain
-# only chowns at BUILD time, which the named-volume mount shadows.
+# ~/.terrain/registry.json. dsh instead runs as the host uid via compose
+# `user:` with image-baked ownership + this one-time perms fix.
 	docker run --rm -v $(TERRAIN_DATA_VOLUME):/data alpine chown -R 1000:1000 /data
 
 terrain-build:  ## Build terrain image (Rust from source — slow first build)
@@ -234,10 +295,28 @@ terrain-ask:  ## Knowledge Q&A: q="<question>" [n=<slug>]  (keyless, no tokens)
 	@SLUG=""; if [ -n "$(n)" ]; then SLUG="--project $(n)"; fi; \
 	docker exec terrain terrain ask query "$(q)" $$SLUG
 
+# ── Pair blackboard (see docs/pair-programming.md, pair/AGENT_CONTRACT.md) ──
+
+pair-status:  ## Show pair queue/claims/done
+	python3 scripts/pair/status.py
+
+pair-claim:  ## Claim task: make pair-claim s=<slug> o=<hermes|dsh|human>
+	@if [ -z "$(s)" ] || [ -z "$(o)" ]; then echo "Usage: make pair-claim s=<slug> o=<hermes|dsh|human>"; exit 1; fi
+	python3 scripts/pair/claim.py "$(s)" "$(o)"
+
+pair-done:  ## Finish claim: make pair-done s=<slug> v="<verdict>"
+	@if [ -z "$(s)" ]; then echo "Usage: make pair-done s=<slug> v=\"<verdict>\""; exit 1; fi
+	python3 scripts/pair/done.py "$(s)" "$(v)"
+
+pair-poke:  ## Wake peer: make pair-poke p=<hermes|dsh> [m="<prompt>"]
+	@if [ -z "$(p)" ]; then echo "Usage: make pair-poke p=<hermes|dsh> [m=\"<prompt>\"]"; exit 1; fi
+	python3 scripts/pair/poke.py "$(p)" "$(m)"
+
 # ── Models (see docs/llm-gateway.md) ──
 
 sync:  ## Sync models from keyed providers (liveness-probed), reload gateway
 	python3 scripts/sync-models.py
+	@echo "DSH seed regenerated — push live with: make dsh-sync-models"
 
 sync-dry:  ## Preview synced models without writing config or reloading gateway
 	python3 scripts/sync-models.py --dry-run

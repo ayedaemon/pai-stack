@@ -5,6 +5,7 @@ hermes-data/
 *.bak
 .planning/
 __pycache__/
+.DS_Store
 
 
 # Added by cargo
