@@ -1,6 +1,6 @@
 ---
 name: gstack-investigate
-description: Systematic debugging with root cause investigation. (gstack)
+description: Four-phase debugging (investigate → analyze → hypothesize → implement) with an iron law — no fix without a root cause. Load on 'why is this broken', 'root cause', 'debug this'.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

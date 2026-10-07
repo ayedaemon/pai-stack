@@ -1,6 +1,6 @@
 ---
 name: gstack-autoplan
-description: Auto-review pipeline — reads the full CEO, design, eng, and DX review skills from disk and runs them sequentially with auto-decisions using 6 decision principles. (gstack)
+description: Runs the full plan-review battery (CEO, design, engineering, DX) in sequence and surfaces only the taste decisions at one approval gate. Load on 'autoplan' / 'review this plan properly' when you want all four lenses without asking.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

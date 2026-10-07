@@ -1,6 +1,6 @@
 ---
 name: gstack-spec
-description: Turn vague intent into a precise, executable spec in five phases. (gstack)
+description: Turns a request into a filed GitHub issue (optionally spawning a worker in a fresh worktree) for /ship to close on merge. Load on 'spec this out', 'file an issue', 'write a ticket'.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

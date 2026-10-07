@@ -1,6 +1,6 @@
 ---
 name: gstack-devex-review
-description: Live developer experience audit. (gstack)
+description: Tests the real developer experience in a browser — runs the getting-started flow, times time-to-first-helpful-word, screenshots error text, scores CLI help. Load on 'how is the DX'. Produces an evidence-backed scorecard.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

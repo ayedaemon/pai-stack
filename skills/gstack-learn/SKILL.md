@@ -1,6 +1,6 @@
 ---
 name: gstack-learn
-description: Manage project learnings.
+description: Review, search, prune and export the patterns gstack has learned across sessions. Load on 'what have we learned', 'show/prune learnings'.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

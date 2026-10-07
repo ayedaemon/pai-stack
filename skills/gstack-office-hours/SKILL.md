@@ -1,6 +1,6 @@
 ---
 name: gstack-office-hours
-description: YC Office Hours — two modes. (gstack)
+description: Product-discovery mode that forces six questions (demand, status quo, desperate specificity, narrowest wedge). Load when the ask is 'what should I build' or a feature idea needs pressure-testing.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

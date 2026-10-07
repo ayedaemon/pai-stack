@@ -1,6 +1,6 @@
 ---
 name: gstack-land-and-deploy
-description: Land and deploy workflow. (gstack)
+description: Takes over AFTER a PR exists — merge it, wait for CI and deploy, then verify production health with canary checks. Load on 'land it', 'merge', 'deploy to production'. Does not create the PR — that is gstack-ship.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

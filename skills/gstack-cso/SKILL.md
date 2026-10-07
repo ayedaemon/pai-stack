@@ -1,6 +1,6 @@
 ---
 name: gstack-cso
-description: "Security audit: supported static findings; qualified profiles add reproduction and repair candidates. (gstack)"
+description: Security audit that leads with evidence, not assurance — names the attacker, the boundary, and the impact for each finding. Load on 'security review', 'threat model', 'is this exploitable'.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

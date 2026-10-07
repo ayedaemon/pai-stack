@@ -1,6 +1,6 @@
 ---
 name: gstack-freeze
-description: Restrict file edits to a specific directory for the session. (gstack)
+description: Blocks file edits outside one directory for the session. Load while debugging, to stop a 'fix' wandering into unrelated code.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

@@ -1,6 +1,6 @@
 ---
 name: gstack-guard
-description: "Full safety mode: destructive command warnings + directory-scoped edits. (gstack)"
+description: Full safety — gstack-careful plus gstack-freeze together. Load for maximum safety on production or live systems when you want both guards at once.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

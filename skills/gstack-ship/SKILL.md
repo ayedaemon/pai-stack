@@ -1,6 +1,6 @@
 ---
 name: gstack-ship
-description: "Ship workflow: detect + merge base branch, run tests, review diff, bump VERSION, update CHANGELOG, commit, push, create PR. (gstack)"
+description: Ships a branch up to a PULL REQUEST — sync base, run tests, review the diff, bump VERSION, update CHANGELOG, commit, push, open the PR. Load on 'ship it', 'push to main', 'open a PR'. It stops at PR creation — merging and production verification are gstack-land-and-deploy.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

@@ -1,3 +1,8 @@
+---
+name: agents
+description: Ground rules for operating inside pai-stack - the startup protocol, EXECUTION_DIR and project-boundary invariants, propose-before-writing, memory and retrieval discipline, the native pai_* tool surface, and skill load order. Load when working in this repo and you need the local rules; repository-root AGENTS.md is injected automatically and holds a subset.
+---
+
 # AGENTS.md — Ground Rules for Hermes
 
 > This file is always injected into Hermes's context (native `agents` skill, also loadable via `skill_view`).

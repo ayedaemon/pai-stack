@@ -1,6 +1,6 @@
 ---
 name: gstack-plan-devex-review
-description: Interactive developer experience plan review. (gstack)
+description: Reviews a PLAN for developer-experience cost — setup friction, first-run clarity. Load before implementation when onboarding matters.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

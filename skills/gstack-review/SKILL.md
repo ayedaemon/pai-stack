@@ -1,6 +1,6 @@
 ---
 name: gstack-review
-description: Pre-landing PR review. (gstack)
+description: Pre-landing structural review of a diff — SQL safety, LLM trust boundaries, conditional side effects. Load before merging, or on 'review this PR' / 'check my diff'. For visual QA use gstack-design-review; for developer-experience use gstack-devex-review.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

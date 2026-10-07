@@ -1,6 +1,6 @@
 ---
 name: gstack-document-generate
-description: Generate missing documentation from scratch for a feature, module, or entire project. (gstack)
+description: Writes documentation from scratch using the Diataxis split (tutorial / how-to / reference / explanation). Load on 'write docs for this feature'.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

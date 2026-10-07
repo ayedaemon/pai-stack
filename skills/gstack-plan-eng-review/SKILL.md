@@ -1,6 +1,6 @@
 ---
 name: gstack-plan-eng-review
-description: Eng manager-mode plan review. (gstack)
+description: Architecture and execution review of a PLAN — data flow, edge cases, test coverage, performance. Load on 'review the architecture' or 'lock in the plan' before implementing.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

@@ -1,6 +1,6 @@
 ---
 name: gstack-careful
-description: Safety guardrails for destructive commands. (gstack)
+description: Warns before destructive commands (rm -rf, DROP TABLE, force-push, hard reset) and lets the user override each one. Load before touching production or a shared environment.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

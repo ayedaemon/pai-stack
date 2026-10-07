@@ -335,13 +335,21 @@ The `./skills` mount is then live on disk but never scanned, and the catalog com
 back empty — every `skill` call fails with `unknown or no longer available`. That
 is the failure mode this `DSH_AGENTS_HOME` line fixes.
 
-Verified in the running container: 30 of 31 skills parse. The exception is
-`skills/agents/SKILL.md`, which has no YAML frontmatter — it is an `AGENTS.md`-style
-ground-rules doc for Hermes' always-on injection, not a loadable DSH skill, so the
-parser skips it. Add frontmatter if you ever want it loadable in DSH.
-(The vendored `skills/gstack/` + 25 `skills/gstack-*/` dirs follow the same
-`name`/`description` frontmatter convention and parse the same way; re-verify
-with `skills_list` after adding skills.)
+Verified 2026-10-08: **all 56 skills parse.** `skills/agents/SKILL.md` used to be
+the sole exception — it was an `AGENTS.md`-style ground-rules doc with no YAML
+frontmatter, so the parser skipped it. It now carries `name` + `description`
+matching its directory, so `skill_view(name="agents")` resolves like any other.
+Root `AGENTS.md` is still injected separately by the Hermes host (it walks the
+`AGENTS.md` chain from git root to cwd); the skill is the on-demand copy.
+
+Keep `name` + `description` on every skill. A skill without frontmatter is not
+merely undocumented, it is **invisible to the loader** — which is exactly how this
+one went unnoticed.
+
+Re-verify with `skills_list` after adding skills. The vendored
+`skills/gstack/` + 25 `skills/gstack-*/` dirs follow the same convention; note
+that a vendored skill's `name:` may differ from its directory (see
+`skills/gstack/VENDORED.md`) — the `name:` is authoritative.
 
 No conversion needed. The hermes skills (stack-discovery, mermaid, system-design, python, docker, react, nodejs, sql, planning, gitops, research, opencode-delegate, etc.) work as-is — they are procedural markdown that the model reads on demand.
 
@@ -351,8 +359,8 @@ skill text sends the model after tools that don't exist.
 
 **Do not fork the skills to fix this.** The resolution is the opposite direction:
 the Phase 2 plugins expose tools named after the Hermes originals, so the skills
-resolve unmodified — see [Naming Rule](#naming-rule-binding). 11 of 30 skills are
-affected; the other ~19 (the vendored methodology guides — `mermaid`,
+resolve unmodified — see [Naming Rule](#naming-rule-binding). 11 of 56 skills are
+affected; the other ~45 (the vendored methodology guides — `mermaid`,
 `system-design`, `code-reviewer`, `web-design-guidelines`, `webapp-testing`,
 `senior-backend`, `frontend-design`, `docker-development`, `ponytail`, …) carry
 no tool dependency and work as-is today.
@@ -389,10 +397,12 @@ Two different identities, previously conflated:
 | **Package / plugin** | `dsh-pai-notebook` | Keeps `dsh-` — required by the `@deepseek-ai/dsh-*` npm scope convention. Never drop it. |
 | **Tool the model calls** | `pai_notebook_ops` | Mirrors the Hermes name **byte-for-byte**. |
 
-Rationale: the 30 skills already contain **51 live references** to these tools
-(`pai_docker_ops` ×15, `pai_adr_ops` ×15, `pai_notebook_ops` ×14,
-`pai_ops_design_ops` ×7), plus **19** to `mnemosyne_*`.
-Eleven of the 30 skills are vendored third-party — eight carry a vendored
+Rationale: the 56 skills contain **60 live references** to these tools
+(`pai_docker_ops` ×15, `pai_adr_ops` ×16, `pai_notebook_ops` ×16,
+`pai_ops_design_ops` ×13), plus **19** to `mnemosyne_*`. (Counts re-measured
+2026-10-08; the earlier 30-skill / 51-reference figures predate the vendored
+`gstack` suite.)
+Eleven of the 56 skills are vendored third-party — eight carry a vendored
 `LICENSE` (`code-reviewer`, `docker-development`, `frontend-design`,
 `mcp-builder`, `senior-backend`, `skill-security-auditor`,
 `supabase-postgres-best-practices`, `webapp-testing`) and three more are authored

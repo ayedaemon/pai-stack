@@ -1,6 +1,6 @@
 ---
 name: gstack-plan-design-review
-description: Designer's eye plan review — interactive, like CEO and Eng review. (gstack)
+description: Scores each dimension of a design PLAN 0-10 and fixes the plan. Load before implementation on 'critique this design plan'. For auditing a live interface use gstack-design-review.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

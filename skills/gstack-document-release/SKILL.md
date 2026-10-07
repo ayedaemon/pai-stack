@@ -1,6 +1,6 @@
 ---
 name: gstack-document-release
-description: Release documentation audit. (gstack)
+description: Audits existing docs against what actually shipped — coverage map, architecture-diagram drift, README/ARCHITECTURE/CONTRIBUTING updates, CHANGELOG polish. Load before or after a release, not for authoring new docs.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

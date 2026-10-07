@@ -1,6 +1,6 @@
 ---
 name: gstack-context-save
-description: Save working context. (gstack)
+description: Captures git state, decisions and remaining work to a file so a later session can resume. Load on 'save progress', 'save my work' before a context switch.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

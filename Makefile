@@ -9,7 +9,7 @@
 	design-up design-down design-logs design-config design-build design-perms design-import \
 	dsh-up dsh-down dsh-logs dsh-config dsh-build dsh-perms dsh-sync-models dsh-ensure-web dsh-password dsh-clean \
 	terrain-up terrain-down terrain-logs terrain-config terrain-build terrain-perms terrain-index terrain-ask \
-	pair-status pair-claim pair-done pair-poke
+
 
 WORKSPACE_DIR ?= $(shell grep -E '^WORKSPACE_DIR=' .env 2>/dev/null | cut -d= -f2- | tr -d '\"' | tr -d "'")
 # Expand a leading ~ to $HOME: neither make recipes nor compose tilde-expand raw
@@ -92,10 +92,6 @@ help:  ## Show this help message
 	@printf "  \033[36m%-16s\033[0m %s\n" "terrain-index" "Index a project: d=/opt/data/<dir> [n=<slug>]"
 	@echo ""
 	@echo "\033[1;34mPair:\033[0m"
-	@printf "  \033[36m%-16s\033[0m %s\n" "pair-status" "Show pair queue/claims/done (docs/pair-programming.md)"
-	@printf "  \033[36m%-16s\033[0m %s\n" "pair-claim" "Claim task: s=<slug> o=<hermes|dsh|human>"
-	@printf "  \033[36m%-16s\033[0m %s\n" "pair-done" "Finish claim: s=<slug> v=\"<verdict>\""
-	@printf "  \033[36m%-16s\033[0m %s\n" "pair-poke" "Wake peer: p=<hermes|dsh> [m=\"<prompt>\"]"
 	@echo ""
 	@echo "\033[1;34mMaintenance:\033[0m"
 	@printf "  \033[36m%-16s\033[0m %s\n" "build" "Rebuild images (s=<service>)"
@@ -294,23 +290,6 @@ terrain-ask:  ## Knowledge Q&A: q="<question>" [n=<slug>]  (keyless, no tokens)
 	@if [ -z "$(q)" ]; then echo "Usage: make terrain-ask q=\"<question>\" [n=<slug>]"; exit 1; fi
 	@SLUG=""; if [ -n "$(n)" ]; then SLUG="--project $(n)"; fi; \
 	docker exec terrain terrain ask query "$(q)" $$SLUG
-
-# ── Pair blackboard (see docs/pair-programming.md, pair/AGENT_CONTRACT.md) ──
-
-pair-status:  ## Show pair queue/claims/done
-	python3 scripts/pair/status.py
-
-pair-claim:  ## Claim task: make pair-claim s=<slug> o=<hermes|dsh|human>
-	@if [ -z "$(s)" ] || [ -z "$(o)" ]; then echo "Usage: make pair-claim s=<slug> o=<hermes|dsh|human>"; exit 1; fi
-	python3 scripts/pair/claim.py "$(s)" "$(o)"
-
-pair-done:  ## Finish claim: make pair-done s=<slug> v="<verdict>"
-	@if [ -z "$(s)" ]; then echo "Usage: make pair-done s=<slug> v=\"<verdict>\""; exit 1; fi
-	python3 scripts/pair/done.py "$(s)" "$(v)"
-
-pair-poke:  ## Wake peer: make pair-poke p=<hermes|dsh> [m="<prompt>"]
-	@if [ -z "$(p)" ]; then echo "Usage: make pair-poke p=<hermes|dsh> [m=\"<prompt>\"]"; exit 1; fi
-	python3 scripts/pair/poke.py "$(p)" "$(m)"
 
 # ── Models (see docs/llm-gateway.md) ──
 

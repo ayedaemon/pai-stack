@@ -1,6 +1,6 @@
 ---
 name: gstack-plan-ceo-review
-description: CEO/founder-mode plan review. (gstack)
+description: Product/scope review of a PLAN before implementation — challenges premises, expands or cuts scope. Load on 'review this plan as a founder', 'is this the right product'. Not a code review.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

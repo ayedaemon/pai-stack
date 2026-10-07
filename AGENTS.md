@@ -140,7 +140,6 @@ Skills are markdown files in `./skills/`, mounted read-only into Hermes via `ski
 | `mermaid` | Mermaid diagram authoring guide (type selection, syntax safety, C4 abstraction protocol) |
 | `research` | Root-level wiki (SCHEMA/index/log, ingest/query/lint) — load for wiki/kb/notes tasks |
 | `opencode-delegate` | Keyless OpenCode delegation (background+poll, branch review) — load for implementation handoffs |
-| `pair-programming` | Peer shared-blackboard queue (poll/claim/worktree/done, poke wake-up) — load when `pair/` exists |
 | `agents` | Ground rules injected at session start |
 
 #### Tools (native `pai` toolset, `pai_tools` plugin)

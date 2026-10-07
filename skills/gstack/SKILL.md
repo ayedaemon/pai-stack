@@ -1,6 +1,6 @@
 ---
 name: gstack
-description: Router for the gstack skill suite. (gstack)
+description: Entry point for the vendored gstack suite — routes a vague request to the right gstack skill. Load only when the request names no specific gstack skill (e.g. 'which gstack skill fits this?'). Otherwise load the specific skill directly.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

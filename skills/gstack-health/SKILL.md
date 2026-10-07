@@ -1,6 +1,6 @@
 ---
 name: gstack-health
-description: Code quality dashboard. (gstack)
+description: Runs the project's own type checker, linter, tests and dead-code detector, then combines them into a weighted 0-10 quality score with a trend over time. Load on 'health check', 'how healthy is the codebase'.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

@@ -1,6 +1,6 @@
 ---
 name: gstack-retro
-description: Weekly engineering retrospective. (gstack)
+description: Weekly engineering retrospective from commit history and work patterns, with per-person breakdown and trends. Load on 'weekly retro', 'what did we ship this week'.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

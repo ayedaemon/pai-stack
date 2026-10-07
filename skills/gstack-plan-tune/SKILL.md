@@ -1,6 +1,6 @@
 ---
 name: gstack-plan-tune
-description: "Self-tuning question sensitivity + developer psychographic for gstack (v1: observational). (gstack)"
+description: Tunes WHICH clarifying questions the other gstack skills ask (never-ask / always-ask / ask-only-for-one-way). Load when the suite asks too many questions or too few.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

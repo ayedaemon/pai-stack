@@ -13,5 +13,14 @@ live drafts, approvals/questions land in Phase 4.
 - State: `$DSH_HOME/storages/telegram/{state,bindings}.json` (offset + cwd).
 
 ```bash
-node --check lib/index.js && node --check lib/util.js && node --test test/
+node --check lib/index.js && node --check lib/util.js && node --test test/*.test.js
 ```
+
+`node --test test/` (bare directory) no longer works on Node 24 — it resolves
+`test/` as a module path and fails with MODULE_NOT_FOUND. Pass the files.
+
+- Group support is live (README history said "DM-only in v1" — that is stale).
+  Admission is `groupAdmission()` in `lib/util.js`: owners may use any chat,
+  members only allowlisted chats. A bot sender must be explicitly allowlisted.
+- Bot-to-bot loop guard: `botStreakTrips` caps 5 consecutive bot-triggered turns
+  per chat; any human message resets it.

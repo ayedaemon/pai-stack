@@ -300,9 +300,29 @@ memory:
 # HERMES_TELEGRAM_BOT_TOKEN (required, mapped to TELEGRAM_BOT_TOKEN in
 # compose), HERMES_TELEGRAM_ALLOWED_USERS (DM+group IDs),
 # HERMES_TELEGRAM_GROUP_ALLOWED_USERS (group senders only), HERMES_TELEGRAM_GROUP_ALLOWED_CHATS.
+#
+# bots_require_mention: TRUE is load-bearing whenever two bots share a group and
+# are allowed to talk to each other.
+#
+# Telegram DOES deliver bot-to-bot messages. Hermes ships _sender_is_other_bot
+# (adapter.py:6343) and _bot_sender_suppressed (adapter.py:6113) precisely because
+# of this — you do not write a loop breaker for messages that are never delivered.
+# DSH ships its own 5-turn cap (botStreakTrips, util.js:98).
+#
+# The upstream default for this flag is FALSE. With it false, an @-mention from a
+# peer bot dispatches, the reply @-mentions back, and two bots ping-pong
+# indefinitely — burning tokens and flooding the group until a human intervenes.
+# TRUE means a peer bot must address us BY NAME to get our attention; its
+# chatter and quote-replies stay silent. Consequence to know: with this on,
+# "reply to my message" no longer wakes us. That is the intended trade — an
+# explicit mention is the reliable form.
+#
+# Human messages are unaffected: this gate applies only to other bots.
+# Verified against adapter.py:6113 and adapter.py:5753 (default false).
 platforms:
   telegram:
     enabled: true
+    bots_require_mention: true
 
 platform_hints:
   telegram: "You are in a Telegram Forum Topic. Keep replies short, scannable, with citations (path:line for files, skill names for native skills). Stay scoped to this topic's project. Never leak other projects' data into this topic."

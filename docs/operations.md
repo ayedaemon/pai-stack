@@ -16,11 +16,42 @@
 | `make all-up` / `make all-down` / `make all-clean` | Start / stop everything (core + design + dsh + terrain); `all-clean` wipes **all** volumes |
 | `make design-up` / `make design-down` / `make design-logs` / `make design-config` / `make design-build` / `make design-perms` / `make design-import d=/workspace/<dir> [n=<name>]` | OpenDesign ([opendesign.md](opendesign.md)) |
 | `make dsh-up` / `make dsh-down` / `make dsh-logs` / `make dsh-config` / `make dsh-build` / `make dsh-perms` / `make dsh-password` | DSH agent ([dsh.md](dsh.md)) |
-| `make pair-status` / `make pair-claim s=<slug> o=<id>` / `make pair-done s=<slug> v="<verdict>"` / `make pair-poke p=<hermes|dsh>` | Pair blackboard queue ([contract](../.pair/AGENT_CONTRACT.md), `pair-*.md` queued tasks) |
 
 UID/GID auto-detect (`id -u` / `id -g`) keeps bind-mounted files owned by you. Override per-invocation: `make up UID=1000 GID=1000`.
 
 All profiles share one compose project: running a subset (e.g. `make up` while `dsh` runs) prints a benign `Found orphan containers` warning — use `make all-down` / `make all-clean` for full-stack stops. Volumes created before the compose-label fix still print `not created by Docker Compose` until recreated (e.g. via `make all-clean`, which destroys state).
+
+## Image drift — the repo can be ahead of the running containers
+
+`skills/`, `hermes/config.yaml`, `Makefile` and `.env` are **bind-mounted**, so
+edits are live on the next process start. Anything the **Dockerfile copies** is
+baked at build time and will *not* appear until you rebuild.
+
+Audit it rather than guessing:
+
+```bash
+# which local COPY directives are missing from the running image?
+docker inspect pai-stack-hermes:latest --format '{{.Created}}'   # when it was built
+stat -f '%Sm %N' -t '%Y-%m-%d %H:%M' hermes/Dockerfile             # when it last changed
+docker exec hermes ls /opt/hermes/plugins/                       # what actually shipped
+```
+
+**Found 2026-10-07:** `pai-stack-hermes:latest` was built 2026-09-30, four days
+before `hermes/Dockerfile:81` added
+`COPY plugins/pai_terrain_ops`. The plugin is absent from the container, so
+`pai_terrain_ops` — enabled in `hermes/config.yaml` and documented in
+`AGENTS.md` — was invisible to every session and the Turn-1 terrain step could not
+fire. Three `pai_tools` files (`__init__.py`, `docker_ops.py`,
+`ops_design_ops.py`) had also drifted.
+
+```bash
+make build s=hermes && docker compose up -d hermes
+```
+
+The other three images were current at the time of writing (`dsh` ~4h,
+`terrain` and `open-design` same-day). Check yours the same way after any
+Dockerfile edit — a plugin that exists in the repo but not in the image fails
+*silently*, which is the whole problem.
 
 ## `.env` keys
 
@@ -56,8 +87,9 @@ Template with generation hints: [.env.example](../.env.example)
 | `docker-compose.opendesign.yaml` | Design profile override |
 | `hermes/config.yaml` | System prompt, providers, skills, Kanban |
 | `hermes/plugins/pai_tools/` | Native `pai_*` tools |
-| `skills/` | `SKILL.md` files, mounted read-only into Hermes |
-| `skills/agents/SKILL.md` | Ground rules injected at session start |
+| `hermes/plugins/pai_terrain_ops/` | Code-intel tool → `terrain:7878/call` (image-baked; see *Image drift*) |
+| `skills/` | `SKILL.md` files, mounted read-only into Hermes (and into DSH at `/data/dsh/.agents/skills`) |
+| `skills/agents/SKILL.md` | Ground rules — on-demand copy of `AGENTS.md` |
 | `llm-gateway/config.yaml` + `scripts/sync-models.py` | Routes + model sync |
 | `opendesign/Dockerfile` | Local open-design build |
 | `docker-compose.dsh.yaml` | DSH profile override |

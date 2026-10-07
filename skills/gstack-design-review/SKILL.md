@@ -1,6 +1,6 @@
 ---
 name: gstack-design-review
-description: "Designer's eye QA: finds visual inconsistency, spacing issues, hierarchy problems, AI slop patterns, and slow interactions — then fixes them. (gstack)"
+description: Live visual QA of a running interface — finds spacing, hierarchy and visual-consistency defects, then fixes them in source with before/after screenshots. Load on 'audit the design', 'does this look good', 'design polish'. To review a design PLAN before code exists, use gstack-plan-design-review.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->

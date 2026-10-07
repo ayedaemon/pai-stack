@@ -1,6 +1,6 @@
 ---
 name: gstack-context-restore
-description: Restore working context saved earlier by /context-save. (gstack)
+description: Loads the most recent saved state, preferring the current branch. Load on 'resume', 'where was I', 'restore context'. Pairs with gstack-context-save.
 ---
 <!-- AUTO-GENERATED from SKILL.md.tmpl — do not edit directly -->
 <!-- Regenerate: bun run gen:skill-docs -->
