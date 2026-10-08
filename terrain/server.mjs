@@ -174,7 +174,7 @@ function run(action, params) {
   // Read-only actions carry an empty key, which never collides with a
   // mutating one, so they stay concurrent.
   const mutating = ['index', 'refresh', 'init'].includes(action)
-  const key = (mutating ? 'write|' : 'read|') + (params.path ?? params.project ?? '')
+  const key = (mutating ? 'write|' : 'read|') + (params.path ?? '')
 
   return serialise(key, () => new Promise((res) => {
     const child = spawn(BIN, argv, {
@@ -321,6 +321,15 @@ const server = createServer(async (req, res) => {
           const sid = `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
           sessions.add(sid)
           var extraHeaders = { 'mcp-session-id': sid }
+        }
+        // Apply LLM gate check for MCP tool calls
+        if (msg.method === 'tools/call') {
+          const action = String(msg.params?.name ?? '').replace(/^pai_terrain_/, '').replace(/^terrain_/, '')
+          const gated = guardLlm(action)
+          if (gated) {
+            out.push({ jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: gated } })
+            continue
+          }
         }
         const r = await handleRpc(msg, sessions)
         if (r) out.push(r)

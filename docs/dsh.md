@@ -381,7 +381,7 @@ applied** — tracked in the checklist below.
 
 ## Porting Hermes Tools → DSH
 
-Hermes `pai_tools` are **Python** (pai_notebook_ops, pai_adr_ops, pai_docker_ops, pai_ops_design_ops). DSH plugins are **TypeScript** using the Cordis framework. Port them 1:1 — same logic, different language.
+Hermes `pai_tools` are **Python** (pai_notebook_ops, pai_adr_ops, pai_ops_design_ops). DSH plugins are **TypeScript** using the Cordis framework. Port them 1:1 — same logic, different language. Docker is NOT ported: both agents use the native `docker` + `docker compose` binaries over the mounted socket (see `docker` skill).
 
 ### Naming Rule (binding)
 
@@ -397,11 +397,11 @@ Two different identities, previously conflated:
 | **Package / plugin** | `dsh-pai-notebook` | Keeps `dsh-` — required by the `@deepseek-ai/dsh-*` npm scope convention. Never drop it. |
 | **Tool the model calls** | `pai_notebook_ops` | Mirrors the Hermes name **byte-for-byte**. |
 
-Rationale: the 56 skills contain **60 live references** to these tools
-(`pai_docker_ops` ×15, `pai_adr_ops` ×16, `pai_notebook_ops` ×16,
-`pai_ops_design_ops` ×13), plus **19** to `mnemosyne_*`. (Counts re-measured
-2026-10-08; the earlier 30-skill / 51-reference figures predate the vendored
-`gstack` suite.)
+Rationale: the skills reference the remaining tools
+(`pai_adr_ops`, `pai_notebook_ops`,
+`pai_ops_design_ops`), plus `mnemosyne_*`. Docker references are gone:
+the `docker` skill is binary-native on both agents, so there is nothing to port.
+(Pre-removal counts, 2026-10-08: `pai_docker_ops` ×15 — all replaced by native CLI.)
 Eleven of the 56 skills are vendored third-party — eight carry a vendored
 `LICENSE` (`code-reviewer`, `docker-development`, `frontend-design`,
 `mcp-builder`, `senior-backend`, `skill-security-auditor`,
@@ -460,7 +460,6 @@ these parameter names. Anything narrower breaks live skill references.
 
 | Tool | Actions referenced by skills | Refs |
 |---|---|---|
-| `pai_docker_ops` | `exec` (5), `list` (1), `start` (1) | 7 |
 | `pai_adr_ops` | `create_adr` (4), `check_drift` (4) | 8 |
 | `pai_notebook_ops` | `add_note` (4), `search`, `get_source` | 6 |
 
@@ -475,27 +474,30 @@ Implement the full Hermes action set where cheap (`pai_notebook_ops` also needs
 | `pai_notebook_ops` | `dsh-pai-notebook` | Native TS plugin, direct file I/O on `research/` |
 | `pai_adr_ops` | `dsh-pai-adr` | Native TS plugin, direct file I/O + git |
 | `pai_ops_design_ops` | `dsh-pai-design` | Native TS plugin, REST client to OpenDesign |
-| `pai_docker_ops` | `dsh-pai-docker` | Native TS plugin driving the Docker API over a mounted socket |
+| (none — native CLI) | (none — `dsh-pai-docker` NOT needed) | Docker: socket + `docker-ce-cli` + compose plugin already baked in; DSH runs the same `docker` skill as Hermes — no TS port, no tool registration |
 | `mnemosyne_*` | `dsh-mnemon` | Tools named `mnemosyne_*` — see below |
 
 ### Blockers to clear before Phase 2
 
-**RESOLVED — proxy socket (Option A, Oct-2026).**
+**RESOLVED — socket + native CLI, no `dsh-pai-docker` (Oct-2026).**
 
 The blocker used to be that dsh had `read_only: true`, `cap_drop: [ALL]`, no
-`/var/run/docker.sock` in `volumes`, and no docker binary on `PATH`, making
-`pai_docker_ops` unimplementable. The three options were:
+`/var/run/docker.sock` in `volumes`, and no docker binary on `PATH`. The three
+options were:
 
 1. **Socket mount + `CAP_DAC_OVERRIDE`** — grants root-equivalent host control.
 2. **Named subset** — a thin shim restricted to pai-stack's own services.
-3. **Defer** — drop `pai_docker_ops` (7 references).
+3. **Defer** — drop the docker tool.
 
-**Option 1 is now implemented directly.** `/var/run/docker.sock` is mounted
+**Option 1 is implemented directly, and Hermes has since deleted its docker
+tool too — so there is nothing left to port.** `/var/run/docker.sock` is mounted
 `:ro` (exactly as hermes has it), `docker-ce-cli` + `docker-compose-plugin`
 are baked into the image, and compose `user:` + `group_add: [DOCKER_GID]`
 gives the agent user socket access — see [Docker socket](#docker-socket).
 (The earlier socat proxy existed only because the `setpriv` privilege drop
-discarded `group_add`; with `user:` there is no drop, so no proxy.)
+discarded `group_add`; with `user:` there is no drop, so no proxy.) Both agents
+run the same `docker` skill against the same binaries: `dsh-pai-docker` is
+**NOT needed and will not be built**.
 
 ### Docker socket
 
@@ -547,9 +549,10 @@ docker exec dsh id          # uid:gid matches host; groups include DOCKER_GID
 
 ### Decision
 
-**Native DSH plugins for the four remaining tool surfaces, tool names mirroring Hermes.**
+**Native DSH plugins for the three remaining tool surfaces, tool names mirroring Hermes.**
 No MCP bridge, no Hermes API coupling — same logic, different language. Each is a
 TypeScript DSH plugin registered via `ctx.tools.register()`, running in-process.
+Docker is explicitly excluded: native CLI on both sides (see above).
 
 The naming rule is the load-bearing decision here: it is what lets the entire
 existing skill library — vendored ones included — run unmodified against DSH.
@@ -750,11 +753,11 @@ Skills mount and tool-naming contract are settled; the plugin code is not writte
 - [ ] `docs/operations.md` — `dsh-*` targets row, env vars row, override file row
 - [ ] `docs/architecture.md` — Mermaid update (load `mermaid` skill first, per AGENTS.md)
 - [x] Skills mount `./skills:/data/dsh/.agents/skills:ro` — path verified; requires `DSH_AGENTS_HOME=/data/dsh/.agents` (see "Porting Hermes Skills"). 29/30 load; `agents` has no frontmatter and is skipped by design.
-- [x] Tool-naming contract for Phase 2 — package keeps `dsh-`, tool mirrors Hermes, `action` enum per tool ([Naming Rule](#naming-rule-binding)); required action sets extracted from skill usage; `dsh-pai-docker` blocker documented
+- [x] Tool-naming contract for Phase 2 — package keeps `dsh-`, tool mirrors Hermes, `action` enum per tool ([Naming Rule](#naming-rule-binding)); required action sets extracted from skill usage; docker explicitly excluded (native CLI, no port)
 - [x] `pai_code_intel` + `skills/code-intel` **removed** (2026-10-04) — code intelligence is out of pai-stack, replaced by a dedicated lightweight tool. Retires the index-staleness blocker.
 - [x] Default workspace = `/opt/data/workspace` (2026-10-06) — registry pre-seed + native `workspace-controller` `documentsDirectory` override, both ensured by the entrypoint on every boot; survives `dsh-clean`. Replaced the retired `dsh-default-workspace` plugin. See [Default workspace](#default-workspace).
 - [ ] Mark `agents`, `autonomous-tech-learner` with `disable-model-invocation: true` — interim mitigation until Phase 2 ships (see "Porting Hermes Skills")
-- [ ] `dsh-pai-*` TypeScript plugins (notebook, adr, design, docker) — Phase 2. Tool names must mirror Hermes (`pai_notebook_ops` + `action` enum), package names keep the `dsh-` prefix — see [Naming Rule](#naming-rule-binding) and the required action sets. Clear the blocker first: `pai_docker_ops` needs a socket-mount/capability decision.
+- [ ] `dsh-pai-*` TypeScript plugins (notebook, adr, design — docker explicitly NOT ported, native CLI on both agents) — Phase 2. Tool names must mirror Hermes (`pai_notebook_ops` + `action` enum), package names keep the `dsh-` prefix — see [Naming Rule](#naming-rule-binding) and the required action sets.
 - [x] `dsh-mnemon` memory plugin — baked into the image + entrypoint-seeded (no post-boot install). Tools surface as `mnemon_*` (no upstream rename support); shared skills keep `mnemosyne_*` for Hermes — memory-via-skills stays Hermes-only, DSH uses the workbench + direct calls.
 - [ ] First-party Telegram notifier — third-party options evaluated and removed Oct-2026 (`dsh-telegram-notify`: dead `settingsScope` client inject; `dsh-telegram-channel`: `0.1.x`-pinned peers). See [Telegram notifications](#telegram-notifications-first-party-plugin-planned).
 

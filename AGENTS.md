@@ -48,7 +48,7 @@ it is host state, not repo content.
 
 ```
 hermes ──→ [Mnemosyne: SQLite]  local persistent memory (working/episodic memory, knowledge graph)
-hermes ──→ [pai_tools plugin]   native tools: pai_notebook_ops, pai_adr_ops, pai_docker_ops, pai_ops_design_ops
+hermes ──→ [pai_tools plugin]   native tools: pai_notebook_ops, pai_adr_ops, pai_ops_design_ops (Docker is native CLI via the `docker` skill, not a tool)
 hermes ──→ [pai_terrain_ops]    code intelligence → terrain:7878/call  (HTTP)
 dsh    ──→ [dsh-mcp-client]     code intelligence → terrain:7878/mcp   (MCP)
 hermes ←─→ [pair/ blackboard] ←─→ dsh   peer queue: pair/queue → claim.py → worktree → done.py; wake via poke.py (docker exec headless)
@@ -146,7 +146,6 @@ Skills are markdown files in `./skills/`, mounted read-only into Hermes via `ski
 
 | Tool | Purpose | Allowed actions |
 |---|---|---|
-| `pai_docker_ops` | Manage pai-stack containers via Docker socket | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
 | `pai_notebook_ops` | Query and manage Research Brain (native file vault in `research/`) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 | `pai_adr_ops` | Living ADR creation & code symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 | `pai_ops_design_ops` | OpenDesign visual generation / mockups bridge | (see `opendesign-integration` skill) |
@@ -154,7 +153,7 @@ Skills are markdown files in `./skills/`, mounted read-only into Hermes via `ski
 | `skill_view` | Load a procedural skill by name | `name="<skill>"` |
 | `skills_list` | Discover all available native skills | (none) |
 
-All container actions are audited to `/opt/hermes/data/logs/docker-ops.log` on the persistent `hermes-data` volume.
+Docker is native CLI over the mounted socket (see `docker` skill) — no tool, no audit log.
 
 ### Mnemosyne — agent memory (decisions, execution outcomes, lessons learned)
 
@@ -179,7 +178,7 @@ using embedded SQLite (`/opt/hermes/data/mnemosyne/data/mnemosyne.db`) and local
 
 On **Turn 1 of every session**:
 1. **Discover skills**: Call `skills_list()` to confirm `research` and other skills are available.
-2. **Recall Known Boundaries + services (parallel)**: Call `mnemosyne_recall(query="workspace projects structure boundaries")` and `pai_docker_ops(action="list")`.
+2. **Recall Known Boundaries + services (parallel)**: Call `mnemosyne_recall(query="workspace projects structure boundaries")` and run `docker ps` with the pai-stack label filter (see `docker` skill).
 3. **Survey Directory Structure**: List `/opt/data/workspace` (depth 1) to identify project subdirectories and identify root markers (`.git/`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Makefile`).
 4. **Orient on the stack**: If the stack is unknown, load the `stack-discovery` skill first; otherwise read the project's manifest (`pyproject.toml`, `package.json`, …).
 5. **Orient on wiki (IFF research task OR `$RESEARCH_DIR/SCHEMA.md` exists)**: Load `skill_view(name="research")`, then read `SCHEMA.md` + `index.md` + `log.md` tail-20 only (index-first, top-3 pages max).
@@ -233,7 +232,7 @@ See the `planning` skill for the full discipline.
 |---|---|
 | [`hermes/config.yaml`](hermes/config.yaml) | System prompt, model providers, skills, knowledgebase |
 | [`docker-compose.yaml`](docker-compose.yaml) | All service definitions, mounts, resource limits |
-| [`hermes/plugins/pai_tools/`](hermes/plugins/pai_tools/) | Native Hermes tools: `pai_notebook_ops`, `pai_adr_ops`, `pai_docker_ops`, `pai_ops_design_ops` |
+| [`hermes/plugins/pai_tools/`](hermes/plugins/pai_tools/) | Native Hermes tools: `pai_notebook_ops`, `pai_adr_ops`, `pai_ops_design_ops` |
 | [`hermes/plugins/pai_terrain_ops/`](hermes/plugins/pai_terrain_ops/) | Code-intel tool: `pai_terrain_ops` → terrain service |
 | [`terrain/`](terrain/) | Terrain multi-stage image + HTTP/MCP shim |
 | [`docker-compose.terrain.yaml`](docker-compose.terrain.yaml) | Opt-in `terrain` profile |

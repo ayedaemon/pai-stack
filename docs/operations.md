@@ -41,7 +41,7 @@ before `hermes/Dockerfile:81` added
 `COPY plugins/pai_terrain_ops`. The plugin is absent from the container, so
 `pai_terrain_ops` — enabled in `hermes/config.yaml` and documented in
 `AGENTS.md` — was invisible to every session and the Turn-1 terrain step could not
-fire. Three `pai_tools` files (`__init__.py`, `docker_ops.py`,
+fire. Three `pai_tools` files (`__init__.py`,
 `ops_design_ops.py`) had also drifted.
 
 ```bash

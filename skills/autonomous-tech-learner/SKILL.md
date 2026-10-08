@@ -246,7 +246,7 @@ If a learning objective requires empirical validation:
 Probes are run directly — no helper scripts needed:
 
 1. **Create** probe directory and write `probe.py` inline (follow Hypothesis-Testing Protocol above).
-2. **Execute** via `pai_docker_ops(action="exec", service="hermes", cmd="timeout 30 python /opt/data/probes/<slug>/probe.py")`.
+2. **Execute** with `timeout 30 python /opt/data/probes/<slug>/probe.py` (you run inside hermes already).
 3. **Ingest** results via `pai_notebook_ops(action="add_note", ...)` with `EVIDENCE:` title prefix.
 
 ---

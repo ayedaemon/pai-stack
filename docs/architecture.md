@@ -199,12 +199,12 @@ flowchart LR
 
 **The docker socket is a deliberate, accepted grant**, not a defect: both agents must be
 able to control the host containers they own, including the optional profiles.
-`pai_docker_ops` is scoped to this stack's five services so it cannot be aimed at another
-project's containers by accident.
+Scoping is by convention in the `docker` skill (pai-stack label filter vs
+`docker compose -p <project>`), not by code — no tool enforces it.
 
 **The shape of the remaining risk:** the two services with no containment are the two
 that are always on *and* published on every host interface. The socket being accepted does
-not neutralise it — `pai_docker_ops(action="exec", service="llm-gateway", cmd="env")`
+not neutralise it — `docker exec llm-gateway env`
 prints every provider key the gateway holds. See [audit.md](audit.md).
 
 ## Mounts

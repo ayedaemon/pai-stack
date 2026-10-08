@@ -1,70 +1,123 @@
 ---
 name: docker
-description: Docker discovery router — map Dockerfiles, compose services, volumes, and networks in this repo. Load on Dockerfile/compose/container questions or when stack-discovery finds them. Delegates optimization, validator tooling, and security hardening to docker-development.
+description: Docker over the mounted socket with native docker + compose binaries. Load on any Dockerfile/compose/container question or when stack-discovery finds them. Teaches socket scope, help-first flag discovery, and low-noise --format output. Delegates optimization and hardening depth to docker-development.
 ---
 
-# Docker (router)
+# Docker (native CLI over the mounted socket)
 
-> You own repo **service mapping**. Optimization and audit depth live upstream.
+> No docker tool exists. Both agents drive `/var/run/docker.sock` directly
+> with the native `docker` + `docker compose` binaries baked into their images.
 > Shared Hermes glue is canonical in the `agents` skill.
 
-## ⚠️ Tool Selection — MANDATORY FIRST STEP
+Socket premise (both containers): `/var/run/docker.sock:/var/run/docker.sock:ro`
++ `docker-ce-cli` + `docker-compose-plugin` on `PATH`. Verify once per session:
 
-Before ANY docker action, determine which tool to use. This is non-negotiable:
+```bash
+docker version --format '{{.Server.Version}}' && docker compose version --short
+```
+
+If that fails → report degraded (socket or binary missing), do NOT guess further.
+
+## Learn the CLI from itself — never guess flags
+
+Binaries drift across versions. Before first use of any unfamiliar
+object/subcommand, read its help. General → specific:
+
+```bash
+docker --help
+docker <object> --help            # e.g. docker container --help
+docker <object> <cmd> --help      # e.g. docker container ls --help
+docker compose --help
+docker compose <cmd> --help       # e.g. docker compose up --help
+```
+
+Rules: never invent a flag; if help output contradicts this skill, trust help.
+
+## Low-noise output — hide what agents don't need
+
+Default `docker ps` / `compose ps` tables are wide and truncate. Always
+constrain columns with `--format`, and prefer `json` when piping to `jq`.
+
+```bash
+# pai-stack cluster only, three columns, no truncation noise
+docker ps -a --filter label=com.docker.compose.project=pai-stack \
+  --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+
+# machine-readable single container
+docker ps --filter name=^hermes$ --format '{{json .}}' | jq '{Name, State, Status}'
+
+# state without full inspect dump
+docker inspect hermes --format '{{json .State}}' | jq '{Status, Running, ExitCode}'
+
+# logs: always bound tail, never full dump
+docker logs --tail=50 llm-gateway
+docker logs --tail=50 --since 10m hermes
+
+# compose inside a project: validate, then scoped status
+cd <EXECUTION_DIR> && docker compose -p <project> config --quiet   # syntax + var resolution
+cd <EXECUTION_DIR> && docker compose -p <project> ps --format json | jq '[.[] | {Name, Service, State}]'
+cd <EXECUTION_DIR> && docker compose -p <project> logs --tail=50 <service>
+```
+
+Discovery pattern for any new query: `<cmd> --help | grep -i format`,
+then pick `table` for eyes, `json` for pipes.
+
+## Scope — which cluster are you touching?
 
 ```
 Does EXECUTION_DIR contain a compose file?
 (docker-compose*.yaml OR compose.yaml)
 │
-├── YES → Use `docker compose -p <project_name>` CLI ONLY
-│         NEVER use pai_docker_ops for this project's containers.
-│         NEVER use bare `docker run` / `docker create`.
+├── YES → `cd <EXECUTION_DIR> && docker compose -p <project> ...` ONLY
+│         NEVER bare `docker run` / `docker create` here.
 │
-└── NO  → Is it a pai-stack service (hermes, llm-gateway)?
-          ├── YES → Use pai_docker_ops
-          └── NO  → Use `docker run` only after user confirmation.
-                    Document why no compose file exists.
+└── NO  → pai-stack services (hermes, llm-gateway, terrain, dsh, open-design)?
+          `docker ps/inspect/logs/restart/start/stop/exec <name>` directly.
+          `docker run` only after user confirmation + documented reason.
 ```
 
-**NEVER rules (hard invariants — no exceptions):**
-- NEVER call `pai_docker_ops` for a container that is not `hermes` or `llm-gateway`.
-- NEVER run `docker run`, `docker create`, or `docker start <name>` for a project that has a compose file.
-- NEVER run `docker compose` without `-p <project_name>` (pai-stack exports `COMPOSE_PROJECT_NAME=pai-stack`, which would hijack all bare compose commands).
-- NEVER run `docker compose up/down/restart` from a directory other than `EXECUTION_DIR`.
-- NEVER create or modify containers in the pai-stack compose cluster for a project that is not pai-stack.
+**NEVER rules (no exceptions):**
+- NEVER run `docker compose` without `-p <project>` — hermes exports
+  `COMPOSE_PROJECT_NAME=pai-stack`, which hijacks bare compose into the
+  pai-stack cluster.
+- NEVER run compose from outside `EXECUTION_DIR`. Compose v2 only
+  (`docker compose`, no hyphen).
+- NEVER add a foreign container to the pai-stack cluster, and NEVER add
+  `--privileged`, host network, or `/var/run/docker.sock` mounts to project stacks.
 
-## Discover (validate cheaply: `docker compose config` before proposing `up --build`)
-1. **Artifacts**: `Dockerfile*`, `docker-compose*.yaml`, `compose.yaml`, `.dockerignore`, `Makefile` targets (`make status`/`logs`).
-2. **Dockerfile**: `FROM` + stages, `COPY` context hygiene, `RUN` caching, `USER`/`EXPOSE`/`ENTRYPOINT`/`HEALTHCHECK`. Pai notes: `hermes/Dockerfile` + `entrypoint.sh` patterns when relevant.
-3. **Compose**: service→port map, named vs bind volumes (`EACCES`/`UID` risk, `deploy.resources.limits`), networks, `extra_hosts: host.docker.internal`, env provenance (host `.env` vs hardcoded — flag raw secrets).
-4. **Conventions**: multi-stage, minimal base, non-root `USER`, pinned tags (never `:latest`), `.dockerignore` present. Never suggest `--privileged` or public `0.0.0.0` outside Tailscale.
+Project name: `name:` field in the project's compose file, else basename of
+`EXECUTION_DIR`. Confirm with `docker compose ls` before mutating.
 
-## Stack projects — isolated compose cluster per project
+## Lifecycle (read-only freely; mutating only after propose → confirm)
 
-Applies when `stack-discovery` finds compose markers (`compose.yaml`, `docker-compose*.yaml`) in `EXECUTION_DIR`. Each project that has a compose file **must run in its own isolated Docker compose cluster**, separate from the pai-stack cluster.
+```bash
+docker ps -a --filter label=com.docker.compose.project=pai-stack --format 'table {{.Names}}\t{{.Status}}'
+docker logs --tail=50 <service>                 # read-only
+docker inspect <service> --format '{{json .State}}' | jq .
+docker restart|start|stop <service>             # mutating: propose first
+docker exec <service> sh -c '<cmd>'             # mutating-ish: prefer running locally; exec only for container-local state
+cd <EXECUTION_DIR> && docker compose -p <project> up -d --build   # mutating: propose first, config --quiet first
+cd <EXECUTION_DIR> && docker compose -p <project> down            # mutating: propose first, confirm volumes kept
+```
 
-- **Why isolation matters**: Hermes runs with the host Docker socket mounted. The hermes process also exports `COMPOSE_PROJECT_NAME=pai-stack`. Without `-p <project_name>`, every `docker compose` command — regardless of working directory — will operate on the pai-stack cluster instead of the project's cluster. This silently adds the project's containers to pai-stack's network, naming space, and lifecycle.
-- **Scope split**: pai-stack services (`hermes`, `llm-gateway`) → `pai_docker_ops`. Every other project with a compose file → `docker compose -p <project_name>` CLI via the mounted socket. Never cross the streams.
-- **Always anchor**: every compose invocation runs with `cd <EXECUTION_DIR>` first. Compose v2 syntax only: `docker compose` (no hyphen).
-- **Project name**: use the `name:` field from the project's compose file if present; otherwise use the basename of `EXECUTION_DIR`. Run `docker compose ls` to confirm the active cluster name before any mutating operation.
-- **Lifecycle** (read-only freely; mutating only after propose → confirm):
-  ```bash
-  cd <EXECUTION_DIR> && docker compose -p <project_name> config          # validate first — resolves vars, catches syntax errors
-  cd <EXECUTION_DIR> && docker compose -p <project_name> ps              # state of THIS project's cluster only
-  cd <EXECUTION_DIR> && docker compose -p <project_name> logs --tail=50 <service>
-  cd <EXECUTION_DIR> && docker compose -p <project_name> up -d --build   # mutating: propose first
-  cd <EXECUTION_DIR> && docker compose -p <project_name> down            # mutating: propose first, confirm volumes kept
-  ```
-- **Env & secrets**: compose reads `<EXECUTION_DIR>/.env` — verify required vars exist before `up`; use `${VAR:-default}` substitution; never commit `.env`; flag raw secrets in `environment:` blocks.
-- **Safety**: never add `--privileged`, host network mode, or `/var/run/docker.sock` mounts to project stacks; keep `restart: unless-stopped`, healthchecks, and `deploy.resources.limits` on every service.
+Env & secrets: compose reads `<EXECUTION_DIR>/.env` — verify vars before `up`;
+`${VAR:-default}` substitution; never commit `.env`; flag raw secrets.
 
+## Discover (validate cheaply: `config --quiet` before `up --build`)
+
+1. **Artifacts**: `Dockerfile*`, `docker-compose*.yaml`, `compose.yaml`, `.dockerignore`, `Makefile` targets.
+2. **Dockerfile**: `FROM` + stages, `COPY` hygiene, `RUN` caching, `USER`/`EXPOSE`/`ENTRYPOINT`/`HEALTHCHECK`.
+3. **Compose**: service→port map, named vs bind volumes (`EACCES`/`UID` risk), networks, `extra_hosts: host.docker.internal`, env provenance.
+4. **Conventions**: multi-stage, minimal base, non-root `USER`, pinned tags (never `:latest`), `.dockerignore` present.
 
 ## Tooling (absolute paths — skill dirs mount read-only)
+
 - Analyze: `python3 /opt/pai/skills/docker-development/scripts/dockerfile_analyzer.py <Dockerfile>`
 - Validate: `python3 /opt/pai/skills/docker-development/scripts/compose_validator.py <compose.yaml>`
 - **Severity caveat**: the validator flags standard `${VAR}` substitutions as CRITICAL — treat its severities as **advisory only**; verify each finding against the file before acting.
 
 ## Delegate (load via `skill_view`)
+
 | Need | Load |
 |---|---|
 | Optimization checklists, multi-stage patterns, security audit tables | `docker-development` |

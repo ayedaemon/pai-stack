@@ -112,8 +112,8 @@ SCHEMA = {
 def check_available(**kwargs) -> bool:
     """True when the terrain service answers.
 
-    Mirrors pai_docker_ops.check_available: terrain is an opt-in profile, so the
-    tool must degrade to absent rather than break the session.
+    Terrain is an opt-in profile, so the tool must degrade to absent
+    rather than break the session.
     """
     try:
         req = urllib.request.Request(f"{SERVICE}/healthz", headers=_headers())
@@ -178,13 +178,6 @@ def handle(args, **kwargs) -> str:
         return json.dumps({"error": f"query is required for '{action}'"})
     if action == "overview" and not args.get("project"):
         return json.dumps({"error": "project is required for 'overview'"})
-
-    # No client-side block on `init`/`ask`. The gate lives on the
-    # shim (TERRAIN_ALLOW_LLM) and is the single enforcement point
-    # for both HTTP and MCP — duplicating it here would mean an
-    # agent could never use `ask` even with the gate open, and the
-    # two sides could disagree. A closed gate comes back as a 403
-    # from _post, which surfaces the shim's own message.
 
     params = {k: v for k, v in (
         ("path", args.get("path")),

@@ -15,41 +15,52 @@ so Hermes never routes to a listed-but-dead model.
 import argparse
 import concurrent.futures
 import json
+import logging
 import os
 import shutil
 import socket
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Terminal colors
-C_CYAN = "\033[36m"
-C_GREEN = "\033[32m"
-C_YELLOW = "\033[33m"
-C_RED = "\033[31m"
-C_DIM = "\033[2m"
+logger = logging.getLogger("sync-models")
+
+
+def setup_logging(debug: bool = False) -> None:
+    """Configure stdlib logging: INFO by default, DEBUG with --debug."""
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)-7s %(message)s"))
+    logger.handlers.clear()
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG if debug else logging.INFO)
+    logger.propagate = False
+
+
+# Terminal colors (banner headers only — log lines go through logging)
 C_BOLD = "\033[1m"
 C_RESET = "\033[0m"
 
 
 def log_ok(msg: str):
-    print(f"  {C_GREEN}✓{C_RESET} {msg}", flush=True)
+    logger.info("✓ %s", msg)
 
 
 def log_info(msg: str):
-    print(f"  {C_CYAN}ℹ{C_RESET} {msg}", flush=True)
+    logger.info("%s", msg)
 
 
 def log_skip(msg: str):
-    print(f"  {C_DIM}○ {msg}{C_RESET}", flush=True)
+    # Skipped providers (no key) are noise by default — debug only.
+    logger.debug("○ %s", msg)
 
 
 def log_warn(msg: str):
-    print(f"  {C_YELLOW}⚠{C_RESET} {msg}", flush=True)
+    logger.warning("%s", msg)
 
 
 def parse_env_file(path: Path) -> dict:
@@ -118,9 +129,9 @@ def probe_openai_chat(chat_base: str, model_id: str, api_key: str, timeout: int 
     url = f"{chat_base.rstrip('/')}/chat/completions"
     payload = {"model": model_id, "messages": [{"role": "user", "content": "hi"}]}
     if "o1" in model_id or "o3" in model_id:
-        payload["max_completion_tokens"] = 1
+        payload["max_completion_tokens"] = 7
     else:
-        payload["max_tokens"] = 1
+        payload["max_tokens"] = 7
     headers = {"Authorization": f"Bearer {api_key}"}
     return post_json(url, payload, headers=headers, timeout=timeout)
 
@@ -128,14 +139,14 @@ def probe_openai_chat(chat_base: str, model_id: str, api_key: str, timeout: int 
 def probe_gemini(model_id: str, api_key: str, timeout: int = 10) -> Optional[dict]:
     """Tiny generateContent call (Gemini has no OpenAI-compatible chat shape here)."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={api_key}"
-    payload = {"contents": [{"parts": [{"text": "hi"}]}], "generationConfig": {"maxOutputTokens": 1}}
+    payload = {"contents": [{"parts": [{"text": "hi"}]}], "generationConfig": {"maxOutputTokens": 7}}
     return post_json(url, payload, headers={"x-goog-api-key": api_key}, timeout=timeout)
 
 
 def probe_anthropic(model_id: str, api_key: str, timeout: int = 10) -> Optional[dict]:
     """Tiny Messages call (Anthropic has no /chat/completions shape)."""
     url = "https://api.anthropic.com/v1/messages"
-    payload = {"model": model_id, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}]}
+    payload = {"model": model_id, "max_tokens": 7, "messages": [{"role": "user", "content": "hi"}]}
     headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
     return post_json(url, payload, headers=headers, timeout=timeout)
 
@@ -150,26 +161,62 @@ def model_replies(prov: dict, model_id: str, api_key: str) -> Optional[dict]:
     return probe_openai_chat(prov["chat_base"], model_id, api_key)
 
 
-def extract_response_preview(data: Optional[dict]) -> str:
-    """Extract a short human-readable preview from a provider response."""
+def response_has_reply_text(data: Optional[dict]) -> bool:
+    """True only if the probe response carries an actual reply.
+
+    A bare HTTP 200 is not enough: some Gemini variants (transcribe, TTS,
+    robotics, heavy-thinking) return 200 with empty content and no text
+    parts. Those count as no-reply and are dropped.
+    """
+    if not data:
+        return False
+    try:
+        if "choices" in data:  # OpenAI-compatible
+            choice = data["choices"][0]
+            msg = choice.get("message", {})
+            if msg.get("content") or choice.get("text"):
+                return True
+            # Structured-only reply (e.g. tool calls) still counts as alive.
+            if msg.get("tool_calls") or msg.get("function_call"):
+                return True
+            return False
+        if "content" in data:  # Anthropic
+            parts = data["content"]
+            if isinstance(parts, list):
+                return any(isinstance(p, dict) and p.get("text") for p in parts)
+            return False
+        if "candidates" in data:  # Gemini
+            for cand in data["candidates"]:
+                parts = cand.get("content", {}).get("parts", [])
+                if any(isinstance(p, dict) and p.get("text") for p in parts):
+                    return True
+            return False
+    except Exception:
+        return False
+    # Unknown shape but valid 200 JSON — give it the benefit of the doubt.
+    return True
+
+
+def extract_response_text(data: Optional[dict]) -> str:
+    """Extract the full human-readable reply text from a provider response."""
     if not data:
         return ""
     try:
         if "choices" in data:
             msg = data["choices"][0].get("message", {})
             content = msg.get("content", "")
-            return content[:60] if content else str(data)[:60]
+            return content if content else str(data)
         if "content" in data:
             parts = data["content"]
             if isinstance(parts, list) and parts:
-                return str(parts[0].get("text", ""))[:60]
+                return str(parts[0].get("text", ""))
         if "candidates" in data:
             parts = data["candidates"][0].get("content", {}).get("parts", [])
             if parts:
-                return str(parts[0].get("text", ""))[:60]
+                return str(parts[0].get("text", ""))
     except Exception:
         pass
-    return str(data)[:60]
+    return str(data)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -320,31 +367,31 @@ def auth_headers(prov: dict, api_key: str) -> dict:
     return {"Authorization": f"Bearer {api_key}"}
 
 
-def probe_candidates(prov: dict, candidates: List[str], api_key: str) -> List[str]:
-    """Keep only models that answer a tiny inference call (sorted for determinism)."""
+def probe_candidates(prov: dict, candidates: List[str], api_key: str) -> Dict[str, float]:
+    """Probe candidates; return {model_id: probe latency in seconds} for repliers."""
     log_info(f"Probing {len(candidates)} {prov['name']} models for liveness...")
-    live = []
+    live: Dict[str, float] = {}
 
     def check_model(m_id):
-        return m_id, model_replies(prov, m_id, api_key)
+        start = time.monotonic()
+        response = model_replies(prov, m_id, api_key)
+        return m_id, response, time.monotonic() - start
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(check_model, m_id): m_id for m_id in candidates}
         for future in concurrent.futures.as_completed(futures):
-            m_id, response = future.result()
-            if response:
-                live.append(m_id)
-                preview = extract_response_preview(response)
-                print(f"    {C_GREEN}✓ {m_id}{C_RESET} → {C_DIM}{preview}{C_RESET}", flush=True)
+            m_id, response, elapsed = future.result()
+            if response and response_has_reply_text(response):
+                live[m_id] = elapsed
+                reply = extract_response_text(response)
+                logger.info("✓ %s → %s (%.2fs)", m_id, reply, elapsed)
             else:
-                print(f"    {C_DIM}○ {m_id} (no reply, dropped){C_RESET}", flush=True)
-    # Sort here so per-provider results are deterministic regardless of
-    # thread completion order; generate_litellm_config re-sorts globally.
-    live.sort(key=lambda a: (a.casefold(), a))
+                # No reply text (or HTTP error) — debug-only, use --debug to list.
+                logger.debug("○ %s (no reply text, dropped)", m_id)
     return live
 
 
-def discover_primary(prov: dict, env: dict) -> Tuple[bool, List[str]]:
+def discover_primary(prov: dict, env: dict) -> Tuple[bool, Dict[str, float]]:
     """List + probe the local/remote OpenAI-compatible box."""
     base_url = (
         env.get(prov["env_url"])
@@ -361,42 +408,47 @@ def discover_primary(prov: dict, env: dict) -> Tuple[bool, List[str]]:
     if not data and not clean_url.endswith("/v1"):
         data = fetch_json(f"{clean_url}/models", headers=headers)
     if not data:
-        return False, []
+        return False, {}
 
     raw = data.get("data", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
     ids = [m.get("id") if isinstance(m, dict) else str(m) for m in raw if m]
     ids = [i for i in ids if i]
     if not ids:
-        return True, []
+        return True, {}
     return True, probe_candidates(prov | {"chat_base": clean_url}, ids, api_key)
 
 
-def discover_provider_models(prov: dict, env: dict) -> Tuple[bool, List[str]]:
+def discover_provider_models(prov: dict, env: dict) -> Tuple[bool, Dict[str, float]]:
     """List + probe one cloud provider. No key → skipped. No reply → dropped."""
     if prov.get("type") == "openai_compatible":
         return discover_primary(prov, env)
 
     api_key = env.get(prov["env_key"], "").strip() if prov.get("env_key") else ""
     if prov.get("env_key") and (not api_key or api_key == "not-needed"):
-        return False, []
+        return False, {}
 
     data = fetch_json(prov["endpoint"], headers=auth_headers(prov, api_key), timeout=6) or {}
     candidates = parse_listing(prov["id"], data)
     if not candidates:
-        return True, []
+        return True, {}
     return True, probe_candidates(prov, candidates, api_key)
 
 
 def generate_litellm_config(
-    discovered: Dict[str, List[str]],
+    discovered: Dict[str, Dict[str, float]],
     env: dict,
-) -> Tuple[str, List[str]]:
+) -> Tuple[str, List[str], List[str]]:
     """Generate LiteLLM config.yaml string with all discovered models as independent entries.
 
-    Returns (config_text, ordered_aliases) — the alias list is alphabetically
-    sorted (case-insensitive) and doubles as the `default` fallback chain and
-    the DSH seed model list, so every downstream consumer (gateway config,
-    DSH seed, future agents) inherits the same deterministic order.
+    `discovered` maps provider id → {model_id: probe latency in seconds}.
+
+    Returns (config_text, ordered_aliases, fallback_order):
+    - ordered_aliases is alphabetically sorted (case-insensitive) and drives
+      the `model_list` emission order and the DSH seed model list, so those
+      stay deterministic across runs.
+    - fallback_order is latency-ranked (fastest probe first, ties broken
+      alphabetically) and drives the `default` pin + router fallback chain,
+      so `model: default` hits the fastest-replying live model first.
     """
     lines = [
         "# LiteLLM Proxy Configuration for pai-stack",
@@ -405,6 +457,8 @@ def generate_litellm_config(
         "# are stripped pre-flight — see note at primary-models section below.",
         "# NOTE: model entries are alphabetically sorted (case-insensitive) — do not",
         "# hand-reorder; re-running scripts/sync-models.py regenerates this order.",
+        "# NOTE: the `default` entry + fallback chain below are latency-ranked",
+        "# (fastest probe first) — re-ranked on every run.",
         "",
         "model_list:",
     ]
@@ -412,6 +466,7 @@ def generate_litellm_config(
     seen = set()
     alias_params: Dict[str, List[str]] = {}
     alias_section: Dict[str, str] = {}
+    alias_latency: Dict[str, float] = {}
 
     PRIMARY_SECTION = "  # ── Upstream Language Models (Clean Canonical Names) ──────────────────"
 
@@ -421,18 +476,18 @@ def generate_litellm_config(
     # `reasoning_effort` value, and strict OpenAI-compatible upstreams 400 on the pair.
     # The mistral provider spec excludes reasoning params so they are stripped pre-flight
     # (verified live: 200 + forced tool-call + SSE streaming).
-    primary_models = discovered.get("primary", [])
+    primary_models = discovered.get("primary", {})
     primary_chat_unique = []
-    for m_id in primary_models:
+    for m_id, latency in primary_models.items():
         clean_id = m_id.rstrip("/")
         short_name = clean_id.split("/")[-1] if "/" in clean_id else clean_id
         if not short_name:
             short_name = m_id.strip("/") or "primary-model"
         if short_name not in seen:
             seen.add(short_name)
-            primary_chat_unique.append((short_name, m_id))
+            primary_chat_unique.append((short_name, m_id, latency))
 
-    for short_name, m_id in primary_chat_unique:
+    for short_name, m_id, latency in primary_chat_unique:
         block = [
             f"      model: mistral/{m_id}",
             "      api_base: os.environ/OPENAI_COMPATIBLE_BASE_URL",
@@ -442,13 +497,14 @@ def generate_litellm_config(
         ]
         alias_params.setdefault(short_name, block)
         alias_section.setdefault(short_name, PRIMARY_SECTION)
+        alias_latency.setdefault(short_name, latency)
 
     # 2. Other providers (clean prefixed names, no aliases) — collect only.
     for prov in PROVIDERS:
         p_id = prov["id"]
         if p_id == "primary":
             continue
-        models = discovered.get(p_id, [])
+        models = discovered.get(p_id, {})
         if not models:
             continue
 
@@ -458,7 +514,7 @@ def generate_litellm_config(
 
         strip_prefix = prov.get("strip_prefix")  # ids carrying their own vendor prefix (nvidia/, aion-labs/)
 
-        for m in models:
+        for m, latency in models.items():
             clean = m.replace(strip_prefix, "") if strip_prefix else m.replace(f"{prefix}/", "")
             alias = f"{prefix}/{clean}"
             if alias in seen:
@@ -515,12 +571,19 @@ def generate_litellm_config(
                 ]
             alias_params.setdefault(alias, block)
             alias_section.setdefault(alias, section)
+            alias_latency.setdefault(alias, latency)
 
-    # 3. Single canonical order: alphabetically sorted (case-insensitive).
-    # Every downstream artifact (model_list emission, `default` fallbacks,
-    # DSH seed) iterates this list, so sorting here guarantees sorted output
-    # everywhere without each consumer re-sorting.
+    # 3. Two orders from here on:
+    # - model_list emission stays alphabetically sorted (case-insensitive) so
+    #   the file diff and the DSH seed stay deterministic across runs.
+    # - the `default` pin + fallback chain is latency-ranked (fastest first,
+    #   ties broken alphabetically) so `model: default` hits the quickest
+    #   replier first and walks down by speed.
     ordered_aliases: List[str] = sorted(alias_params.keys(), key=lambda a: (a.casefold(), a))
+    fallback_order: List[str] = sorted(
+        alias_params.keys(),
+        key=lambda a: (alias_latency.get(a, float("inf")), a.casefold(), a),
+    )
 
     # Emit model_list in that sorted order; provider comment follows the entry
     # (emitted once per contiguous provider run) for readability only.
@@ -538,13 +601,13 @@ def generate_litellm_config(
         ])
 
     # 4. Default alias — Hermes/DSH `model: default` must always resolve.
-    # Pinned last (outside the sorted order). Deployment mirrors the first
-    # sorted model; router fallbacks walk every remaining sorted model until
-    # one replies. Regenerated on every run so `default` never goes stale
-    # after `make sync`.
-    if ordered_aliases:
-        first = ordered_aliases[0]
-        lines.append("  # ── Default (all live models via fallbacks) ──────────────────────────")
+    # Pinned last (outside the sorted order). Deployment mirrors the fastest
+    # live model; router fallbacks walk every remaining model fastest-first
+    # until one replies. Regenerated on every run so `default` never goes
+    # stale after `make sync`.
+    if fallback_order:
+        first = fallback_order[0]
+        lines.append("  # ── Default (fastest live model first, rest via fallbacks) ────────────")
         lines.extend([
             "  - model_name: default",
             "    litellm_params:",
@@ -552,15 +615,15 @@ def generate_litellm_config(
             "",
         ])
 
-    # Router Settings (default fallbacks walk the full live list)
+    # Router Settings (default fallbacks walk the live list fastest-first)
     lines.extend([
         "# ── Router Settings ─────────────────────────────────────────────────────",
         "router_settings:",
         "  timeout: 1800              # 30m request timeout for large models & deep reasoning",
         "  stream_timeout: 1800       # 30m chunk timeout for slow reasoning token streams",
     ])
-    if ordered_aliases:
-        rest = ordered_aliases[1:]
+    if fallback_order:
+        rest = fallback_order[1:]
         if rest:
             quoted = ", ".join(f'"{a}"' for a in rest)
             lines.extend([
@@ -576,7 +639,7 @@ def generate_litellm_config(
         "",
     ])
 
-    return "\n".join(lines), ordered_aliases
+    return "\n".join(lines), ordered_aliases, fallback_order
 
 
 DSH_ENTRY_ID = "llm-pi-ai"
@@ -674,10 +737,14 @@ def main():
         description="Write llm-gateway config with only models that reply (keyed providers only)."
     )
     parser.add_argument("--dry-run", "-n", action="store_true", help="Preview generated config without saving.")
+    parser.add_argument("--debug", "-d", "--verbose", "-v", action="store_true",
+                        help="Show dropped / skipped (not-connected) models. Hidden by default.")
     parser.add_argument("--env", type=Path, default=Path(".env"), help="Path to .env (default: .env).")
     parser.add_argument("--output", type=Path, default=Path("llm-gateway/config.yaml"), help="Config destination.")
     parser.add_argument("--dsh-output", type=Path, default=Path("dsh/settings.yaml"), help="DSH seed snippet destination.")
     args = parser.parse_args()
+
+    setup_logging(debug=args.debug)
 
     repo_root = Path(__file__).resolve().parent.parent
     env_file = args.env if args.env.is_absolute() else (repo_root / args.env)
@@ -691,21 +758,32 @@ def main():
         if k not in env:
             env[k] = v
 
-    discovered: Dict[str, List[str]] = {}
+    discovered: Dict[str, Dict[str, float]] = {}
+    skipped: List[str] = []
 
     for prov in PROVIDERS:
-        active, models = discover_provider_models(prov, env)
+        active, live = discover_provider_models(prov, env)
         p_name = prov["name"]
-        if active and models:
-            discovered[prov["id"]] = models
-            log_ok(f"{p_name:<26} → {len(models)} live models: {', '.join(models[:4])}{'...' if len(models) > 4 else ''}")
+        if active and live:
+            discovered[prov["id"]] = live
+            fastest = sorted(live, key=lambda m: (live[m], m.casefold(), m))
+            shown = ", ".join(f"{m} ({live[m]:.2f}s)" for m in fastest[:4])
+            log_ok(f"{p_name:<26} → {len(live)} live models, fastest first: {shown}{'...' if len(live) > 4 else ''}")
         elif active:
             log_warn(f"{p_name:<26} → key present but 0 models replied")
         else:
+            skipped.append(p_name)
             log_skip(f"{p_name:<26} (no key in .env, skipped)")
 
-    yaml_content, ordered_aliases = generate_litellm_config(discovered, env)
+    if skipped:
+        # Default output stays quiet — one summary line, details need --debug.
+        log_info(f"{len(skipped)} provider(s) skipped (no key) — rerun with --debug to list them.")
+
+    yaml_content, ordered_aliases, fallback_order = generate_litellm_config(discovered, env)
     dsh_seed = generate_dsh_seed(ordered_aliases)
+
+    if fallback_order:
+        log_ok(f"`default` pinned to fastest live model: {fallback_order[0]}")
 
     if args.dry_run:
         print(f"\n{C_BOLD}── Preview (Dry Run) ──{C_RESET}\n{yaml_content}", flush=True)

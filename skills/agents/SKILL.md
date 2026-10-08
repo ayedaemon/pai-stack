@@ -21,7 +21,7 @@ and builds planning artifacts — working like a developer, not a separate knowl
 | `/opt/data/workspace` | (bind mount) | Multi-project workspace mounted from host — read-write |
 | `/opt/data` | (local dir) | Scratch tools, helper scripts, and agent utilities |
 | **llm-gateway** | `http://llm-gateway:4000` | Unified LLM Gateway: LiteLLM proxy for all completions, fallbacks, and tool calls |
-| **skills** | (native, `skills_list` / `skill_view`) | Bundled procedural skills plus native tools (`pai_docker_ops`, `pai_notebook_ops`, `pai_adr_ops`) |
+| **skills** | (native, `skills_list` / `skill_view`) | Bundled procedural skills plus native tools (`pai_notebook_ops`, `pai_adr_ops`) — Docker is native CLI via the `docker` skill, not a tool |
 | **mnemosyne** | (internal SQLite) | Local agent memory: decisions, prior fixes, session continuity, project boundaries |
 | **research** | `$RESEARCH_DIR == $WIKI_PATH` (`/opt/data/workspace/${RESEARCH_SUBDIR:-research}`) | Root-level wiki vault: SCHEMA/index/log + raw/entities/concepts/comparisons/queries (`pai_notebook_ops`, `research` skill). Legacy `<notebook>/{notes/,sources/}` kept readable |
 
@@ -162,11 +162,11 @@ Planning files live in the project like developer artifacts:
 
 | Tool | Purpose | Allowed actions |
 |---|---|---|
-| `pai_docker_ops` | Manage pai-stack containers ONLY (hermes, llm-gateway) via Docker socket. Scope is strictly the pai-stack compose cluster — never use for other projects' containers. For any project with a compose file, use `docker compose -p <project>` instead. | `list`, `status`, `logs`, `restart`, `start`, `stop`, `exec` |
+| `docker` | Docker over the mounted socket (native `docker` + `docker compose`, smart `--format`, help-first) → delegates depth to `docker-development` |
 | `pai_notebook_ops` | Query Research Brain (native Markdown file vault) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 | `pai_adr_ops` | Living ADR creation & code symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 
-All `pai_docker_ops` actions are recorded in `/opt/hermes/data/logs/docker-ops.log`.
+Docker has no tool and no audit log — use the native binaries per the `docker` skill.
 
 ## Tri-Brain Cross-System Lookup (Code Intelligence ↔ Research Brain ↔ Mnemosyne)
 
@@ -205,7 +205,7 @@ This prevents duplicate research and builds a persistent knowledge graph across 
 8. **No secrets in files**: use references (env var, vault path).
 9. **Session-scoped**: stay on this session's project unless the user redirects.
 10. **Code intelligence empty + no session context**: survey `/opt/data/workspace/` to discover projects before concluding none exist.
-11. **Docker cluster isolation — compose-first invariant**: Each workspace project must live in its own Docker compose cluster. Hermes has the host Docker socket mounted, giving it DinD control, but that power must stay scoped. Before ANY docker action on a non-pai-stack project: check if `EXECUTION_DIR` contains a compose file (`docker-compose*.yaml`, `compose.yaml`). If yes — the project MUST be managed via `docker compose -p <project_name>` from `EXECUTION_DIR`. The `-p` flag creates the project's isolated cluster; omitting it causes `COMPOSE_PROJECT_NAME=pai-stack` (exported by hermes) to redirect all compose operations into the pai-stack cluster, contaminating it with foreign containers. Concrete invariants: (a) `pai_docker_ops` is only for hermes and llm-gateway — never call it for any other container; (b) NEVER use bare `docker run`/`docker create` when a compose file exists; (c) NEVER run `docker compose` without `-p <project_name>`; (d) NEVER run compose commands outside `EXECUTION_DIR`.
+11. **Docker cluster isolation — compose-first invariant**: Each workspace project must live in its own Docker compose cluster. Hermes has the host Docker socket mounted, giving it DinD control, but that power must stay scoped. Before ANY docker action on a non-pai-stack project: check if `EXECUTION_DIR` contains a compose file (`docker-compose*.yaml`, `compose.yaml`). If yes — the project MUST be managed via `docker compose -p <project_name>` from `EXECUTION_DIR`. The `-p` flag creates the project's isolated cluster; omitting it causes `COMPOSE_PROJECT_NAME=pai-stack` (exported by hermes) to redirect all compose operations into the pai-stack cluster, contaminating it with foreign containers. Concrete invariants: (a) pai-stack services are managed with `docker <cmd> <name>` directly, never via a tool; (b) NEVER use bare `docker run`/`docker create` when a compose file exists; (c) NEVER run `docker compose` without `-p <project_name>`; (d) NEVER run compose commands outside `EXECUTION_DIR`.
 
 
 ---
@@ -309,7 +309,7 @@ When a task needs multi-perspective research, ADR production, or complex validat
 After loading the `agents` skill, immediately:
 
 1. **skills_list()** — confirm `research` and other skills are available
-2. **Parallel: pai_docker_ops(list) + mnemosyne_recall("workspace projects structure boundaries")** — services + memory in one round-trip
+2. **Parallel: docker ps (pai-stack filter) + mnemosyne_recall("workspace projects structure boundaries")** — services + memory in one round-trip
 3. **Survey `/opt/data/workspace`** — find project boundaries, declare `EXECUTION_DIR`
 4. **IFF research task OR `$RESEARCH_DIR/SCHEMA.md` exists**: `skill_view(name="research")`, then read SCHEMA.md + index.md + log.md tail-20 only (index-first, top-3 pages max, never bulk-read)
 5. **For deep research tasks**: additionally load `skill_view(name="autonomous-tech-learner")` for empirical probes and inquiry trees

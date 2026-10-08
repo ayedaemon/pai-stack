@@ -30,7 +30,7 @@ description: "Bridge Hermes to OpenDesign for visual generation, mockups, and de
 pai_ops_design_ops(action="health")
 ```
 
-If unhealthy, OpenDesign is not running. Use `pai_docker_ops(action="start", service="open-design")` — but note: open-design is in the `design` profile, start it with `make design-up`.
+If unhealthy, OpenDesign is not running. Start it with `make design-up` (or `docker start open-design`) — note: open-design is in the `design` profile.
 
 ### 2. Create or Import Project
 

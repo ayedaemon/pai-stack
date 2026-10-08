@@ -3,7 +3,7 @@
 Kept as its own plugin rather than folded into pai_tools because terrain is an
 opt-in host capability, not a always-present one. The check_fn probe means the
 tool silently disappears from the catalog when `make terrain-up` has not been
-run, exactly like pai_docker_ops does when no socket is mounted.
+run.
 """
 
 from plugins.pai_terrain_ops import terrain_ops

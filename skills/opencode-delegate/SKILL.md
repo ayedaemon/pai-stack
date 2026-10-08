@@ -10,13 +10,12 @@ description: Delegate coding tasks (bug fixes, small features, multi-file refact
 > No credentials exist anywhere in this path — no `auth login`, no API keys, no exceptions.
 
 ## Preflight (every delegation session, once)
-`pai_docker_ops(action="exec", service="hermes", cmd="command -v opencode && opencode --version")`.
+`command -v opencode && opencode --version` (you run inside hermes already — no docker exec needed).
 If the binary is missing → report degraded (image predates delegation), do NOT proceed.
 
-## Launch (background + poll — exec caps at 60s, never foreground-run)
+## Launch (background + poll — shell caps apply, never foreground-run)
 ```
-pai_docker_ops(action="exec", service="hermes",
-  cmd="opencode-delegate run <EXECUTION_DIR> <slug-YYYY-MM-DD> \"<task prompt>\"")
+opencode-delegate run <EXECUTION_DIR> <slug-YYYY-MM-DD> "<task prompt>"
 ```
 - `<slug>` is unique per task (idempotency guard refuses reuse).
 - Wrapper validates: dir under `/opt/data`, model in free allowlist, creates
@@ -27,9 +26,9 @@ pai_docker_ops(action="exec", service="hermes",
 - Optional 4th arg overrides model — wrapper refuses non-free IDs and `pai/*`
   unless `OPENCODE_ALLOW_GATEWAY=1` (fallback path, disabled until proven).
 
-## Poll (short execs until `"running": false`)
+## Poll (short shell calls until `"running": false`)
 ```
-pai_docker_ops(action="exec", service="hermes", cmd="opencode-delegate status <slug>")
+opencode-delegate status <slug>
 ```
 Returns steps, tokens in/out (metering — log totals per run), session id, last text.
 Poll every few turns; do other work between polls. Never `tail` the raw jsonl by hand —
@@ -37,7 +36,7 @@ Poll every few turns; do other work between polls. Never `tail` the raw jsonl by
 
 ## Resume (timeout, 429, or killed run)
 ```
-pai_docker_ops(action="exec", service="hermes", cmd="opencode-delegate resume <slug> [\"extra prompt\"]")
+opencode-delegate resume <slug> ["extra prompt"]
 ```
 Resumes by session id (validated primitive). Back off on 429; abort after 3 resumes
 and report. Kill by exact PID from `meta.json` only — never `pkill -f` (self-match

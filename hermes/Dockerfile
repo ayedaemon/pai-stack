@@ -2,7 +2,7 @@ FROM nousresearch/hermes-agent:latest
 
 USER root
 
-# Install runtime dependencies (curl + Docker CLI for pai_docker_ops)
+# Install runtime dependencies (curl + Docker CLI for the `docker` skill: native docker/compose over the mounted socket)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates gnupg && \
     install -m 0755 -d /etc/apt/keyrings && \

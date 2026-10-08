@@ -13,7 +13,7 @@ were live at once (see [audit.md](audit.md) §reported):
 
 | Layer | Form | Carries an agent name? | Examples |
 |---|---|---|---|
-| **Tool** — what the model calls | `pai_<noun>_ops` | **never** | `pai_terrain_ops`, `pai_docker_ops` |
+| **Tool** — what the model calls | `pai_<noun>_ops` | **never** | `pai_terrain_ops`, `pai_notebook_ops` |
 | **Plugin package** — how it is installed | `<agent>-pai-<noun>` | **yes** | Hermes `pai_tools`, DSH `dsh-pai-tools` |
 | **Skill** — procedural markdown | kebab-case | **never** | `opendesign-integration`, `stack-discovery` |
 | **Service** — a container | kebab-case | **never** | `llm-gateway`, `open-design`, `terrain` |
@@ -78,9 +78,10 @@ registered) and is the reason to do it before one is.
 |---|---|---|
 | `pai_notebook_ops` | `pai_tools` | [pai_tools/plugin.yaml](../hermes/plugins/pai_tools/plugin.yaml) |
 | `pai_adr_ops` | `pai_tools` | ↑ |
-| `pai_docker_ops` | `pai_tools` | ↑ |
 | `pai_ops_design_ops` | `pai_tools` | ↑ |
 | `pai_terrain_ops` | `pai_terrain_ops` | [pai_terrain_ops/plugin.yaml](../hermes/plugins/pai_terrain_ops/plugin.yaml) |
+
+Docker is deliberately NOT in this registry: native `docker` + `docker compose` binaries over the mounted socket (see `docker` skill), identical on Hermes and DSH — no tool port needed.
 
 Upstream, not ours to rename: `skill_view`, `skills_list`, `mnemosyne_*`.
 
