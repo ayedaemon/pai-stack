@@ -2,6 +2,22 @@ FROM nousresearch/hermes-agent:latest
 
 USER root
 
+# Install uv explicitly (pinned) — do NOT rely on the base image shipping it.
+# Same version as dsh/Dockerfile ARG UV_VERSION. Debian bookworm = gnu tarball.
+ARG UV_VERSION=0.12.23
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) uvarch=x86_64 ;; \
+        arm64) uvarch=aarch64 ;; \
+        *) echo "Unsupported architecture for uv: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/uv.tar.gz \
+        "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${uvarch}-unknown-linux-gnu.tar.gz"; \
+    tar -C /usr/local/bin -xzf /tmp/uv.tar.gz --strip-components=1 --wildcards '*/uv' '*/uvx'; \
+    rm -f /tmp/uv.tar.gz; \
+    uv --version
+
 # Install runtime dependencies (curl + Docker CLI for the `docker` skill: native docker/compose over the mounted socket)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates gnupg && \
@@ -23,11 +39,12 @@ RUN uv pip install --python /opt/hermes/.venv/bin/python mnemosyne-hermes langfu
 RUN uv pip install --python /opt/hermes/.venv/bin/python "trafilatura>=2.0"
 
 # Install Playwright (on-demand browser automation ONLY — Hermes uses it only when
-# the user explicitly asks; nothing auto-loads it). Upstream image already sets
-# PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright, so install into that path.
+# the user explicitly asks; nothing auto-loads it). Upstream PLAYWRIGHT_BROWSERS_PATH
+# has moved over time (.playwright vs tools), so chmod both and never fail the build.
 RUN uv pip install --python /opt/hermes/.venv/bin/python playwright && \
     /opt/hermes/.venv/bin/python -m playwright install --with-deps chromium && \
-    chmod -R a+rX /opt/hermes/.playwright && \
+    chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH:-/opt/hermes/.playwright}" 2>/dev/null || true && \
+    chmod -R a+rX /opt/hermes/.playwright /opt/hermes/tools 2>/dev/null || true && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Hermes Labyrinth dashboard plugin (pinned to v0.1.3)
