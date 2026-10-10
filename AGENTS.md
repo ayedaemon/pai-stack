@@ -11,18 +11,20 @@ no sidecar containers needed for tools.
 
 ## Services & Ports
 
-| Service | Port | Role |
-|---|---|---|
-| **hermes** | 9119 / 8642 | AI agent gateway + web dashboard (native Mnemosyne memory, native `pai_*` tools, native skills) |
-| **llm-gateway** | 4000 | Unified LLM Gateway: LiteLLM proxy (routes, fallbacks, provider credentials) |
-
-Optional profiles (start explicitly; `make up` never starts these):
-
-| Profile | Service | Port | Role |
+| Service | Port | Role | Profile |
 |---|---|---|---|
-| `dsh` | **dsh** | 9229 | DeepSeek Harness agent — second agent on the same workspace |
-| `open-design` | **open-design** | 7456 | Design generation / mockup bridge |
-| `terrain` | **terrain** | 7878 | Code intelligence — the single index owner (see below) |
+| **llm-gateway** | 4000 | Unified LLM Gateway: LiteLLM proxy (routes, fallbacks, provider credentials) | `gateway` |
+| **hermes** | 9119 / 8642 | AI agent gateway + web dashboard (native Mnemosyne memory, native `pai_*` tools, native skills) | `hermes` |
+| **dsh** | 9229 | DeepSeek Harness agent — second agent on the same workspace | `dsh` |
+| **open-design** | 7456 | Design generation / mockup bridge | `design` |
+| **terrain** | 7878 | Code intelligence — the single index owner (see below) | `terrain` |
+
+All services are optional profiles. Run any combination:
+```bash
+make gateway-up hermes-up       # Gateway + Hermes
+make gateway-up dsh-up          # Gateway + DSH
+make all-up                     # Everything
+```
 
 ## Container Mounts
 
@@ -31,6 +33,7 @@ Optional profiles (start explicitly; `make up` never starts these):
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | hermes | **read-write** (`research/` vault + project files) |
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | terrain | **read-write** (writes `.terrain/` into the repo it indexes) |
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | dsh | **read-write** (same container path as hermes — shared filepaths) |
+| `$WORKSPACE_DIR` | `/opt/data/workspace` | open-design | **read-write** (import folder for design generation) |
 
 Hermes and dsh both mount the workspace at `/opt/data/workspace`. Hermes writes helper scripts
 and scratch tools to `/opt/data`.
@@ -38,6 +41,8 @@ and scratch tools to `/opt/data`.
 Terrain's *project registry* deliberately does **not** live on that mount — it sits
 in the `terrain_data` volume at `/var/lib/terrain/.terrain/registry.json`, because
 it is host state, not repo content.
+
+OpenDesign's daemon state stays in the `open_design_data` volume at `/app/.od` — never bind-mounted into the workspace to avoid SQLite lock contention.
 
 > Research Brain is a root-level wiki (SCHEMA.md, index.md, log.md, raw/, entities/, concepts/, comparisons/, queries/)
 > at `$WORKSPACE_DIR/${RESEARCH_SUBDIR:-research}` (container `$RESEARCH_DIR == $WIKI_PATH`), with legacy
@@ -56,6 +61,8 @@ hermes ──→ [skills: /opt/pai/skills]  native procedural skills via skills_
 hermes ──→ llm-gateway:4000     ONLY gateway for LLM completions & reasoning
 hermes (pai_notebook_ops) ──→ /opt/data/workspace/research/ (file vault)
 hermes (ask_notebook) ──→ llm-gateway:4000 (synthesis)
+dsh    ──→ llm-gateway:4000     LLM completions & reasoning
+open-design ──→ llm-gateway:4000  LLM completions (BYOK or gateway)
 terrain ──→ <repo>/.terrain/    the ONLY writer of index artifacts
 terrain ──→ opencode acp (ACP)  only when TERRAIN_ALLOW_LLM=1 (ask/init)
          └─ NOT llm-gateway. Terrain holds no gateway link and no provider key:
@@ -66,6 +73,9 @@ terrain ──→ opencode acp (ACP)  only when TERRAIN_ALLOW_LLM=1 (ask/init)
 
 All model inference routes through `llm-gateway:4000` (LiteLLM), except the two
 keyless-Zen cases noted under *LLM routing posture* below.
+
+**Each service runs independently via its profile.** No service is required to run.
+Start only what you need: `make gateway-up hermes-up`, `make gateway-up dsh-up`, etc.
 `pai_notebook_ops` runs in-process in Hermes, operating directly on Markdown files in the workspace.
 
 ### LLM routing posture (gateway-only)
@@ -231,11 +241,10 @@ See the `planning` skill for the full discipline.
 | File | Purpose |
 |---|---|
 | [`hermes/config.yaml`](hermes/config.yaml) | System prompt, model providers, skills, knowledgebase |
-| [`docker-compose.yaml`](docker-compose.yaml) | All service definitions, mounts, resource limits |
+| [`docker-compose.yaml`](docker-compose.yaml) | All service definitions, mounts, resource limits (profiles: gateway, hermes, terrain, dsh, design) |
 | [`hermes/plugins/pai_tools/`](hermes/plugins/pai_tools/) | Native Hermes tools: `pai_notebook_ops`, `pai_adr_ops`, `pai_ops_design_ops` |
 | [`hermes/plugins/pai_terrain_ops/`](hermes/plugins/pai_terrain_ops/) | Code-intel tool: `pai_terrain_ops` → terrain service |
 | [`terrain/`](terrain/) | Terrain multi-stage image + HTTP/MCP shim |
-| [`docker-compose.terrain.yaml`](docker-compose.terrain.yaml) | Opt-in `terrain` profile |
 | [`skills/`](skills/) | Bundled SKILL.md files (one per skill, mounted into Hermes) |
 | [`skills/agents/SKILL.md`](skills/agents/SKILL.md) | Ground rules injected into Hermes context |
 | [`.env.example`](.env.example) | Template for `WORKSPACE_DIR`, LLM config, API keys |

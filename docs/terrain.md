@@ -138,11 +138,7 @@ thing that breaks them:
 - With the key removed, the `openai` provider is no longer "available", opencode
   falls back to the configured Zen model, and both actions succeed.
 
-So the fix is **subtractive**: delete `OPENAI_BASE_URL` and `OPENAI_API_KEY` from
-`docker-compose.terrain.yaml` (there is no `depends_on` on `llm-gateway` either).
-Terrain then has no link to the gateway at all, and its LLM work runs on
-OpenCode's keyless Zen models — the same exception `opencode-delegate` already
-makes in hermes.
+So the fix is **subtractive**: delete `OPENAI_BASE_URL` and `OPENAI_API_KEY` from the `terrain` service in `docker-compose.yaml` (there is no `depends_on` on `llm-gateway` either). Terrain then has no link to the gateway at all, and its LLM work runs on OpenCode's keyless Zen models — the same exception `opencode-delegate` already makes in hermes.
 
 Verified working end to end after the change: `init` → 13 human docs +
 agent context, `litho_ran: true`, status `partial` → `ready` (~6 min);
@@ -166,7 +162,7 @@ Two related traps:
 make terrain-up                      # build + start (opt-in)
 make terrain-index d=/opt/data/workspace/github.com/ayedaemon/pai-stack
 make terrain-build                   # rebuild after bumping TERRAIN_REF
-make terrain-config                  # validate merged compose config
+make terrain-config                  # validate compose config with terrain profile
 make terrain-down                    # stop; workspace and volume untouched
 make terrain-ask q="where is auth enforced?"   # needs TERRAIN_ALLOW_LLM=1
 ```

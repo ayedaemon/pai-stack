@@ -8,7 +8,7 @@ Design studio on the opt-in `design` profile. Never starts with `make up`.
 make design-up      # create volume + fix ownership + build/start open-design
 make design-logs    # tail logs
 make design-down    # stop container only (workspace + volume untouched)
-make design-config  # validate merged compose
+make design-config  # validate compose config with design profile
 make design-build   # rebuild image (bundled linux opencode)
 ```
 
@@ -42,12 +42,12 @@ Prefer a TLS proxy / Tailscale over raw LAN exposure.
 
 ## Workspace sharing
 
-`${WORKSPACE_DIR}` is mounted at `/workspace`. In the UI: **Import folder → `/workspace/<project>`**. Generated files land as real files in the host workspace where Hermes code intel sees them. Daemon state stays in the `open_design_data` volume (`/app/.od`) — never bind-mount `.od` into the workspace (SQLite lock contention, index noise).
+`${WORKSPACE_DIR}` is mounted at `/opt/data/workspace` (same path as Hermes and DSH). In the UI: **Import folder → `/opt/data/workspace/<project>`**. Generated files land as real files in the host workspace where Hermes code intel sees them. Daemon state stays in the `open_design_data` volume (`/app/.od`) — never bind-mount `.od` into the workspace (SQLite lock contention, index noise).
 
 Link a folder from CLI:
 
 ```bash
-make design-import d=/workspace/<dir> [n=<name>]   # container path, not host path
+make design-import d=/opt/data/workspace/<dir> [n=<name>]   # container path, not host path
 ```
 
 Fix volume ownership to host UID:GID:

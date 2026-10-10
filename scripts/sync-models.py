@@ -129,9 +129,9 @@ def probe_openai_chat(chat_base: str, model_id: str, api_key: str, timeout: int 
     url = f"{chat_base.rstrip('/')}/chat/completions"
     payload = {"model": model_id, "messages": [{"role": "user", "content": "hi"}]}
     if "o1" in model_id or "o3" in model_id:
-        payload["max_completion_tokens"] = 7
+        payload["max_completion_tokens"] = 40
     else:
-        payload["max_tokens"] = 7
+        payload["max_tokens"] = 40
     headers = {"Authorization": f"Bearer {api_key}"}
     return post_json(url, payload, headers=headers, timeout=timeout)
 
@@ -139,14 +139,14 @@ def probe_openai_chat(chat_base: str, model_id: str, api_key: str, timeout: int 
 def probe_gemini(model_id: str, api_key: str, timeout: int = 10) -> Optional[dict]:
     """Tiny generateContent call (Gemini has no OpenAI-compatible chat shape here)."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={api_key}"
-    payload = {"contents": [{"parts": [{"text": "hi"}]}], "generationConfig": {"maxOutputTokens": 7}}
+    payload = {"contents": [{"parts": [{"text": "hi"}]}], "generationConfig": {"maxOutputTokens": 40}}
     return post_json(url, payload, headers={"x-goog-api-key": api_key}, timeout=timeout)
 
 
 def probe_anthropic(model_id: str, api_key: str, timeout: int = 10) -> Optional[dict]:
     """Tiny Messages call (Anthropic has no /chat/completions shape)."""
     url = "https://api.anthropic.com/v1/messages"
-    payload = {"model": model_id, "max_tokens": 7, "messages": [{"role": "user", "content": "hi"}]}
+    payload = {"model": model_id, "max_tokens": 40, "messages": [{"role": "user", "content": "hi"}]}
     headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
     return post_json(url, payload, headers=headers, timeout=timeout)
 
@@ -179,6 +179,13 @@ def response_has_reply_text(data: Optional[dict]) -> bool:
             # Structured-only reply (e.g. tool calls) still counts as alive.
             if msg.get("tool_calls") or msg.get("function_call"):
                 return True
+            # Reasoning-only reply still counts as alive. Reasoning models
+            # (DeepSeek-R1/Qwen3/Spark via LM Studio etc.) return 200 with
+            # content="" + reasoning_content when max_tokens is consumed by
+            # thinking (finish_reason=length). The server + model work;
+            # the probe budget was just too small for content.
+            if msg.get("reasoning_content") or msg.get("reasoning") or msg.get("thought"):
+                return True
             return False
         if "content" in data:  # Anthropic
             parts = data["content"]
@@ -205,7 +212,13 @@ def extract_response_text(data: Optional[dict]) -> str:
         if "choices" in data:
             msg = data["choices"][0].get("message", {})
             content = msg.get("content", "")
-            return content if content else str(data)
+            if content:
+                return content
+            # Reasoning-only reply — surface thinking text for the log line.
+            reasoning = msg.get("reasoning_content") or msg.get("reasoning") or msg.get("thought") or ""
+            if isinstance(reasoning, dict):
+                reasoning = reasoning.get("content") or reasoning.get("text") or str(reasoning)
+            return str(reasoning) if reasoning else str(data)
         if "content" in data:
             parts = data["content"]
             if isinstance(parts, list) and parts:

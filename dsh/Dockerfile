@@ -166,7 +166,7 @@ RUN set -eux; \
         mkdir -p "${staging}" "${tmp_profile}"; \
         if [ "${WITH_REMOTE_PLUGIN}" = "true" ] && [ -d /opt/dsh-remote-seed/node_modules ]; then \
             cp -a /opt/dsh-remote-seed/. "${tmp_profile}/"; \
-            node -p "require('${tmp_profile}/package.json').name" | grep -q "seed" || exit 1; \
+            node -p "require('${tmp_profile}/package.json').name" | grep -qE "^(seed|dsh-profile-web|dsh-remote-seed|dsh-mnemon-seed|dsh-auto-seed|dsh-telegram-seed|dsh-pai-seed)$" || exit 1; \
         else \
             printf '{\n  "name": "dsh-mnemon-seed",\n  "private": true,\n  "dependencies": {}\n}\n' > "${tmp_profile}/package.json"; \
             printf 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n' > "${tmp_profile}/pnpm-workspace.yaml"; \
@@ -296,6 +296,8 @@ ARG AUTOMATION_PLUGIN_NAME=@michengai/dsh-automation
 # joint tree built here in final alongside automation)
 ARG WITH_TELEGRAM_PLUGIN=true
 ARG TELEGRAM_PLUGIN_NAME=dsh-pai-telegram
+# First-party pai-stack plugins (in-repo source at plugins/dsh-pai-*)
+ARG WITH_PAI_PLUGINS=true
 
 # The /opt/dsh-remote-seed directory is already present from the remote-plugin-seed stage
 # (which is an ancestor of docker-cli). Verify it exists.
@@ -334,7 +336,7 @@ RUN set -eux; \
         rm -rf "${staging}" "${tmp_profile}"; \
         mkdir -p "${staging}" "${tmp_profile}"; \
         cp -a /opt/dsh-mnemon-seed/. "${tmp_profile}/"; \
-        node -p "require('${tmp_profile}/package.json').name" | grep -q "seed" || exit 1; \
+        node -p "require('${tmp_profile}/package.json').name" | grep -qE "^(seed|dsh-profile-web|dsh-remote-seed|dsh-mnemon-seed|dsh-auto-seed|dsh-telegram-seed|dsh-pai-seed)$" || exit 1; \
         cd "${tmp_profile}"; \
         export NPM_CONFIG_CACHE=/root/.npm; \
         "${pnpm_bin}" add --store-dir /root/.pnpm-store --ignore-scripts "${AUTOMATION_PLUGIN_NAME}@${AUTOMATION_PLUGIN_VERSION}"; \
@@ -355,27 +357,39 @@ RUN set -eux; \
     fi
 
 # ── First-party Telegram seed (dsh-pai-telegram, joint tree) ─────────────
-# In-repo source (no registry): extends the automation joint tree the same
-# way — copy + `pnpm add file:<src>`, `--ignore-scripts`, bundle-shape gate.
+# In-repo source (no registry): extends the automation joint tree by
+# manual copy + manifest merge (same as entrypoint does at runtime).
+# Avoids pnpm file: deps which break when source is cleaned up.
 # Built here in final so toolchain layers stay cached. Phase 3 scaffold is
 # host-only (inject:[]) so it cannot red-screen the web UI.
 COPY plugins/dsh-pai-telegram /tmp/dsh-pai-telegram-src
 RUN set -eux; \
     if [ "${WITH_TELEGRAM_PLUGIN:-true}" = "true" ]; then \
-        echo "[seed] Installing dsh-pai-telegram (joint with auto seed) via pnpm file:"; \
+        echo "[seed] Installing dsh-pai-telegram (joint with auto seed) via manual copy:"; \
         staging=/opt/dsh-telegram-seed; \
         tmp_profile=/tmp/telegram-seed-profile; \
-        pnpm_bin=/usr/local/bin/pnpm; \
-        if [ ! -x "${pnpm_bin}" ]; then \
-            echo "[seed] FATAL: ${pnpm_bin} not found" >&2; exit 1; \
-        fi; \
         rm -rf "${staging}" "${tmp_profile}"; \
         mkdir -p "${staging}" "${tmp_profile}"; \
         cp -a /opt/dsh-auto-seed/. "${tmp_profile}/"; \
-        node -p "require('${tmp_profile}/package.json').name" | grep -q "seed" || exit 1; \
-        cd "${tmp_profile}"; \
-        export NPM_CONFIG_CACHE=/root/.npm; \
-        "${pnpm_bin}" add --store-dir /root/.pnpm-store --ignore-scripts "file:/tmp/dsh-pai-telegram-src"; \
+        node -p "require('${tmp_profile}/package.json').name" | grep -qE "^(seed|dsh-profile-web|dsh-remote-seed|dsh-mnemon-seed|dsh-auto-seed|dsh-telegram-seed|dsh-pai-seed)$" || exit 1; \
+        mkdir -p "${tmp_profile}/node_modules"; \
+        cp -a /tmp/dsh-pai-telegram-src "${tmp_profile}/node_modules/${TELEGRAM_PLUGIN_NAME}"; \
+        TELEGRAM_SEED_VER="$(node -p "require('/tmp/dsh-pai-telegram-src/package.json').version")"; \
+        node -e " \
+            const fs=require('fs'); \
+            const pf='${tmp_profile}/package.json'; \
+            let p={}; \
+            try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; } \
+            p.name='dsh-profile-web'; \
+            if (p.private!==false) p.private=true; \
+            p.dependencies=Object.assign({},p.dependencies,{'${TELEGRAM_PLUGIN_NAME}':'${TELEGRAM_SEED_VER}'}); \
+            p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{}; \
+            const want=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app','${TELEGRAM_PLUGIN_NAME}']; \
+            const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[]; \
+            for (const b of want) if(!have.includes(b)) have.push(b); \
+            p.dsh.profile.bundles=have; \
+            fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n'); \
+        "; \
         cp -a "${tmp_profile}/node_modules" "${staging}/node_modules"; \
         cp -a "${tmp_profile}/package.json" "${staging}/package.json"; \
         for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
@@ -393,6 +407,91 @@ RUN set -eux; \
         echo "[seed] WITH_TELEGRAM_PLUGIN=false, skipping telegram seed"; \
         mkdir -p /opt/dsh-telegram-seed; \
         rm -rf /tmp/dsh-pai-telegram-src; \
+    fi
+
+# First-party pai-stack plugins seed (notebook, adr, design, terrain, git, memory, web)
+# Extends the telegram joint tree by manual copy + manifest merge (same as entrypoint).
+# Avoids pnpm file: deps which break when source is cleaned up.
+COPY plugins/dsh-pai-notebook /tmp/dsh-pai-notebook-src
+COPY plugins/dsh-pai-adr /tmp/dsh-pai-adr-src
+COPY plugins/dsh-pai-design /tmp/dsh-pai-design-src
+COPY plugins/dsh-pai-terrain /tmp/dsh-pai-terrain-src
+COPY plugins/dsh-pai-git /tmp/dsh-pai-git-src
+COPY plugins/dsh-pai-memory /tmp/dsh-pai-memory-src
+COPY plugins/dsh-pai-web /tmp/dsh-pai-web-src
+RUN set -eux; \
+    if [ "${WITH_PAI_PLUGINS:-true}" = "true" ]; then \
+        echo "[seed] Installing pai-stack plugins (joint with telegram seed) via manual copy:"; \
+        staging=/opt/dsh-pai-seed; \
+        tmp_profile=/tmp/pai-seed-profile; \
+        rm -rf "${staging}" "${tmp_profile}"; \
+        mkdir -p "${staging}" "${tmp_profile}"; \
+        cp -a /opt/dsh-telegram-seed/. "${tmp_profile}/"; \
+        node -p "require('${tmp_profile}/package.json').name" | grep -qE "^(seed|dsh-profile-web|dsh-remote-seed|dsh-mnemon-seed|dsh-auto-seed|dsh-telegram-seed|dsh-pai-seed)$" || exit 1; \
+        mkdir -p "${tmp_profile}/node_modules"; \
+        PAI_SEED_VER="$(node -p "require('/tmp/dsh-pai-notebook-src/package.json').version")"; \
+        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-memory dsh-pai-web; do \
+            cp -a "/tmp/${plugin}-src" "${tmp_profile}/node_modules/${plugin}"; \
+        done; \
+        node -e " \
+            const fs=require('fs'); \
+            const pf='${tmp_profile}/package.json'; \
+            let p={}; \
+            try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; } \
+            p.name='dsh-profile-web'; \
+            if (p.private!==false) p.private=true; \
+            p.dependencies=Object.assign({},p.dependencies,{ \
+                'dsh-pai-notebook':'${PAI_SEED_VER}', \
+                'dsh-pai-adr':'${PAI_SEED_VER}', \
+                'dsh-pai-design':'${PAI_SEED_VER}', \
+                'dsh-pai-terrain':'${PAI_SEED_VER}', \
+                'dsh-pai-git':'${PAI_SEED_VER}', \
+                'dsh-pai-memory':'${PAI_SEED_VER}', \
+                'dsh-pai-web':'${PAI_SEED_VER}', \
+            }); \
+            p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{}; \
+            const want=[ \
+                '@deepseek-ai/dsh-base', \
+                '@deepseek-ai/dsh-web-app', \
+                'dsh-pai-notebook', \
+                'dsh-pai-adr', \
+                'dsh-pai-design', \
+                'dsh-pai-terrain', \
+                'dsh-pai-git', \
+                'dsh-pai-memory', \
+                'dsh-pai-web', \
+            ]; \
+            const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[]; \
+            for (const b of want) if(!have.includes(b)) have.push(b); \
+            p.dsh.profile.bundles=have; \
+            fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n'); \
+        "; \
+        cp -a "${tmp_profile}/node_modules" "${staging}/node_modules"; \
+        cp -a "${tmp_profile}/package.json" "${staging}/package.json"; \
+        for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
+            if [ -f "${tmp_profile}/${f}" ]; then cp -a "${tmp_profile}/${f}" "${staging}/${f}"; fi; \
+        done; \
+        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-memory dsh-pai-web; do \
+            test -f "${staging}/node_modules/${plugin}/package.json"; \
+            test -f "${staging}/node_modules/${plugin}/cordis.patch.yml"; \
+            test -f "${staging}/node_modules/${plugin}/lib/index.js"; \
+            node -e "const p=require('${staging}/node_modules/${plugin}/package.json'); if(!p.dsh||!p.dsh.bundle||!p.dsh.bundle.patch) throw new Error('not a DSH bundle: '+p.name); console.log('[seed] pai plugin', p.name+'@'+p.version, 'bundle patch:', p.dsh.bundle.patch)"; \
+            node --check "${staging}/node_modules/${plugin}/lib/index.js"; \
+        done; \
+        chmod -R a+rX "${staging}"; \
+        rm -rf "${tmp_profile}" \
+            /tmp/dsh-pai-notebook-src \
+            /tmp/dsh-pai-adr-src \
+            /tmp/dsh-pai-design-src \
+            /tmp/dsh-pai-terrain-src \
+            /tmp/dsh-pai-git-src \
+            /tmp/dsh-pai-memory-src \
+            /tmp/dsh-pai-web-src; \
+        echo '[seed] pai-stack plugins staged at /opt/dsh-pai-seed (joint tree)'; \
+    else \
+        echo "[seed] WITH_PAI_PLUGINS=false, skipping pai plugins seed"; \
+        mkdir -p /opt/dsh-pai-seed; \
+        rm -rf /tmp/dsh-pai-notebook-src /tmp/dsh-pai-adr-src /tmp/dsh-pai-design-src /tmp/dsh-pai-terrain-src /tmp/dsh-pai-git-src /tmp/dsh-pai-memory-src /tmp/dsh-pai-web-src; \
     fi
 
 # Automation tasks (official experimental schedule bundle). Ships inside the
@@ -436,7 +535,9 @@ RUN set -eux; \
     # Also ensure automation plugin seed is readable
     if [ -d /opt/dsh-auto-seed ]; then chmod -R a+rX /opt/dsh-auto-seed; fi; \
     # Also ensure telegram plugin seed is readable
-    if [ -d /opt/dsh-telegram-seed ]; then chmod -R a+rX /opt/dsh-telegram-seed; fi
+    if [ -d /opt/dsh-telegram-seed ]; then chmod -R a+rX /opt/dsh-telegram-seed; fi; \
+    # Also ensure pai plugins seed is readable
+    if [ -d /opt/dsh-pai-seed ]; then chmod -R a+rX /opt/dsh-pai-seed; fi
 
 # Single canonical home: /data/dsh/home lives on the data volume, so it is
 # writable at runtime (the image layer is read_only:true). Session cwd comes

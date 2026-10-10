@@ -127,6 +127,7 @@ services:
       DSH_TELEGRAM_GROUP_ALLOWED_CHATS: ${DSH_TELEGRAM_GROUP_ALLOWED_CHATS:-${TELEGRAM_GROUP_ALLOWED_CHATS:-}}
       # Trusted hosts for LAN/DNS access (if DSH_BIND_IP=0.0.0.0)
       DSH_TRUSTED_HOSTS: ${DSH_TRUSTED_HOSTS:-}
+      OD_API_TOKEN: ${OD_API_TOKEN:-}
       # Timezone
       TZ: ${TZ:-Asia/Shanghai}
       # Node.js memory limit

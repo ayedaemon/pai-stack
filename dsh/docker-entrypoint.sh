@@ -324,6 +324,74 @@ fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
     fi
 fi
 
+# First-party pai-stack plugins seed (notebook, adr, design, terrain, git, memory, web).
+# Same contract: installed wholesale (last copy wins on fresh volumes, all
+# blocks skip on steady state), manifest merge only ADDS the deps and bundles.
+# cordis.patch.yml is NEVER overwritten. Gate with DSH_WITH_PAI_PLUGINS=false
+# to skip. These plugins provide tools: pai_notebook_ops, pai_adr_ops, 
+# pai_ops_design_ops, pai_terrain_ops, pai_git_ops, pai_memory_ops, pai_web_ops.
+PAI_SEED_DIR="/opt/dsh-pai-seed"
+PAI_SEED_PLUGIN="${PAI_SEED_DIR}/node_modules/dsh-pai-notebook/package.json"
+if [ "${DSH_WITH_PAI_PLUGINS:-true}" = "true" ] && [ "${RESCUE_PROFILE}" = "web" ] && [ -f "${PAI_SEED_PLUGIN}" ]; then
+    PAI_SEED_VER="$(node -p "require('${PAI_SEED_PLUGIN}').version" 2>/dev/null || echo "")"
+    PAI_LIVE_VER="$(node -p "require('${WEB_DIR}/node_modules/dsh-pai-notebook/package.json').version" 2>/dev/null || echo "")"
+    if [ -n "${PAI_SEED_VER}" ] && [ "${PAI_SEED_VER}" = "${PAI_LIVE_VER}" ] \
+       && node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('dsh-pai-notebook'))) process.exit(1)" 2>/dev/null \
+       && [ -f "${WEB_DIR}/node_modules/dsh-pai-notebook/package.json" ]; then
+        elog "[entrypoint] pai-stack plugins seed already installed, skipping"
+    else
+        if [ -n "${PAI_LIVE_VER}" ] && [ "${PAI_SEED_VER}" != "${PAI_LIVE_VER}" ]; then
+            elog "[entrypoint] Upgrading pai-stack plugins ${PAI_LIVE_VER} -> ${PAI_SEED_VER}"
+        else
+            elog "[entrypoint] Installing pai-stack plugins seed to web profile"
+        fi
+        mkdir -p "${WEB_DIR}/node_modules"
+        CP="cp -r --no-preserve=mode,ownership,timestamps"
+        rm -rf "${WEB_DIR}/node_modules"
+        ${CP} "${PAI_SEED_DIR}/node_modules" "${WEB_DIR}/node_modules"
+        for f in pnpm-lock.yaml pnpm-workspace.yaml; do
+            if [ -f "${PAI_SEED_DIR}/${f}" ]; then
+                ${CP} "${PAI_SEED_DIR}/${f}" "${WEB_DIR}/${f}"
+            fi
+        done
+        PAI_SEED_VER="$(node -p "require('${PAI_SEED_PLUGIN}').version")"
+        node -e "
+const fs=require('fs');
+const pf='${WEB_DIR}/package.json';
+let p={};
+try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; }
+p.name='dsh-profile-web';
+if (p.private!==false) p.private=true;
+p.dependencies=Object.assign({},p.dependencies,{
+    'dsh-pai-notebook':'${PAI_SEED_VER}',
+    'dsh-pai-adr':'${PAI_SEED_VER}',
+    'dsh-pai-design':'${PAI_SEED_VER}',
+    'dsh-pai-terrain':'${PAI_SEED_VER}',
+    'dsh-pai-git':'${PAI_SEED_VER}',
+    'dsh-pai-memory':'${PAI_SEED_VER}',
+    'dsh-pai-web':'${PAI_SEED_VER}',
+});
+p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{};
+const want=[
+    '@deepseek-ai/dsh-base',
+    '@deepseek-ai/dsh-web-app',
+    'dsh-pai-notebook',
+    'dsh-pai-adr',
+    'dsh-pai-design',
+    'dsh-pai-terrain',
+    'dsh-pai-git',
+    'dsh-pai-memory',
+    'dsh-pai-web',
+];
+const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[];
+for (const b of want) if(!have.includes(b)) have.push(b);
+p.dsh.profile.bundles=have;
+fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
+"
+        elog "[entrypoint] Pai-stack plugins seed installed"
+    fi
+fi
+
 # Automation tasks (official experimental schedule bundle). Manifest-only:
 # the bundle ships inside the image and resolves from the dsh installation,
 # so no node_modules copy is needed — selecting it in the plugin manager

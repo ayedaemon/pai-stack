@@ -43,7 +43,7 @@ The container ships **Python 3, Go, and Rust** so agents can run the test suites
 
 ### Caches live on the volume, never in the workspace
 
-`HOME=/opt/data/workspace`, so every default cache path would scatter build artifacts into the shared host workspace that Hermes also reads. `docker-compose.dsh.yaml` redirects them onto the `dsh_data` volume instead — the toolchains stay read-only in `/usr/local`, only mutable state moves:
+`HOME=/opt/data/workspace`, so every default cache path would scatter build artifacts into the shared host workspace that Hermes also reads. `docker-compose.yaml` redirects them onto the `dsh_data` volume instead — the toolchains stay read-only in `/usr/local`, only mutable state moves:
 
 `GOCACHE`, `GOMODCACHE`, `GOPATH`, `CARGO_HOME`, `UV_CACHE_DIR`, `UV_PYTHON_INSTALL_DIR`, `UV_TOOL_DIR`, `UV_TOOL_BIN_DIR`, `PIP_CACHE_DIR` → all under `/data/dsh/toolchains/`. Each directory is created on first use by its own tool; nothing needs a pre-seed step.
 
@@ -112,7 +112,7 @@ If a pet is ever wanted in dsh, the only viable route is a Web-UI plugin (e.g. `
 make dsh-up       # create volume + fix ownership + build/start dsh
 make dsh-logs     # tail logs
 make dsh-down     # stop container only (workspace + volume untouched)
-make dsh-config   # validate merged compose
+make dsh-config   # validate compose with dsh profile
 make dsh-build    # rebuild image
 ```
 
@@ -688,7 +688,7 @@ per-agent skill rewrite — not a text rename.
 
 ## Compose Override
 
-`docker-compose.dsh.yaml` follows the exact same pattern as `docker-compose.opendesign.yaml`:
+The `dsh` service is defined in the main `docker-compose.yaml` with `profiles: ["dsh"]`:
 
 - `profiles: ["dsh"]` — opt-in only, never starts with `make up`
 - Same `${WORKSPACE_DIR}` bind mount at `/opt/data/workspace:rw` (matches Hermes mount path exactly)
@@ -703,21 +703,23 @@ per-agent skill rewrite — not a text rename.
 - `read_only: true` + `tmpfs /tmp:size=128m,exec` + `no-new-privileges`, `cap_drop: [ALL]` (no extra caps)
 - Healthcheck on internal port 3081 (not the socat-forwarded 3080)
 
+Run with profile flag: `docker compose -f docker-compose.yaml --profile dsh up -d dsh`
+
 ## Makefile Targets
 
 ```makefile
 # ── DSH (see docs/dsh.md) ──
 
 dsh-up: check-workspace dsh-perms
-	$(DSH_COMPOSE) --profile dsh up -d --build dsh
+	$(COMPOSE) --profile dsh up -d --build dsh
 	$(MAKE) dsh-ensure-web   # auto-recover a lifeboat landing (see Lifeboat)
 	$(MAKE) dsh-settings     # ensure pai-gateway provider patch (see LLM Gateway)
 
 dsh-perms:
-	docker volume create $(DSH_PROGRAMS_VOLUME) >/dev/null
 	docker volume create $(DSH_DATA_VOLUME) >/dev/null
-	docker run --rm -v $(DSH_PROGRAMS_VOLUME):/data alpine chown -R 1000:1000 /data
-	docker run --rm -v $(DSH_DATA_VOLUME):/data alpine chown -R 1000:1000 /data
+	docker volume create $(DSH_TOOLCHAINS_VOLUME) >/dev/null
+	docker run --rm -v $(DSH_DATA_VOLUME):/data alpine chown -R $(UID):$(GID) /data
+	docker run --rm -v $(DSH_TOOLCHAINS_VOLUME):/data alpine chown -R $(UID):$(GID) /data
 
 dsh-settings:  # append ./dsh/settings.yaml to cordis.patch.yml iff pai-gateway absent (never duplicates, never clobbers UI edits); restarts only on change
 
@@ -727,27 +729,27 @@ dsh-password:  ## Print the one-time first-boot admin password
 	docker logs dsh 2>&1 | grep -A9 'first-boot admin credentials'
 
 dsh-down:
-	$(DSH_COMPOSE) stop dsh
+	$(COMPOSE) --profile dsh down --remove-orphans
 
 dsh-logs:
-	$(DSH_COMPOSE) logs -f dsh
+	$(COMPOSE) --profile dsh logs -f dsh
 
 dsh-config:
-	$(DSH_COMPOSE) --profile dsh config
+	$(COMPOSE) --profile dsh config
 
 dsh-build:
-	$(DSH_COMPOSE) --profile dsh build dsh
+	$(COMPOSE) --profile dsh build dsh
 ```
 
-`DSH_PROGRAMS_VOLUME := $(COMPOSE_PROJECT_NAME)_dsh_programs`, `DSH_DATA_VOLUME := $(COMPOSE_PROJECT_NAME)_dsh_data` (deterministic names, same pattern as `DESIGN_VOLUME`).
+`DSH_DATA_VOLUME := $(COMPOSE_PROJECT_NAME)_dsh_data`, `DSH_TOOLCHAINS_VOLUME := $(COMPOSE_PROJECT_NAME)_dsh_toolchains` (deterministic names, same pattern as `DESIGN_VOLUME`).
 
 ## Implementation Checklist
 
 Skills mount and tool-naming contract are settled; the plugin code is not written.
 
 - [ ] `./dsh/Dockerfile` — `FROM ${DSH_IMAGE}` + install Mnemon CLI binary
-- [ ] `docker-compose.dsh.yaml` — service per Compose Override above
-- [ ] `Makefile` — `DSH_COMPOSE`, `DSH_PROGRAMS_VOLUME`/`DSH_DATA_VOLUME`, `dsh-up/down/logs/config/build/perms/password` targets + help text
+- [ ] `docker-compose.yaml` — `dsh` service with profile `dsh` per Compose Override above
+- [ ] `Makefile` — `DSH_DATA_VOLUME`, `DSH_TOOLCHAINS_VOLUME`, `dsh-up/down/logs/config/build/perms/password` targets + help text
 - [ ] `.env.example` — new § DSH: `DSH_IMAGE`, `DSH_PORT`, `DSH_BIND_IP`, `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`
 - [ ] `README.md` — service row (port `3080`) + `make dsh-up` row
 - [ ] `docs/operations.md` — `dsh-*` targets row, env vars row, override file row
