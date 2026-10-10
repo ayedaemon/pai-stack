@@ -23,14 +23,14 @@ and builds planning artifacts — working like a developer, not a separate knowl
 | **llm-gateway** | `http://llm-gateway:4000` | Unified LLM Gateway: LiteLLM proxy for all completions, fallbacks, and tool calls |
 | **skills** | (native, `skills_list` / `skill_view`) | Bundled procedural skills plus native tools (`pai_notebook_ops`, `pai_adr_ops`) — Docker is native CLI via the `docker` skill, not a tool |
 | **mnemosyne** | (internal SQLite) | Local agent memory: decisions, prior fixes, session continuity, project boundaries |
-| **research** | `$RESEARCH_DIR == $WIKI_PATH` (`/opt/data/workspace/${RESEARCH_SUBDIR:-research}`) | Root-level wiki vault: SCHEMA/index/log + raw/entities/concepts/comparisons/queries (`pai_notebook_ops`, `research` skill). Legacy `<notebook>/{notes/,sources/}` kept readable |
+| **research** | `<EXECUTION_DIR>/.project/research/` | Per-project wiki vault: SCHEMA/index/log + raw/entities/concepts/comparisons/queries (`pai_notebook_ops`, `research` skill) |
 
 ## Workspace Discovery & Project Boundaries (Startup Protocol)
 
 > **CRITICAL INVARIANT**: The workspace mounted at `/opt/data/workspace` frequently contains
 > MULTIPLE independent projects side-by-side (e.g. `/opt/data/workspace/backend`, `/opt/data/workspace/frontend`).
 > Never confuse one project inside the workspace with another!
-> Never treat `/opt/data/workspace` as a single monolithic repository unless confirmed by boundary markers.
+> Never treat `/opt/data/workspace` as a single monolithic repository **unless the workspace root itself is confirmed to be a single isolated repo**.
 
 On **turn 1 of every session** (or whenever entering an unfamiliar directory):
 1. **Check memory first**: Call `mnemosyne_recall(query="workspace projects structure boundaries")` to load previously known projects and conventions.
@@ -38,9 +38,13 @@ On **turn 1 of every session** (or whenever entering an unfamiliar directory):
    - Version control: `.git/` directory
    - Manifests: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pom.xml`, `Makefile`
    - Configs: `.env`, `docker-compose.yml`, `tsconfig.json`
-3. **Orient on the stack**: If the project stack is unknown, fetch `skill_view(name="stack-discovery")` before reading code.
-4. **Persist boundaries**: Record newly discovered boundaries with `mnemosyne_remember(content="Workspace Project: '<name>' at /opt/data/workspace/<name>. Markers: [...], Stack: [...]")`.
-5. **Enforce boundary isolation**: Never mix files, git branches, planning files, or build artifacts across different project subdirectories.
+   - Agent vault: `.project/` directory (research + planning)
+3. **Determine Execution Mode**:
+   - **Single-project mode**: If `/opt/data/workspace` itself contains root markers (`.git/`, manifest files) and NO subdirectories with their own root markers → `EXECUTION_DIR = /opt/data/workspace`. Treat workspace as the project.
+   - **Multi-project mode**: If subdirectories each contain root markers → pick one subdirectory as `EXECUTION_DIR = /opt/data/workspace/<project>`. Announce the choice.
+4. **Orient on the stack**: If the project stack is unknown, fetch `skill_view(name="stack-discovery")` before reading code.
+5. **Persist boundaries**: Record newly discovered boundaries with `mnemosyne_remember(content="Workspace Project: '<name>' at /opt/data/workspace/<name>. Markers: [...], Stack: [...]")`.
+6. **Enforce boundary isolation**: Never mix files, git branches, planning files, or build artifacts across different project subdirectories.
 
 ## Execution Directory Invariant
 
@@ -49,7 +53,7 @@ On **turn 1 of every session** (or whenever entering an unfamiliar directory):
    - Announce `EXECUTION_DIR` clearly in your initial response.
 2. **Strict Session Persistence**:
    - **Shell / Terminal commands**: ALWAYS execute within or prefix with `cd <EXECUTION_DIR> && <cmd>`. Never run git or build commands in `/opt/data/workspace` root when working on a subproject.
-   - **Planning files**: ALWAYS write to `<EXECUTION_DIR>/.planning/<YYYY-MM-DD-slug>/`. Never write planning files in workspace root.
+   - **Planning files**: ALWAYS write to `<EXECUTION_DIR>/.project/planning/<YYYY-MM-DD-slug>/`. Never write planning files in workspace root.
    - **Code edits**: ALWAYS anchor paths inside `<EXECUTION_DIR>`.
    - Stick to this `EXECUTION_DIR` throughout the session unless the user explicitly redirects.
 
@@ -93,7 +97,7 @@ Mnemosyne is the long-term associative memory. Do NOT pollute it with transient 
 
 ## Shared Shim Glue (canonical — shims reference this, never duplicate it)
 - Anchor everything to `EXECUTION_DIR` (§Execution Directory Invariant). Never pollute workspace root.
-- Vault writes go to `Projects/<Name>/docs/architecture.md` (or `<EXECUTION_DIR>/.planning/` for plans) with `file:lines` citations; summaries post to the originating topic only.
+- Vault writes go to `Projects/<Name>/docs/architecture.md` (or `<EXECUTION_DIR>/.project/planning/` for plans) with `file:lines` citations; summaries post to the originating topic only.
 - Secrets as refs (env var / vault path), never raw values — including `DATABASE_URL`.
 - Propose diffs/commands first, wait for confirmation, then write (§Writing to the Project). Mutating git ops always gated (see `gitops` shim).
 - Upstream skills know none of this — shims enforce it around every delegation.
@@ -116,7 +120,7 @@ Fetch the `planning` skill (via `skill_view`) for the full procedure.
 
 Planning files live in the project like developer artifacts:
 ```
-<EXECUTION_DIR>/.planning/<YYYY-MM-DD-slug>/
+<EXECUTION_DIR>/.project/planning/<YYYY-MM-DD-slug>/
   task_plan.md   ← phases, progress, decisions, next step
   findings.md    ← discoveries saved after every 2 operations
   progress.md    ← session log, errors, what changed
@@ -147,7 +151,7 @@ Planning files live in the project like developer artifacts:
 | `mcp-builder` | MCP server scaffolding for external integrations (vendored, Apache-2.0; eval script needs `anthropic` SDK) |
 | `code-reviewer` | PR rubrics + 13-language gout + 3 stdlib analyzers (vendored, MIT; complements builtin review flow) |
 | `skill-security-auditor` | Pre-install skill supply-chain gate, stdlib-only (vendored, MIT; WARNs on message-strings are noise — review, don't auto-block) |
-| `research` | Root-level wiki vault (SCHEMA/index/log, ingest/query/lint) — load for any wiki, knowledge-base, or notes task |
+| `research` | Per-project wiki vault (SCHEMA/index/log, ingest/query/lint) in `.project/research/` — load for any wiki, knowledge-base, or notes task |
 | `opencode-delegate` | Delegate coding tasks to keyless OpenCode free models (background+poll, branch review) — load before handing off implementation |
 | `gstack` | Router for the vendored gstack suite — load when unsure which `gstack-*` skill fits |
 | `gstack-office-hours` / `gstack-spec` / `gstack-autoplan` | Product framing, backlog-ready specs, fully reviewed plans (vendored, MIT) |
@@ -163,7 +167,7 @@ Planning files live in the project like developer artifacts:
 | Tool | Purpose | Allowed actions |
 |---|---|---|
 | `docker` | Docker over the mounted socket (native `docker` + `docker compose`, smart `--format`, help-first) → delegates depth to `docker-development` |
-| `pai_notebook_ops` | Query Research Brain (native Markdown file vault) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
+| `pai_notebook_ops` | Query per-project Research Brain (Markdown vault in `.project/research/`) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 | `pai_adr_ops` | Living ADR creation & code symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 
 Docker has no tool and no audit log — use the native binaries per the `docker` skill.
@@ -181,7 +185,7 @@ those symbols:
    )
    ```
 2. **If triples exist**: Extract `subject` (format: `notebook:<nb_id>:note:<note_id>`), then
-   fetch the note via `pai_notebook_ops(action=get_source, ...)`.
+   fetch the note via `pai_notebook_ops(action=get_source, ...)` from `.project/research/`.
 3. **After archiving new notes** with `@symbol:` anchors, record triples:
    ```bash
    mnemosyne_triple_add(
@@ -221,7 +225,7 @@ The following capabilities are built directly into the pai-stack:
 
 | Brain | Service | Primary Tools | What It Gives You |
 |---|---|---|---|
-| **Research Brain** | File Vault (`research/`) | `pai_notebook_ops` (10 actions) | Native Markdown vault: RFCs, papers, API docs, notes, grounded RAG (`ask_notebook`) |
+| **Research Brain** | File Vault (`.project/research/`) | `pai_notebook_ops` (10 actions) | Native Markdown vault: RFCs, papers, API docs, notes, grounded RAG (`ask_notebook`) |
 | **Memory Brain** | Mnemosyne (SQLite) | `mnemosyne_recall`, `mnemosyne_remember`, `mnemosyne_triple_*`, `mnemosyne_sleep` | Episodic memory, decisions, prior fixes, user preferences, knowledge graph triples |
 
 Code intelligence was removed from pai-stack on 2026-10-04 and is replaced by a
@@ -245,7 +249,7 @@ dedicated lightweight tool. Until that lands, locate code with `grep` + targeted
   mnemosyne_triple_query(predicate="anchors_symbol", object="@symbol:path:Symbol")
   ```
   If results exist → read those notes first → avoid duplicate research.
-- **Native file vault**: Notes live in `research/` → plain Markdown on the mounted workspace, searchable with `grep`.
+- **Native file vault**: Notes live in `.project/research/` → plain Markdown on the mounted workspace, searchable with `grep`.
 
 ### 🔬 EMPIRICAL LAB NOTEBOOK — Test, Don't Guess
 
@@ -258,7 +262,7 @@ When docs are ambiguous or conflicting:
 
 **Empirical testing & evidence note ingestion**:
 - Execute micro-benchmarks or hypothesis scripts directly in container shell or `/opt/data/`
-- Archive findings via `pai_notebook_ops(action="add_note", notebook_id=..., title="EVIDENCE: <slug> — <supported|refuted|inconclusive>", content=...)` with `@symbol:` anchors
+- Archive findings via `pai_notebook_ops(action="add_note", notebook_id=..., title="EVIDENCE: <slug> — <supported|refuted|inconclusive>", content=...)` with `@symbol:` anchors in `.project/research/`
 
 ### 🌳 DEEP INQUIRY TREES & LIVING ADRs — Structured Wisdom
 
@@ -275,7 +279,7 @@ When docs are ambiguous or conflicting:
 - Find production incidents ("X incident", "X postmortem")
 - Record as `COUNTERPOINT:` in `findings.md`
 
-**Living ADRs (L-ADRs)** in `<EXECUTION_DIR>/.planning/research/ADR-XXX.md`:
+**Living ADRs (L-ADRs)** in `<EXECUTION_DIR>/.project/planning/research/ADR-XXX.md`:
 - YAML frontmatter: status, symbols, supersession chain
 - Symbol hashes for drift detection: `@symbol:path:Symbol#sha256:...`
 - Dialectical record, validation probes, review triggers
@@ -311,7 +315,7 @@ After loading the `agents` skill, immediately:
 1. **skills_list()** — confirm `research` and other skills are available
 2. **Parallel: docker ps (pai-stack filter) + mnemosyne_recall("workspace projects structure boundaries")** — services + memory in one round-trip
 3. **Survey `/opt/data/workspace`** — find project boundaries, declare `EXECUTION_DIR`
-4. **IFF research task OR `$RESEARCH_DIR/SCHEMA.md` exists**: `skill_view(name="research")`, then read SCHEMA.md + index.md + log.md tail-20 only (index-first, top-3 pages max, never bulk-read)
+4. **IFF research task OR `<EXECUTION_DIR>/.project/research/SCHEMA.md` exists**: `skill_view(name="research")`, then read `.project/research/{SCHEMA.md,index.md,log.md}` tail-20 only (index-first, top-3 pages max, never bulk-read)
 5. **For deep research tasks**: additionally load `skill_view(name="autonomous-tech-learner")` for empirical probes and inquiry trees
 6. **Report**: EXECUTION_DIR, active services, ready tools, available skills, Kanban patterns
 

@@ -27,6 +27,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 function getResearchDir() {
+  const execDir = process.env.EXECUTION_DIR;
+  if (execDir) {
+    return join(execDir, ".project", "research");
+  }
+  // Fallback for backwards compatibility (should not be used in new architecture)
   return process.env.RESEARCH_DIR ||
          process.env.WIKI_PATH ||
          join(process.env.WORKSPACE_DIR || "/opt/data/workspace", "research");

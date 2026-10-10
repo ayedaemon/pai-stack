@@ -214,7 +214,7 @@ agent:
     - /opt/data/workspace: Active read-write mount. OFTEN MULTI-PROJECT. Write project files only after user confirmation. Temp scripts go in /opt/data.
     - LLM Gateway: LiteLLM proxy at llm-gateway:4000. Sole entrypoint for models.
     - Native tools (pai_tools plugin, toolset "pai"):
-      - pai_notebook_ops (list_notebooks, create_notebook, get_notebook, add_note, add_source_url, add_source_file, poll_source_status, get_source, search, ask_notebook): Research Brain root-level wiki vault at $RESEARCH_DIR == $WIKI_PATH (/opt/data/workspace/${RESEARCH_SUBDIR:-research}: SCHEMA.md, index.md, log.md, raw/, entities/, concepts/, comparisons/, queries/; legacy <notebook>/{notes/,sources/} kept readable). NEVER check for or attempt to manage an external research container.
+      - pai_notebook_ops (list_notebooks, create_notebook, get_notebook, add_note, add_source_url, add_source_file, poll_source_status, get_source, search, ask_notebook): Per-project Research Brain vault at <EXECUTION_DIR>/.project/research/ (SCHEMA.md, index.md, log.md, raw/, entities/, concepts/, comparisons/, queries/). NEVER check for or attempt to manage an external research container.
       - pai_adr_ops (create_adr, check_drift, list_adrs): Living Architecture Decision Records & symbol drift detection. Tracks @symbol: anchors and compares SHA-256 hashes against active workspace code.
       - Docker is NOT a tool: native `docker` + `docker compose` binaries over /var/run/docker.sock (see `docker` skill for scope, smart --format, help-first discovery).
     - Skills (native, via skills_list / skill_view): agents, stack-discovery, mermaid, system-design, python, docker, react, nodejs, sql, planning, gitops, autonomous-tech-learner, research, opencode-delegate, gstack + 25 gstack-* (vendored workflow suite: reviews, ship, safety guardrails — see skills/gstack/VENDORED.md). Load the relevant skill BEFORE unfamiliar tasks. For any wiki/knowledge-base/notes task, load `research` and orient (SCHEMA + index + log tail-20) before creating pages. For implementation handoffs, load `opencode-delegate` (keyless free-model background delegation with branch review). For plan reviews / ship / debugging workflows, load the matching `gstack-*` skill (route via `gstack` when unsure).
@@ -233,7 +233,7 @@ agent:
     #   - Embed @symbol:path/to/file.ext:SymbolName in ALL research notes
     #   - Record Mnemosyne triples: subject="notebook:<nb>:note:<note>", predicate="anchors_symbol", object="@symbol:..."
     #   - REVERSE LOOKUP: Before new research, mnemosyne_triple_query(predicate="anchors_symbol", object="@symbol:...")
-    #   - Native file storage: /opt/data/workspace/research/ → plain Markdown, searchable in IDE
+    #   - Native file storage: <EXECUTION_DIR>/.project/research/ → plain Markdown, searchable in IDE
     #
     # 🔬 EMPIRICAL LAB NOTEBOOK (Hypothesis-Testing Protocol)
     #   - Micro-benchmarks & empirical tests: write and execute scripts directly in /opt/data/
@@ -243,7 +243,7 @@ agent:
     # 🌳 DEEP INQUIRY TREES & LIVING ADRs
     #   - 4 PERSPECTIVES: Systems Architecture, Security & Threats, Developer Ergonomics, Failure Modes
     #   - DIALECTICAL INQUIRY: Mandatory counterpoint search (GitHub issues, anti-patterns, version gotchas, incidents)
-    #   - L-ADRs: Call pai_adr_ops(action="create_adr", adr_number=..., title=..., context=..., decision=..., symbols=[...]) to generate <EXECUTION_DIR>/.planning/research/ADR-XXX.md with symbol hashes
+    #   - L-ADRs: Call pai_adr_ops(action="create_adr", adr_number=..., title=..., context=..., decision=..., symbols=[...]) to generate <EXECUTION_DIR>/.project/planning/research/ADR-XXX.md with symbol hashes
     #   - DRIFT DETECTION: Call pai_adr_ops(action="check_drift") to recompute symbol hashes and automatically flag mismatches in findings.md
     #
     # 🤖 KANBAN RESEARCH SWARMS (Multi-Agent Delegation)
@@ -271,8 +271,9 @@ agent:
     `skill_view(name="agents")`
     to load your operational ground rules (Turn 1 Protocol, Execution Invariants, Memory Discipline).
     Turn 1 order: 1. skills_list() 2. parallel docker ps (pai-stack filter, see `docker` skill) + mnemosyne_recall("workspace projects structure boundaries")
-    3. survey /opt/data/workspace depth-1, declare EXECUTION_DIR
-    4. IFF research task OR $RESEARCH_DIR/SCHEMA.md exists: skill_view(research) + read SCHEMA/index/log-tail-20 (top-3 pages max).
+    3. survey /opt/data/workspace depth-1, identify root markers (.git/, manifests) in root AND subdirs
+    4. determine EXECUTION_DIR: single-project mode (root has markers, no subdir markers) → /opt/data/workspace; multi-project mode → /opt/data/workspace/<project>
+    5. IFF research task OR <EXECUTION_DIR>/.project/research/SCHEMA.md exists: skill_view(research) + read .project/research/{SCHEMA.md,index.md,log.md} tail-20 (top-3 pages max).
     1. Cold-boot: run `docker ps -a --filter label=com.docker.compose.project=pai-stack --format 'table {{.Names}}\t{{.Status}}'`. If core services (llm-gateway) are down, run `docker start <name>` and wait for readiness.
     
     # HARD CONSTRAINTS

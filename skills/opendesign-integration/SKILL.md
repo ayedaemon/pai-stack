@@ -64,7 +64,7 @@ pai_ops_design_ops(action="list_projects")
 
 When Hermes needs OpenDesign to generate something:
 
-1. **Hermes designs** — writes spec to `.planning/<slug>/design.md`
+1. **Hermes designs** — writes spec to `.project/planning/<slug>/design.md`
 2. **Hermes triggers** — `pai_ops_design_ops(action="create_project", name="<slug>")`
 3. **OpenDesign generates** — files land in `/opt/data/workspace/<project>`
 4. **Hermes reviews** — code-reviewer checks the new files for quality

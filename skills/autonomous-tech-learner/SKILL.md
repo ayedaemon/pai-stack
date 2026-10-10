@@ -32,7 +32,7 @@ When documentation is ambiguous, **run an empirical test** instead of guessing:
 Complex questions → **4 mandatory perspectives** → dialectical inquiry → L-ADRs:
 - **Perspectives**: Systems Architecture, Security & Threats, Developer Ergonomics, Failure Modes
 - **Dialectical**: Mandatory counterpoint search (GitHub issues, anti-patterns, version gotchas, incidents)
-- **L-ADRs**: Generated via `pai_adr_ops(action="create_adr", ...)` to `<EXECUTION_DIR>/.planning/research/ADR-XXX.md` with symbol hashes, supersession chain
+- **L-ADRs**: Generated via `pai_adr_ops(action="create_adr", ...)` to `<EXECUTION_DIR>/.project/planning/research/ADR-XXX.md` with symbol hashes, supersession chain
 - **Drift detection**: `pai_adr_ops(action="check_drift")` recomputes symbol hashes, flags mismatches in `findings.md`
 
 ### 3. 🤖 Kanban Research Swarms (Multi-Agent Delegation)
@@ -291,7 +291,7 @@ linked to codebase symbols via hashes. They evolve only via supersession.
 
 #### Location
 ```
-<EXECUTION_DIR>/.planning/research/
+<EXECUTION_DIR>/.project/planning/research/
 ├── ADR-001-use-redis-for-caching.md
 ├── ADR-002-async-background-tasks.md
 └── ...
@@ -400,7 +400,7 @@ Each leaf node → Research → Probe (if needed) → Evidence Note → ADR sect
 The inquiry tree maps directly to `planning-with-files`:
 
 ```
-<EXECUTION_DIR>/.planning/<YYYY-MM-DD-slug>/
+<EXECUTION_DIR>/.project/planning/<YYYY-MM-DD-slug>/
 ├── task_plan.md           # Root inquiry + phase tracking
 ├── findings.md            # All perspective findings + COUNTERPOINTs
 ├── progress.md            # Session log

@@ -80,7 +80,7 @@ Before any schema design, walk these.
 
 ### 1D. System Design Output
 
-Produce a single design document at `<EXECUTION_DIR>/.planning/<slug>/design.md`:
+Produce a single design document at `<EXECUTION_DIR>/.project/planning/<slug>/design.md`:
 
 ```markdown
 ## Requirements
@@ -390,7 +390,7 @@ Before declaring done, verify:
 | 3E | `react` | Frontend authoring |
 | 4A | `code-reviewer` | Complexity thresholds |
 | 4B | `pai_adr_ops` | Drift detection |
-| All | `planning` | .planning/ discipline |
+| All | `planning` | .project/planning/ discipline |
 | All | `gitops` | Branch safety |
 
 ---
@@ -411,10 +411,10 @@ Before declaring done, verify:
 
 ## Output
 
-- `.planning/<slug>/design.md` — design document
-- `.planning/<slug>/task_plan.md` — implementation plan
-- `.planning/<slug>/findings.md` — discoveries
-- `.planning/<slug>/progress.md` — session log
+- `.project/planning/<slug>/design.md` — design document
+- `.project/planning/<slug>/task_plan.md` — implementation plan
+- `.project/planning/<slug>/findings.md` — discoveries
+- `.project/planning/<slug>/progress.md` — session log
 - ADRs for key decisions
 - OpenAPI spec
 - Migration files

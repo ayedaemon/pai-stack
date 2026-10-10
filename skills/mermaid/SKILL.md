@@ -268,10 +268,10 @@ docs/
 | Project-level architecture update | `<EXECUTION_DIR>/docs/architecture.md` (required by AGENTS.md) |
 | New C4 level for an existing system | New file: `docs/architecture-<level>.md` (e.g. `architecture-containers.md`) |
 | Module / service internal diagram | `<EXECUTION_DIR>/docs/<service-name>.md` |
-| ADR-embedded diagram | Inline in `<EXECUTION_DIR>/.planning/research/ADR-XXX.md` |
-| Scratch / draft diagram | `<EXECUTION_DIR>/.planning/<date-slug>/diagram-draft.md` |
+| ADR-embedded diagram | Inline in `<EXECUTION_DIR>/.project/planning/research/ADR-XXX.md` |
+| Scratch / draft diagram | `<EXECUTION_DIR>/.project/planning/<date-slug>/diagram-draft.md` |
 
-**Rule:** never create a new file without first checking whether an existing file already contains a diagram for the same scope. Grep for `mermaid` under `docs/` and `<EXECUTION_DIR>/.planning/` first.
+**Rule:** never create a new file without first checking whether an existing file already contains a diagram for the same scope. Grep for `mermaid` under `docs/` and `<EXECUTION_DIR>/.project/planning/` first.
 
 ---
 

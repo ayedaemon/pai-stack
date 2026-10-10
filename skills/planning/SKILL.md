@@ -1,6 +1,6 @@
 ---
 name: planning
-description: Planning discipline for multi-step work — owns the persistent task_plan.md/findings.md/progress.md discipline in <EXECUTION_DIR>/.planning/, plus plan authorship and step-by-step execution with verification gates. Load when a task has 3+ steps, research, or multi-file changes.
+description: Planning discipline for multi-step work — owns the persistent task_plan.md/findings.md/progress.md discipline in <EXECUTION_DIR>/.project/planning/, plus plan authorship and step-by-step execution with verification gates. Load when a task has 3+ steps, research, or multi-file changes.
 ---
 
 # Planning
@@ -15,7 +15,7 @@ description: Planning discipline for multi-step work — owns the persistent tas
 
 ## Pai paths (non-negotiable)
 ```
-<EXECUTION_DIR>/.planning/<YYYY-MM-DD-slug>/
+<EXECUTION_DIR>/.project/planning/<YYYY-MM-DD-slug>/
   task_plan.md   ← phases, decisions, ## Next Step (update per phase)
   findings.md    ← discoveries (2-operation rule: write after every 2 searches/reads)
   progress.md    ← session log, errors, test results

@@ -1,37 +1,38 @@
 ---
 name: research
-description: Root-level persistent wiki (Karpathy llm-wiki pattern) on the shared research vault. Create, ingest, query, and lint interlinked Markdown knowledge. Use when user mentions wiki, knowledge base, notes, or starts/queries/lints research.
+description: Per-project persistent wiki (Karpathy llm-wiki pattern) in .project/research/. Create, ingest, query, and lint interlinked Markdown knowledge. Use when user mentions wiki, knowledge base, notes, or starts/queries/lints research.
 ---
 
-# Research — Root-Level Wiki
+# Research — Per-Project Wiki
 
-> Persistent, compounding knowledge base as interlinked Markdown at the vault root.
+> Persistent, compounding knowledge base as interlinked Markdown at `.project/research/` in each project.
 > Based on Karpathy's LLM Wiki pattern (via `llm-wiki` on hermesskins.io), adapted for pai-stack.
 
-## Wiki Location (env-configurable, same path)
+## Wiki Location (per-project, derived from EXECUTION_DIR)
 
 ```bash
-WIKI="${WIKI_PATH:-$RESEARCH_DIR:-/opt/data/workspace/research}"
+WIKI="${EXECUTION_DIR}/.project/research"
 ```
 
-- In-container `WIKI_PATH == RESEARCH_DIR == /opt/data/workspace/${RESEARCH_SUBDIR:-research}` (`docker-compose.yaml`, `.env.example: RESEARCH_SUBDIR`).
-- Host path = `${WORKSPACE_DIR}/${RESEARCH_SUBDIR}` (default `research`). Never use `~/wiki` — unmounted and unindexed.
-- Legacy notebook vaults (`<notebook>/{notes/,sources/,notebook.json}`) remain readable alongside the wiki; new knowledge goes in wiki dirs below.
+- `EXECUTION_DIR` is set by Hermes on Turn 1 (see `agents` skill).
+- In-container path = `/opt/data/workspace/<project>/.project/research`.
+- Host path = `<WORKSPACE_DIR>/<project>/.project/research`.
+- No global `research/` at workspace root — each project owns its vault.
+- Legacy notebook vaults (`<notebook>/{notes/,sources/,notebook.json}`) are **not** migrated; new knowledge goes in wiki dirs below.
 
-## Architecture: root-level wiki + legacy notebooks
+## Architecture: per-project wiki
 
 ```
-research/                        ← $WIKI_PATH == $RESEARCH_DIR
-├── SCHEMA.md                    ← conventions, tag taxonomy, domain
-├── index.md                     ← sectioned catalog, one-line summaries
-├── log.md                       ← chronological action log (append-only, rotate at 500)
-├── raw/articles|papers|.../     ← Layer 1: immutable sources (never edit)
-├── entities/                    ← Layer 2: people, orgs, products, models
-├── concepts/                    ← Layer 2: topics, techniques
-├── comparisons/                 ← Layer 2: side-by-side analyses
-├── queries/                     ← Layer 2: filed answers worth keeping
-├── _archive/                    ← superseded pages (removed from index)
-└── <notebook>/notes|sources/    ← legacy vault (read via pai_notebook_ops)
+<EXECUTION_DIR>/.project/research/   ← $WIKI
+├── SCHEMA.md                        ← conventions, tag taxonomy, domain
+├── index.md                         ← sectioned catalog, one-line summaries
+├── log.md                           ← chronological action log (append-only, rotate at 500)
+├── raw/articles|papers|.../         ← Layer 1: immutable sources (never edit)
+├── entities/                        ← Layer 2: people, orgs, products, models
+├── concepts/                        ← Layer 2: topics, techniques
+├── comparisons/                     ← Layer 2: side-by-side analyses
+├── queries/                         ← Layer 2: filed answers worth keeping
+└── _archive/                        ← superseded pages (removed from index)
 ```
 
 Layer 1 raw = immutable. Layer 2 wiki = agent-owned. Layer 3 SCHEMA = rules.
@@ -47,7 +48,7 @@ Skipping this causes duplicates and missed cross-refs.
 
 ## Init New Wiki (vault empty)
 
-1. Confirm `$WIKI` resolves (echo path; must be under `/opt/data/workspace`).
+1. Confirm `$WIKI` resolves (echo path; must be under `<EXECUTION_DIR>/.project/research`).
 2. Ask domain (be specific, e.g. "Aurora Postgres tuning").
 3. Write `SCHEMA.md` (template below, customized), `index.md` (section headers, `Total pages: 0`), `log.md` (`create | Wiki initialized`).
 4. Suggest first sources.
@@ -88,9 +89,9 @@ Check and report grouped by severity (broken links > orphans > drift > contested
 ## Hermes Integration
 
 - Vault is plain Markdown on the mounted workspace — new pages are immediately searchable with `grep`.
-- Planning files (`task_plan/findings/progress.md`) stay in `<EXECUTION_DIR>/.planning/`; research conclusions graduate to wiki + Living ADRs (`.planning/research/ADR-XXX.md` via `pai_adr_ops`).
+- Planning files (`task_plan/findings/progress.md`) stay in `<EXECUTION_DIR>/.project/planning/`; research conclusions graduate to wiki + Living ADRs (`.project/planning/research/ADR-XXX.md` via `pai_adr_ops`).
 - Probes: `/opt/data/probes/<slug>/` scripts; results ingested as `EVIDENCE:` notes with `@symbol:` anchors.
-- Turn 1: load this skill only when research task or `SCHEMA.md` exists; orient reads are SCHEMA + index + log-tail-20 only.
+- Turn 1: load this skill only when research task or `<EXECUTION_DIR>/.project/research/SCHEMA.md` exists; orient reads are SCHEMA + index + log-tail-20 only.
 
 ## Pitfalls
 

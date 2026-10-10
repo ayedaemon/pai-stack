@@ -4,9 +4,17 @@ Two core services. Three optional profiles. One workspace mount.
 
 ```
 Host $WORKSPACE_DIR
-  ├── <project-a>/, <project-b>/, ...
-  ├── research/            ← Research Brain vault (Markdown)
-  └── .planning/           ← per-project planning artifacts
+  ├── <project-a>/
+  │     ├── .project/
+  │     │     ├── research/  ← Research Brain vault (Markdown)
+  │     │     └── planning/  ← per-project planning artifacts
+  │     └── ...
+  ├── <project-b>/
+  │     ├── .project/
+  │     │     ├── research/
+  │     │     └── planning/
+  │     └── ...
+  └── ...
         │
         │  /opt/data/workspace (rw) ──→ hermes
         │
@@ -24,7 +32,7 @@ terrain ──→ opencode acp ──→ OpenCode Zen free models (keyless; NO l
 
 ```mermaid
 flowchart LR
-    WS["host $WORKSPACE_DIR<br/>projects + research/"]
+    WS["host $WORKSPACE_DIR<br/>projects/<name>/.project/{research,planning}/"]
     H["hermes<br/>:9119 / :8642"]
     G["llm-gateway<br/>:4000"]
     OD["open-design (opt-in)<br/>:7456"]
@@ -211,7 +219,7 @@ prints every provider key the gateway holds. See [audit.md](audit.md).
 
 | Host | Container | Service | Access |
 |---|---|---|---|
-| `$WORKSPACE_DIR` | `/opt/data/workspace` | hermes | read-write (code edits, research vault) |
+| `$WORKSPACE_DIR` | `/opt/data/workspace` | hermes | read-write (code edits, `.project/{research,planning}`) |
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | terrain | read-write (writes `.terrain/` into the indexed repo) |
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | dsh | read-write (sessions operate directly on it) |
 | `hermes-data` volume | `/opt/hermes/data` | hermes | app state, Mnemosyne DB, logs |
@@ -254,7 +262,7 @@ Cross-linking: `@symbol:path/to/file.ext:SymbolName` anchors in notes + Mnemosyn
 
 ## Philosophy
 
-- Zero contamination: research lives in `research/` or `.planning/`, never in git code dirs.
+- Zero contamination: research lives in `.project/research/`, planning in `.project/planning/`, never in git code dirs.
 - Single gateway: every model call routes through `llm-gateway:4000`.
 - Empirical over theoretical: ambiguous docs → micro-probe before trusting web claims.
 - Self-realizing agent: Hermes discovers tools, skills, and boundaries on Turn 1.

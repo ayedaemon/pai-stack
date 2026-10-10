@@ -30,7 +30,7 @@ make all-up                     # Everything
 
 | Host path | Container path | Service | Access |
 |---|---|---|---|
-| `$WORKSPACE_DIR` | `/opt/data/workspace` | hermes | **read-write** (`research/` vault + project files) |
+| `$WORKSPACE_DIR` | `/opt/data/workspace` | hermes | **read-write** (project files + `.project/` vault) |
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | terrain | **read-write** (writes `.terrain/` into the repo it indexes) |
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | dsh | **read-write** (same container path as hermes — shared filepaths) |
 | `$WORKSPACE_DIR` | `/opt/data/workspace` | open-design | **read-write** (import folder for design generation) |
@@ -44,10 +44,7 @@ it is host state, not repo content.
 
 OpenDesign's daemon state stays in the `open_design_data` volume at `/app/.od` — never bind-mounted into the workspace to avoid SQLite lock contention.
 
-> Research Brain is a root-level wiki (SCHEMA.md, index.md, log.md, raw/, entities/, concepts/, comparisons/, queries/)
-> at `$WORKSPACE_DIR/${RESEARCH_SUBDIR:-research}` (container `$RESEARCH_DIR == $WIKI_PATH`), with legacy
-> `<notebook-name>/{notes/,sources/}` vaults kept readable alongside. There are no external databases (SurrealDB)
-> or dedicated embedding containers needed, saving ~2.3 GB of RAM and ensuring instant IDE search.
+
 
 ## Service Interconnection
 
@@ -59,7 +56,7 @@ dsh    ──→ [dsh-mcp-client]     code intelligence → terrain:7878/mcp   (
 hermes ←─→ [pair/ blackboard] ←─→ dsh   peer queue: pair/queue → claim.py → worktree → done.py; wake via poke.py (docker exec headless)
 hermes ──→ [skills: /opt/pai/skills]  native procedural skills via skills_list / skill_view
 hermes ──→ llm-gateway:4000     ONLY gateway for LLM completions & reasoning
-hermes (pai_notebook_ops) ──→ /opt/data/workspace/research/ (file vault)
+hermes (pai_notebook_ops) ──→ <EXECUTION_DIR>/.project/research/ (file vault)
 hermes (ask_notebook) ──→ llm-gateway:4000 (synthesis)
 dsh    ──→ llm-gateway:4000     LLM completions & reasoning
 open-design ──→ llm-gateway:4000  LLM completions (BYOK or gateway)
@@ -148,7 +145,7 @@ Skills are markdown files in `./skills/`, mounted read-only into Hermes via `ski
 | `code-reviewer` / `skill-security-auditor` | Vendored review rubrics + skill supply-chain gate (MIT) |
 | `gstack` + 25 `gstack-*` | Vendored gstack workflow suite: router, office-hours/spec/autoplan, plan reviews (ceo/eng/design/devex), review/investigate/cso/health, ship/land-and-deploy/document-*, learn/retro/context-*, careful/freeze/guard (MIT; provenance in `skills/gstack/VENDORED.md`) |
 | `mermaid` | Mermaid diagram authoring guide (type selection, syntax safety, C4 abstraction protocol) |
-| `research` | Root-level wiki (SCHEMA/index/log, ingest/query/lint) — load for wiki/kb/notes tasks |
+| `research` | Per-project wiki (SCHEMA/index/log, ingest/query/lint) in `.project/research/` — load for wiki/kb/notes tasks |
 | `opencode-delegate` | Keyless OpenCode delegation (background+poll, branch review) — load for implementation handoffs |
 | `agents` | Ground rules injected at session start |
 
@@ -156,7 +153,7 @@ Skills are markdown files in `./skills/`, mounted read-only into Hermes via `ski
 
 | Tool | Purpose | Allowed actions |
 |---|---|---|
-| `pai_notebook_ops` | Query and manage Research Brain (native file vault in `research/`) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
+| `pai_notebook_ops` | Query and manage per-project Research Brain (file vault in `.project/research/`) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 | `pai_adr_ops` | Living ADR creation & code symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 | `pai_ops_design_ops` | OpenDesign visual generation / mockups bridge | (see `opendesign-integration` skill) |
 | `pai_terrain_ops` | Code intelligence via the Terrain service (opt-in; hidden when down) | `index`, `refresh`, `search`, `read`, `overview`, `projects`, `unregister`, `source`, `init`, `ask` |
@@ -177,24 +174,28 @@ using embedded SQLite (`/opt/hermes/data/mnemosyne/data/mnemosyne.db`) and local
 
 | Retrieval System | Scope | Storage | Role |
 |---|---|---|---|
-| **Research Brain** | External knowledge & notes | `$WORKSPACE_DIR/research/` | RFCs, API docs, papers, research notes in Markdown |
+| **Research Brain** | External knowledge & notes | `<EXECUTION_DIR>/.project/research/` | RFCs, API docs, papers, research notes in Markdown |
 | **Mnemosyne** | Agent experience | `/opt/hermes/data/mnemosyne` | Decisions, prior fixes, session continuity, user preferences |
 
 ## Startup Protocol: Workspace Understanding & Boundaries
 
 > **CRITICAL INVARIANT**: The host workspace (`$WORKSPACE_DIR` mounted to `/opt/data/workspace`)
 > is often a multi-project container holding several independent repositories or projects side-by-side.
-> Hermes must never confuse one project with another or treat `/opt/data/workspace` as a monolithic project.
+> Hermes must never confuse one project with another or treat `/opt/data/workspace` as a monolithic project
+> **unless the workspace root itself is confirmed to be a single isolated repository**.
 
 On **Turn 1 of every session**:
 1. **Discover skills**: Call `skills_list()` to confirm `research` and other skills are available.
 2. **Recall Known Boundaries + services (parallel)**: Call `mnemosyne_recall(query="workspace projects structure boundaries")` and run `docker ps` with the pai-stack label filter (see `docker` skill).
 3. **Survey Directory Structure**: List `/opt/data/workspace` (depth 1) to identify project subdirectories and identify root markers (`.git/`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Makefile`).
-4. **Orient on the stack**: If the stack is unknown, load the `stack-discovery` skill first; otherwise read the project's manifest (`pyproject.toml`, `package.json`, …).
-5. **Orient on wiki (IFF research task OR `$RESEARCH_DIR/SCHEMA.md` exists)**: Load `skill_view(name="research")`, then read `SCHEMA.md` + `index.md` + `log.md` tail-20 only (index-first, top-3 pages max).
-6. **Persist Boundaries**: Record discovered project boundaries using `mnemosyne_remember(content="Workspace Project: '<name>' at /opt/data/workspace/<name>...")`.
-7. **Enforce Boundary Isolation**: Strictly avoid cross-project contamination of files, git branches, or planning files.
-8. **Check the index (if terrain is running)**: `pai_terrain_ops(action="projects")`. If `EXECUTION_DIR` is absent from the list, `pai_terrain_ops(action="index", path="<project>")` before code work — it costs no LLM tokens.
+4. **Determine Execution Mode**:
+   - **Single-project mode**: If `/opt/data/workspace` itself contains root markers (`.git/`, manifest files) and NO subdirectories with their own root markers → `EXECUTION_DIR = /opt/data/workspace`. Treat workspace as the project.
+   - **Multi-project mode**: If subdirectories each contain root markers → pick one subdirectory as `EXECUTION_DIR = /opt/data/workspace/<project>`. Announce the choice.
+5. **Orient on the stack**: If the stack is unknown, load the `stack-discovery` skill first; otherwise read the project's manifest (`pyproject.toml`, `package.json`, …).
+6. **Orient on wiki (IFF research task OR `<EXECUTION_DIR>/.project/research/SCHEMA.md` exists)**: Load `skill_view(name="research")`, then read `.project/research/{SCHEMA.md,index.md,log.md}` tail-20 only (index-first, top-3 pages max).
+7. **Persist Boundaries**: Record discovered project boundaries using `mnemosyne_remember(content="Workspace Project: '<name>' at /opt/data/workspace/<name>...")`.
+8. **Enforce Boundary Isolation**: Strictly avoid cross-project contamination of files, git branches, or planning files.
+9. **Check the index (if terrain is running)**: `pai_terrain_ops(action="projects")`. If `EXECUTION_DIR` is absent from the list, `pai_terrain_ops(action="index", path="<project>")` before code work — it costs no LLM tokens.
 
 ## Execution Directory Invariant
 
@@ -202,7 +203,7 @@ Hermes must strictly isolate its operations to a single project execution direct
 1. **Declare `EXECUTION_DIR` on Turn 1**: Hermes explicitly chooses `EXECUTION_DIR = /opt/data/workspace/<project>` (or `/opt/data/workspace` only if the workspace root is confirmed to be a single repo). Announce this to the user.
 2. **Strict Persistence Throughout Session**:
    - **Terminal Commands**: ALWAYS run within or prefix with `cd <EXECUTION_DIR> && <cmd>`. Never run build/test/git commands in `/opt/data/workspace` root.
-   - **Planning Artifacts**: Write exclusively to `<EXECUTION_DIR>/.planning/<YYYY-MM-DD-slug>/`.
+   - **Planning Artifacts**: Write exclusively to `<EXECUTION_DIR>/.project/planning/<YYYY-MM-DD-slug>/`.
    - **Code Changes**: Anchor all edits inside `<EXECUTION_DIR>`.
 
 ## Where Hermes Writes
@@ -210,7 +211,7 @@ Hermes must strictly isolate its operations to a single project execution direct
 | What | Where | When |
 |---|---|---|
 | Code changes | `<EXECUTION_DIR>/<file>` | After user confirms the proposed diff |
-| Planning files | `<EXECUTION_DIR>/.planning/<slug>/` | When starting a complex task |
+| Planning files | `<EXECUTION_DIR>/.project/planning/<slug>/` | When starting a complex task |
 | Helper scripts & scratch tools | `/opt/data/<tool_name>` | For internal Hermes operations |
 | Agent memory (Mnemosyne DB) | `hermes-data` volume (`/opt/hermes/data/mnemosyne/data/`) | Post-turn capture & explicit remember calls |
 | App state (DB, sessions) | `hermes-data` Docker volume | Automatically — never touches workspace |
@@ -223,7 +224,7 @@ They live in the project and are searchable with `grep` in future sessions.
 For any task with 3+ steps, research, or multi-file changes, Hermes creates:
 
 ```
-/opt/data/workspace/<project>/.planning/<YYYY-MM-DD-slug>/
+<EXECUTION_DIR>/.project/planning/<YYYY-MM-DD-slug>/
   task_plan.md   — phases, current status, decisions, next step
   findings.md    — discoveries: symbols, blast radius, root causes, key facts
   progress.md    — session log: what ran, errors, what was written

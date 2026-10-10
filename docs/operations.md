@@ -65,7 +65,7 @@ Dockerfile edit — a plugin that exists in the repo but not in the image fails
 | `LITELLM_MASTER_KEY` | Leave commented for local use; an empty-but-set value breaks all requests |
 | `LANGFUSE_*` | Optional tracing |
 | `HERMES_DASHBOARD_BASIC_AUTH_*`, `API_SERVER_KEY` | Dashboard login + API bearer (generate with `openssl rand -hex 32`) |
-| `RESEARCH_SUBDIR` | Vault subdir (default `research`) |
+
 | `HERMES_TELEGRAM_*` | Hermes bot token + numeric-ID allowlists; empty = disabled; restart hermes after change |
 | `DSH_TELEGRAM_*` | Separate DSH bot token + allowlists; empty = disabled |
 | `OPEN_DESIGN_IMAGE`, `OPEN_DESIGN_PORT`, `OD_API_TOKEN` | Design profile (see [opendesign.md](opendesign.md)) |

@@ -3,7 +3,7 @@
 notebook_ops.py — Native File-Based Research Brain tool (Hermes plugin).
 
 Stores notebooks, research notes, and external sources as human-readable
-Markdown files with YAML frontmatter in RESEARCH_DIR (default: /opt/data/workspace/research).
+Markdown files with YAML frontmatter in <EXECUTION_DIR>/.project/research/.
 
 Actions:
   - list_notebooks
@@ -30,16 +30,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-RESEARCH_DIR = Path(
-    os.environ.get("WIKI_PATH")
-    or os.environ.get("RESEARCH_DIR")
-    or (
-        os.environ.get("WORKSPACE_DIR")
-        or os.environ.get("HERMES_DATA_DIR", "/opt/data/workspace")
+# EXECUTION_DIR is REQUIRED - set by Hermes per session
+# No fallback to workspace root - each project owns its vault
+EXECUTION_DIR = Path(os.environ.get("EXECUTION_DIR", ""))
+if not EXECUTION_DIR or not EXECUTION_DIR.exists():
+    raise RuntimeError(
+        "EXECUTION_DIR environment variable not set or path does not exist. "
+        "Hermes must set EXECUTION_DIR before invoking pai_notebook_ops."
     )
-    + ("" if (os.environ.get("WIKI_PATH") or os.environ.get("RESEARCH_DIR")) else "/research")
-)
-# Root-level wiki (llm-wiki pattern): SCHEMA.md, index.md, log.md, raw/,
+
+RESEARCH_DIR = EXECUTION_DIR / ".project" / "research"
+# Per-project wiki (llm-wiki pattern): SCHEMA.md, index.md, log.md, raw/,
 # entities/, concepts/, comparisons/, queries/ live at RESEARCH_DIR root.
 # Legacy notebook vaults (<notebook>/{notes/,sources/,notebook.json}) are
 # kept readable alongside the wiki. WIKI_PATH aliases RESEARCH_DIR.
@@ -51,7 +52,7 @@ LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "not-needed")
 
 SCHEMA = {
     "name": "pai_notebook_ops",
-    "description": "Query and manage the Research Brain vault. Use for external knowledge: RFCs, papers, API docs, web articles, Living ADRs, and evidence notes. Backed by human-readable Markdown files in the workspace research/ directory.",
+    "description": "Query and manage the per-project Research Brain vault. Use for external knowledge: RFCs, papers, API docs, web articles, Living ADRs, and evidence notes. Backed by human-readable Markdown files in <EXECUTION_DIR>/.project/research/.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -200,7 +201,7 @@ def parse_frontmatter(content: str) -> tuple[Dict[str, Any], str]:
 
 
 def resolve_notebook_dir(notebook_id: str) -> Optional[Path]:
-    """Resolve notebook ID or name to its directory on disk."""
+    """Resolve notebook ID or name to its directory on disk (scoped to project vault)."""
     if not RESEARCH_DIR.exists():
         return None
 

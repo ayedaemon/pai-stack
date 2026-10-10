@@ -1,10 +1,10 @@
 # Research
 
-How Hermes does file-based research. Vault lives at `$WORKSPACE_DIR/${RESEARCH_SUBDIR:-research}` (container `$RESEARCH_DIR == $WIKI_PATH`).
+How Hermes does file-based research. Vault lives at `<EXECUTION_DIR>/.project/research/` (per-project, derived from EXECUTION_DIR).
 
 ## Vault layout
 
-Root-level wiki: `SCHEMA.md`, `index.md`, `log.md`, `raw/`, `entities/`, `concepts/`, `comparisons/`, `queries/` — plus legacy `<notebook>/{notes/,sources/}` kept readable. Procedure lives in the `research` skill (`skill_view(name="research")`): index-first, top-3 pages max.
+Per-project wiki: `SCHEMA.md`, `index.md`, `log.md`, `raw/`, `entities/`, `concepts/`, `comparisons/`, `queries/` — no legacy notebook vaults. Procedure lives in the `research` skill (`skill_view(name="research")`): index-first, top-3 pages max.
 
 Cross-brain anchors: embed `@symbol:path/to/file.ext:SymbolName` in every note; link note → symbol → decision via Mnemosyne triples. Before new research, `mnemosyne_recall` + `pai_notebook_ops(search)` for existing notes on the symbol.
 
@@ -22,7 +22,7 @@ Evidence notes carry status `supported | refuted | inconclusive`, always include
 
 Decompose complex questions into 4 perspectives: Systems Architecture, Security & Threats, Developer Ergonomics, Failure Modes. Actively seek counterpoints (GitHub issues, anti-patterns, version gotchas, incident reports).
 
-Living ADRs live in `<EXECUTION_DIR>/.planning/research/ADR-XXX.md`:
+Living ADRs live in `<EXECUTION_DIR>/.project/planning/research/ADR-XXX.md`:
 
 - YAML frontmatter (status, symbols, supersession chain)
 - Symbol hashes for drift detection (`@symbol:path:Symbol#sha256:…`, via `pai_adr_ops check_drift`)

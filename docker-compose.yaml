@@ -86,8 +86,6 @@ services:
       - LLM_GATEWAY_URL=http://llm-gateway:4000/v1
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-not-needed}
       - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-pai-stack}
-      - RESEARCH_DIR=/opt/data/workspace/${RESEARCH_SUBDIR:-research}
-      - WIKI_PATH=/opt/data/workspace/${RESEARCH_SUBDIR:-research}
       - HERMES_UID=${UID:-1000}
       - HERMES_GID=${GID:-1000}
       - HERMES_DASHBOARD=1

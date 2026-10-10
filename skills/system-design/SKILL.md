@@ -111,7 +111,7 @@ Always load `skill_view(name="mermaid")` before drawing the architecture.
 
 ### 2. `planning-with-files` for Drafting
 For complex designs, do not try to output the entire design in one chat message.
-- Draft the requirements, capacity math, and API contracts in `<EXECUTION_DIR>/.planning/<slug>/design_draft.md`.
+- Draft the requirements, capacity math, and API contracts in `<EXECUTION_DIR>/.project/planning/<slug>/design_draft.md`.
 
 ### 3. `pai_adr_ops` for Persistence
 Once the design is finalized and confirmed by the user, **you must write an ADR** using `pai_adr_ops(action="create_adr")`.

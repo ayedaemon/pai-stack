@@ -245,7 +245,7 @@ holds active agent sessions, that is the busiest project workspace, not the
 workspace mount root.
 
 **How the mount root becomes the default workspace — no plugin.**
-Oct-2026 research (`.planning/2026-10-06-dsh-workspace-root-research/`,
+Oct-2026 research (`.project/planning/2026-10-06-dsh-workspace-root-research/`,
 verified against image `@deepseek-ai/dsh@0.2.0-rc.2`) showed the stock
 first-use flow can never succeed here: with no `documentsDirectory` override
 the Linux path runs `xdg-user-dir DOCUMENTS`, which is not installed in the

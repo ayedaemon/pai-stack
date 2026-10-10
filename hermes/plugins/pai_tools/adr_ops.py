@@ -4,7 +4,7 @@ adr_ops.py — Native Living Architecture Decision Record (L-ADR) & Drift Detect
 (Hermes plugin).
 
 Handles:
-  - create_adr: Scaffolds a Living ADR in <EXECUTION_DIR>/.planning/research/ADR-XXX-<title>.md
+  - create_adr: Scaffolds a Living ADR in <EXECUTION_DIR>/.project/planning/research/ADR-XXX-<title>.md
     with SHA-256 symbol hashes from workspace code.
   - check_drift: Inspects all ADRs, recomputes symbol hashes against current workspace files,
     flags drift, and logs warnings into findings.md.
@@ -60,7 +60,7 @@ SCHEMA = {
             },
             "execution_dir": {
                 "type": "string",
-                "description": "Optional project execution directory path (e.g. /opt/data/workspace/my-project). Defaults to finding .planning directory under workspace.",
+                "description": "Optional project execution directory path (e.g. /opt/data/workspace/my-project). Defaults to finding .project/planning directory under workspace.",
             },
         },
         "required": ["action"],
@@ -86,10 +86,10 @@ def compute_file_hash(file_path: Path) -> Optional[str]:
 
 
 def resolve_planning_dir(execution_dir_str: Optional[str] = None, create: bool = False) -> Optional[Path]:
-    """Find or create the .planning directory for the project."""
+    """Find or create the .project/planning directory for the project."""
     if execution_dir_str:
         exec_dir = Path(execution_dir_str)
-        planning = exec_dir / ".planning"
+        planning = exec_dir / ".project" / "planning"
         if create:
             try:
                 planning.mkdir(parents=True, exist_ok=True)
@@ -97,31 +97,31 @@ def resolve_planning_dir(execution_dir_str: Optional[str] = None, create: bool =
                 pass
         return planning
 
-    # Check if WORKSPACE_DIR has a .planning directory
+    # Check if WORKSPACE_DIR has a .project/planning directory
     if WORKSPACE_DIR.exists():
         # Direct check
-        direct = WORKSPACE_DIR / ".planning"
+        direct = WORKSPACE_DIR / ".project" / "planning"
         if direct.is_dir():
             return direct
         # Search subdirectories up to depth 4
         try:
-            for p in WORKSPACE_DIR.glob("**/.planning"):
+            for p in WORKSPACE_DIR.glob("**/.project/planning"):
                 if p.is_dir():
                     return p
         except Exception:
             pass
 
     # Check current directory
-    cwd_planning = Path.cwd() / ".planning"
+    cwd_planning = Path.cwd() / ".project" / "planning"
     if cwd_planning.is_dir():
         return cwd_planning
 
     # If creation is requested, try WORKSPACE_DIR, then cwd
     if create:
         if WORKSPACE_DIR.exists():
-            target = WORKSPACE_DIR / ".planning"
+            target = WORKSPACE_DIR / ".project" / "planning"
         else:
-            target = Path.cwd() / ".planning"
+            target = Path.cwd() / ".project" / "planning"
         target.mkdir(parents=True, exist_ok=True)
         return target
 
@@ -130,7 +130,7 @@ def resolve_planning_dir(execution_dir_str: Optional[str] = None, create: bool =
 
 def resolve_file_path(rel_path: str, planning_dir: Optional[Path]) -> Path:
     """Resolve relative file path against execution directory or workspace."""
-    # First check execution dir (parent of .planning) if available
+    # First check execution dir (parent of .project/planning) if available
     if planning_dir:
         project_root = planning_dir.parent
         candidate = project_root / rel_path
@@ -170,7 +170,7 @@ def action_create_adr(inp: Dict[str, Any]) -> str:
 
     planning_dir = resolve_planning_dir(execution_dir, create=True)
     if not planning_dir:
-        return json.dumps({"error": "Could not determine or create .planning directory"})
+        return json.dumps({"error": "Could not determine or create .project/planning directory"})
 
     research_dir = planning_dir / "research"
     research_dir.mkdir(parents=True, exist_ok=True)
@@ -284,7 +284,7 @@ def action_check_drift(inp: Dict[str, Any]) -> str:
                 "drift_found": False,
                 "adrs_checked": 0,
                 "drifts": [],
-                "message": "No .planning directory found",
+                "message": "No .project/planning directory found",
             }
         )
 
