@@ -30,31 +30,65 @@ You create everything on the host — the stack only validates, never creates.
    ```bash
    mkdir -p /path/to/workspace
    ```
+
 2. **Create your env file and point it at that directory**:
    ```bash
    cp .env.example .env
    ```
    Set `WORKSPACE_DIR=/path/to/workspace`, plus your provider URL/keys.
+
 3. **Start the stack** (fails with a clear error if `.env` or `WORKSPACE_DIR` is missing):
    ```bash
-   make up      # start hermes + llm-gateway
-   make status  # check health
+   make gateway-up hermes-up   # gateway first, then hermes
    ```
 
 Open Hermes UI: http://localhost:9119
 
+## Core plugins
+
+Hermes native tools (`hermes/plugins/`):
+
+| Tool | Purpose |
+|---|---|
+| `pai_notebook_ops` | Research vault per project (`.project/research/`) |
+| `pai_adr_ops` | Living ADRs + symbol drift detection |
+| `pai_ops_design_ops` | OpenDesign integration (projects, imports, mockups) |
+| `pai_terrain_ops` | Code intelligence via Terrain service (index/search/read/ask) |
+
+DSH plugins (`dsh/plugins/`, plus bundled `dsh-mnemon` and `@michengai/dsh-automation`):
+
+| Tool | Purpose |
+|---|---|
+| `pai_notebook_ops` | Research vault per project |
+| `pai_adr_ops` | Living ADRs + drift detection |
+| `pai_design_ops` (`paiOpsDesign`) | OpenDesign integration |
+| `pai_terrain_ops` | Code intelligence via Terrain service |
+| `pai_git_ops` | Git + worktree operations |
+| `pai_web_ops` | Web search + fetch (with built-in fallback) |
+| `automation_*` | Scheduled coding tasks via `@michengai/dsh-automation` |
+| `mnemon_*` | Memory engine via `dsh-mnemon` |
+
+Memory: **Mnemosyne** (embedded in Hermes, SQLite + ONNX fastembed) — native `mnemosyne_*` tools.
+
 ## Common commands
+
+Every service has explicit targets — run `make help` for the full list.
 
 | Command | Action |
 |---|---|
-| `make up` / `make down` / `make restart` | Start / stop / restart (add `s=<service>`) |
-| `make status` / `make logs` | Health + ports / tail logs |
-| `make sync` | Sync LLM model list, reload gateway |
-| `make build` / `make config` / `make clean` | Rebuild / validate compose / stop + wipe volumes |
+| `make gateway-up hermes-up` | Start gateway + Hermes (gateway first) |
+| `make gateway-up dsh-up` | Start gateway + DSH |
+| `make all-up` / `make all-down` / `make all-clean` | Start / stop / wipe everything |
+| `make hermes-logs` / `make gateway-logs` / `make dsh-logs` | Tail logs per service |
+| `make hermes-down` / `make gateway-down` / `make dsh-down` | Stop one service |
+| `make sync` / `make sync-dry` | Sync LLM model list / preview without writing |
+| `make dsh-password` | Print DSH one-time login token URL |
 | `make design-up` | OpenDesign — [docs/opendesign.md](docs/opendesign.md) |
 | `make dsh-up` | DSH agent — [docs/dsh.md](docs/dsh.md) |
-| `make terrain-up` | Terrain code-intel service — [docs/terrain.md](docs/terrain.md) |
+| `make terrain-up` | Terrain code-intel — [docs/terrain.md](docs/terrain.md) |
 | `make terrain-index d=/opt/data/workspace/<project>` | Index a repo (free, no LLM) |
+| `make terrain-ask q="<question>"` | Ask an indexed repo (needs `TERRAIN_ALLOW_LLM=1`) |
+| `make design-import d=/opt/data/workspace/<dir>` | Import a folder into OpenDesign |
 
 Full reference: [docs/operations.md](docs/operations.md)
 

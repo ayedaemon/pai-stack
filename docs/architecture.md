@@ -166,12 +166,12 @@ flowchart LR
         WS["$WORKSPACE_DIR bind rw<br/>4 writers, 3 different uids"]
     end
 
-    subgraph CORE["core stack &mdash; what 'make up' starts"]
+    subgraph CORE["core stack &mdash; what 'make gateway-up hermes-up' starts"]
         H["hermes :9119 :8642<br/>bind 0.0.0.0 &middot; uid 0<br/>no read_only, cap_drop, pids_limit or mem_limit"]
         G["llm-gateway :4000<br/>bind 0.0.0.0<br/>no hardening declared"]
     end
 
-    subgraph OPT["opt-in profiles &mdash; never started by 'make up'"]
+    subgraph OPT["opt-in profiles &mdash; need explicit make targets"]
         T["terrain :7878<br/>127.0.0.1 &middot; uid 1000 &middot; read_only<br/>cap_drop ALL +4 &middot; pids 256 &middot; 2g"]
         D["dsh :9229 to :3080<br/>127.0.0.1 &middot; uid 1000 &middot; read_only<br/>cap_drop ALL +4 &middot; pids 512"]
         O["open-design :7456<br/>127.0.0.1 &middot; uid UID:GID &middot; read_only<br/>no cap_drop &middot; pids 256 &middot; 192m V8 cap"]

@@ -25,9 +25,7 @@ make all-up                     # Everything
 
 ## Image drift — the repo can be ahead of the running containers
 
-`skills/`, `hermes/config.yaml`, `Makefile` and `.env` are **bind-mounted**, so
-edits are live on the next process start. Anything the **Dockerfile copies** is
-baked at build time and will *not* appear until you rebuild.
+`skills/`, `hermes/config.yaml`, `Makefile` and `.env` are **bind-mounted**, so edits are live on the next process start. Anything the **Dockerfile copies** is baked at build time and will *not* appear until you rebuild.
 
 Audit it rather than guessing:
 
@@ -38,34 +36,24 @@ stat -f '%Sm %N' -t '%Y-%m-%d %H:%M' hermes/Dockerfile             # when it las
 docker exec hermes ls /opt/hermes/plugins/                       # what actually shipped
 ```
 
-**Found 2026-10-07:** `pai-stack-hermes:latest` was built 2026-09-30, four days
-before `hermes/Dockerfile:81` added
-`COPY plugins/pai_terrain_ops`. The plugin is absent from the container, so
-`pai_terrain_ops` — enabled in `hermes/config.yaml` and documented in
-`AGENTS.md` — was invisible to every session and the Turn-1 terrain step could not
-fire. Three `pai_tools` files (`__init__.py`,
-`ops_design_ops.py`) had also drifted.
+**Found 2026-10-07:** `pai-stack-hermes:latest` was built 2026-09-30, four days before `hermes/Dockerfile:81` added `COPY plugins/pai_terrain_ops`. The plugin is absent from the container, so `pai_terrain_ops` — enabled in `hermes/config.yaml` and documented in `AGENTS.md` — was invisible to every session and the Turn-1 terrain step could not fire. Three `pai_tools` files (`__init__.py`, `ops_design_ops.py`) had also drifted.
 
 ```bash
-make build s=hermes && docker compose up -d hermes
+make hermes-build && make hermes-up
 ```
 
-The other three images were current at the time of writing (`dsh` ~4h,
-`terrain` and `open-design` same-day). Check yours the same way after any
-Dockerfile edit — a plugin that exists in the repo but not in the image fails
-*silently*, which is the whole problem.
+The other three images were current at the time of writing (`dsh` ~4h, `terrain` and `open-design` same-day). Check yours the same way after any Dockerfile edit — a plugin that exists in the repo but not in the image fails *silently*, which is the whole problem.
 
 ## `.env` keys
 
 | Key | Purpose |
 |---|---|
-| `WORKSPACE_DIR` | **Required, must already exist.** The stack never creates it — create your workspace dir yourself, point this at it, then `make up` |
+| `WORKSPACE_DIR` | **Required, must already exist.** The stack never creates it — create your workspace dir yourself, point this at it, then `make gateway-up hermes-up` |
 | `OPENAI_COMPATIBLE_BASE_URL` / `_MODEL` / `_API_KEY` | Upstream provider for the gateway (LM Studio / Ollama / llama.cpp / LAN node / cloud) |
 | `OPENROUTER_API_KEY`, `KILO_GATEWAY_API_KEY`, `MISTRAL_API_KEY`, `GEMINI_API_KEY` | Cloud fallback chains |
 | `LITELLM_MASTER_KEY` | Leave commented for local use; an empty-but-set value breaks all requests |
 | `LANGFUSE_*` | Optional tracing |
 | `HERMES_DASHBOARD_BASIC_AUTH_*`, `API_SERVER_KEY` | Dashboard login + API bearer (generate with `openssl rand -hex 32`) |
-
 | `HERMES_TELEGRAM_*` | Hermes bot token + numeric-ID allowlists; empty = disabled; restart hermes after change |
 | `DSH_TELEGRAM_*` | Separate DSH bot token + allowlists; empty = disabled |
 | `OPEN_DESIGN_IMAGE`, `OPEN_DESIGN_PORT`, `OD_API_TOKEN` | Design profile (see [opendesign.md](opendesign.md)) |
@@ -97,3 +85,23 @@ Template with generation hints: [.env.example](../.env.example)
 | `opendesign/Dockerfile` | Local open-design build |
 | `dsh/Dockerfile` | Local dsh build (bundled mnemon CLI) |
 | `terrain/` | Terrain multi-stage image + HTTP/MCP shim |
+
+## Current Stack State (2026-10-11)
+
+### Active Services
+- **llm-gateway** (port 4000) — LiteLLM proxy with cloud fallbacks
+- **hermes** (ports 9119/8642) — Agent gateway + dashboard, Mnemosyne memory
+- **dsh** (port 9229) — DeepSeek Harness agent with full toolchain
+- **terrain** (port 7878) — Code intelligence service (optional)
+
+### Active Plugins (Hermes)
+- `pai_notebook_ops` — Research vault per project
+- `pai_adr_ops` — Living ADRs + drift detection
+- `pai_ops_design_ops` — OpenDesign integration
+- `pai_terrain_ops` — Code intelligence via Terrain
+
+### Active Plugins (DSH)
+- `dsh-mnemon` — Core memory engine (20+ `mnemon_*` tools)
+- `@michengai/dsh-automation` — Scheduled coding tasks (cron/interval)
+- `dsh-pai-telegram` — Telegram bot for DSH
+- Pai-stack plugins: notebook (`pai_notebook_ops`), adr (`pai_adr_ops`), design (`paiOpsDesign`), terrain (`pai_terrain_ops`), git (`pai_git_ops`), web (`pai_web_ops`)

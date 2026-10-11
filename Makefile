@@ -134,7 +134,7 @@ hermes-logs: ## Tail hermes logs
 hermes-config: ## Validate compose configuration with hermes profile
 	$(COMPOSE) $(PROFILE_HERMES) config
 
-hermes-perms: ## Create volume + fix ownership to host UID:GID
+hermes-perms: ## Create volume + fix ownership to hermes UID:GID (10000:10000)
 	docker volume create --label com.docker.compose.project=$(COMPOSE_PROJECT_NAME) --label com.docker.compose.volume=hermes-data $(HERMES_DATA_VOLUME) >/dev/null
 	docker run --rm -v $(HERMES_DATA_VOLUME):/data alpine chown -R 10000:10000 /data
 

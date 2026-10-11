@@ -28,10 +28,10 @@ What this accomplishes: pins Hermes to one `EXECUTION_DIR` (never treat the mult
 | `pai_notebook_ops` | Research vault ops on `.project/research/` | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
 | `pai_adr_ops` | Living ADRs + symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 | `pai_ops_design_ops` | OpenDesign visual generation / mockups bridge | (see `opendesign-integration` skill) |
+| `pai_terrain_ops` | Code intelligence via Terrain service (`terrain:7878/call`) | `index`, `refresh`, `search`, `read`, `overview`, `projects`, `unregister`, `source`, `init`, `ask` |
 | `skill_view` / `skills_list` | Load / discover procedural skills | `name="<skill>"` |
 
-> `pai_code_intel` was removed 2026-10-04. A dedicated lightweight code intelligence
-> tool replaces it; until then use `grep` + targeted reads.
+> For code questions: prefer `pai_terrain_ops` when the repo is indexed; otherwise use `grep` + targeted reads.
 >
 > Docker is not a tool: native `docker` + `docker compose` over the mounted socket (see `docker` skill).
 
@@ -39,7 +39,11 @@ What this accomplishes: pins Hermes to one `EXECUTION_DIR` (never treat the mult
 
 Load via `skill_view(name="<name>")` before working on an unknown stack. Files live in `./skills/`, mounted read-only.
 
-Routers/shims: `stack-discovery`, `python`, `docker`, `react`, `nodejs`, `sql`, `planning`, `gitops`, `research`, `opencode-delegate`, `agents`. Vendored depth: `vercel-react-best-practices`, `vercel-composition-patterns`, `frontend-design`, `supabase-postgres-best-practices`, `senior-backend`, `docker-development`, `web-design-guidelines`, `webapp-testing`, `mcp-builder`, `code-reviewer`, `skill-security-auditor`.
+**Routers/shims:** `stack-discovery`, `python`, `docker`, `react`, `nodejs`, `sql`, `planning`, `gitops`, `research`, `opencode-delegate`, `agents`.
+
+**Vendored depth:** `vercel-react-best-practices`, `vercel-composition-patterns`, `frontend-design`, `supabase-postgres-best-practices`, `senior-backend`, `docker-development`, `web-design-guidelines`, `webapp-testing`, `mcp-builder`, `code-reviewer`, `skill-security-auditor`.
+
+**gstack suite:** `gstack` + 25 `gstack-*` skills (router, office-hours/spec/autoplan, plan reviews, reviews/investigate/cso/health, ship/land-and-deploy/document-*, learn/retro/context-*, careful/freeze/guard).
 
 ## Memory (Mnemosyne)
 

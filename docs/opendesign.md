@@ -1,6 +1,6 @@
 # OpenDesign (optional)
 
-Design studio on the opt-in `design` profile. Never starts with `make up`.
+Design studio on the opt-in `design` profile. Never starts with `make gateway-up hermes-up` — run `make design-up` explicitly.
 
 ## Run
 
