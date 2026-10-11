@@ -1,13 +1,20 @@
 /**
- * dsh-pai-telegram — first-party Telegram access to DSH (host-only).
+ * dsh-pai-telegram — First-party Telegram bot for DSH (host-only).
  *
- * v0.2.0: full Phase-4 driver — chat round-trip (agents.create/followup),
- * live drafts (session/event → editMessageText), typing heartbeat, /stop,
- * /new, /model override, inline approvals + questions (waterfall race vs web),
- * custom free-text answers. Design: .planning/2026-10-07-telegram-bot/design.md
+ * Provides full Telegram ↔ DSH integration:
+ * - Chat round-trip: agents.create / followup for seamless chat
+ * - Live drafts: real-time editMessageText updates as agent works
+ * - Commands: /stop, /new, /model override
+ * - Inline approvals & questions (waterfall race vs web UI)
+ * - Custom free-text answers, group chats, bot-to-bot loop guard
+ * - Failure-contained: errors become error cards, never crash host
  *
- * Failure-contained: every driver/watcher/gate error becomes an error card,
- * never a host crash. Token via env only, never logged.
+ * Config via env: HERMES_TELEGRAM_BOT_TOKEN, HERMES_TELEGRAM_ALLOWED_USERS,
+ * HERMES_TELEGRAM_GROUP_ALLOWED_USERS, HERMES_TELEGRAM_GROUP_ALLOWED_CHATS
+ *
+ * Design: .planning/2026-10-07-telegram-bot/design.md
+ * Failure-contained: driver/watcher/gate errors become error cards, never host crash.
+ * Token via env only, never logged.
  */
 import z from "@deepseek-ai/schemastery";
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, renameSync } from "node:fs";

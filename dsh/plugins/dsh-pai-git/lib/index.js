@@ -5,6 +5,9 @@
  * - status, log, diff, branch, checkout, commit, push, pull, merge, rebase
  * - worktree_create, worktree_list, worktree_remove
  * - stash, tag, remote, config
+ *
+ * Runs git commands safely within the workspace (cwd=WORKSPACE_DIR).
+ * Use worktree_* actions for isolated feature branches without disrupting main branch.
  */
 
 import z from "@deepseek-ai/schemastery";

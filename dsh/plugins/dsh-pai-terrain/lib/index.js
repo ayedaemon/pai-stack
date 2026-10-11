@@ -1,9 +1,13 @@
 /**
- * dsh-pai-terrain — DSH plugin mirroring Hermes pai_terrain_ops
- * for code intelligence via the Terrain index service.
+ * dsh-pai-terrain — DSH plugin for code intelligence via Terrain service.
  *
  * Provides: pai_terrain_ops tool with actions:
  * - index, refresh, search, read, overview, projects, unregister, source, init, ask
+ *
+ * Connects to Terrain service (TERRAIN_URL, default http://terrain:7878).
+ * Indexing (index, refresh) is free — no LLM calls. Only init/ask use LLM (requires TERRAIN_ALLOW_LLM=1).
+ * Each scan writes .terrain/ inside the repo (gitignored, per-host).
+ * Paths are resolved inside WORKSPACE_DIR (/opt/data/workspace).
  */
 
 import z from "@deepseek-ai/schemastery";

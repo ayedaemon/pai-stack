@@ -1,3 +1,12 @@
+/**
+ * dsh-pai-design — DSH plugin for OpenDesign integration.
+ *
+ * Provides: paiOpsDesign tool with actions:
+ * - health, list_projects, get_project, create_project, import_folder, get_status
+ *
+ * Connects to OpenDesign API (OD_HOST, default http://open-design:7456) using OD_API_TOKEN.
+ * Use for design project management, folder imports, and design collaboration workflows.
+ */
 import z from "@deepseek-ai/schemastery";
 
 export const name = "pai-design";

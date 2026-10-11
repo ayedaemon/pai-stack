@@ -1,12 +1,15 @@
 /**
- * dsh-pai-notebook — DSH plugin mirroring Hermes pai_notebook_ops
- * for Research Brain vault operations.
+ * dsh-pai-notebook — DSH plugin for Research Brain notebook operations.
  *
  * Provides: pai_notebook_ops tool with actions:
  * - list_notebooks, create_notebook, get_notebook
  * - add_note, add_source_url, add_source_file
  * - poll_source_status, get_source
  * - search, ask_notebook
+ *
+ * Manages a per-project research vault in .project/research/ (EXECUTION_DIR/.project/research/).
+ * Each notebook is a markdown file with optional sources. Use ask_notebook to query with LLM synthesis.
+ * Sources can be URLs, files, or inline text. Notes support categories and tags for organization.
  */
 
 import z from "@deepseek-ai/schemastery";

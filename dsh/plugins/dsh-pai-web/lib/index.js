@@ -3,6 +3,10 @@
  *
  * Provides: pai_web_ops tool with actions:
  * - search, fetch, search_and_fetch
+ *
+ * Uses DSH's built-in web_search/web_fetch tools if available, falls back to direct fetch.
+ * max_results: 1-50 (validated in execute), recency_days: 1-365 (validated in execute).
+ * safe_search defaults to true. search_and_fetch runs search then fetches each result.
  */
 
 import z from "@deepseek-ai/schemastery";

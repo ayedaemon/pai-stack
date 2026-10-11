@@ -1,7 +1,7 @@
 {
   "name": "dsh-pai-git",
   "version": "0.1.0",
-  "description": "DSH plugin for git operations with worktree support.",
+  "description": "DSH plugin for git operations with worktree support. Provides `pai_git_ops` tool with actions: status, log, diff, branch, checkout, commit, push, pull, merge, rebase, stash, tag, remote, config, worktree_create, worktree_list, worktree_remove. Run git commands safely within the workspace.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

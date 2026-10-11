@@ -1,3 +1,14 @@
+/**
+ * dsh-pai-adr — DSH plugin for Architecture Decision Records (ADRs).
+ *
+ * Provides: pai_adr_ops tool with actions:
+ * - list_adrs: list ADRs in .planning/research/
+ * - create_adr: create new ADR markdown file
+ * - check_drift: detect code symbol drift against ADRs
+ *
+ * ADRs are stored as markdown in .planning/research/ (per-project).
+ * check_drift compares code symbols against ADR references to detect drift.
+ */
 import z from "@deepseek-ai/schemastery";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";

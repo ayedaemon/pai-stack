@@ -1,7 +1,7 @@
 {
   "name": "dsh-pai-web",
   "version": "0.1.0",
-  "description": "DSH plugin for web search and fetch operations.",
+  "description": "DSH plugin for web search and fetch operations. Provides `pai_web_ops` tool with actions: search, fetch, search_and_fetch. Uses DSH's built-in web tools or direct fetch fallback. Supports max_results (1-50) and recency_days (1-365) with manual validation.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

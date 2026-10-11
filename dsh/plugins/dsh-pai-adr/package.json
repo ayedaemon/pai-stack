@@ -1,7 +1,7 @@
 {
   "name": "dsh-pai-adr",
   "version": "0.1.0",
-  "description": "DSH plugin mirroring pai_adr_ops for Living ADRs and symbol drift checks.",
+  "description": "DSH plugin for Architecture Decision Records (ADRs). Creates living ADRs in .planning/research/ and detects code symbol drift. Use `pai_adr_ops` tool with actions: list_adrs, create_adr, check_drift.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

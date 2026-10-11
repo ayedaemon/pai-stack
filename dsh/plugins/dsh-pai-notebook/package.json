@@ -1,7 +1,7 @@
 {
   "name": "dsh-pai-notebook",
   "version": "0.1.0",
-  "description": "DSH plugin mirroring pai_notebook_ops for Research Brain vault operations.",
+  "description": "DSH plugin for Research Brain notebook operations. Provides `pai_notebook_ops` tool to manage a per-project research vault in .project/research/. Actions: list_notebooks, create_notebook, get_notebook, add_note, add_source_url, add_source_file, poll_source_status, get_source, search, ask_notebook. Use for persistent research vaults per project.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

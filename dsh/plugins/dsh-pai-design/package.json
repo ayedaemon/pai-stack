@@ -1,7 +1,7 @@
 {
   "name": "dsh-pai-design",
   "version": "0.1.0",
-  "description": "DSH plugin mirroring pai_ops_design_ops for OpenDesign API integration.",
+  "description": "DSH plugin for OpenDesign integration. Connects to OpenDesign API for project management, folder imports, and design collaboration. Use `pai_design_ops` tool with actions: health, list_projects, get_project, create_project, import_folder, get_status.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
