@@ -86,8 +86,8 @@ services:
       - LLM_GATEWAY_URL=http://llm-gateway:4000/v1
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-not-needed}
       - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-pai-stack}
-      - HERMES_UID=${UID:-1000}
-      - HERMES_GID=${GID:-1000}
+      - HERMES_UID=10000
+      - HERMES_GID=10000
       - HERMES_DASHBOARD=1
       - HERMES_DASHBOARD_HOST=0.0.0.0
       - API_SERVER_HOST=0.0.0.0
@@ -118,6 +118,11 @@ services:
       # client defaults to http://terrain:7878 and self-hides when
       # it cannot reach it, so this is explicit rather than required.
       - TERRAIN_URL=http://terrain:7878
+      # Enable s6-overlay to remount /run with exec (needs CAP_SYS_ADMIN)
+      - S6_READ_ONLY_ROOT=1
+      # Tell s6-overlay the target user for privilege drop (preinit, fix-attrs)
+      - S6_UID=10000
+      - S6_GID=10000
     ports:
       # Loopback by default: nothing outside this host needs the agent
       # dashboard or API. Set HERMES_BIND_IP=0.0.0.0 to widen (e.g. you reach
@@ -137,24 +142,27 @@ services:
           create_host_path: false
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    user: "${UID:-1000}:${GID:-1000}"
+    user: "10000:10000"
     cap_drop:
       - ALL
+    cap_add:
+      - FOWNER
+      - SETUID
+      - SETGID
+      - CHOWN
+      - SYS_ADMIN
     security_opt:
       - no-new-privileges:true
-    read_only: true
     tmpfs:
       - /tmp
-      - /run
-      - /var/run
+      - /run:exec,uid=10000,gid=10000
+      - /var_run
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9119/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
-    entrypoint: [ "/bin/sh", "/hermes-entrypoint.sh" ]
-    command: gateway run
 
   # ──────────────────────────────────────────────────────────────
   # Profile: terrain — Code Intelligence Service
@@ -250,6 +258,10 @@ services:
         # joint tree built in final; no registry, no version to pin)
         WITH_TELEGRAM_PLUGIN: ${DSH_WITH_TELEGRAM_PLUGIN:-true}
         TELEGRAM_PLUGIN_NAME: dsh-pai-telegram
+        # Third-party dsh-skill-studio plugin (in-repo plugins/dsh-skill-studio,
+        # joint tree built in final; no registry, no version to pin)
+        WITH_SKILL_STUDIO_PLUGIN: ${DSH_WITH_SKILL_STUDIO_PLUGIN:-true}
+        SKILL_STUDIO_PLUGIN_NAME: dsh-skill-studio
     image: ${DSH_IMAGE:-pai-stack-dsh:custom}
     container_name: dsh
     restart: unless-stopped
@@ -289,6 +301,8 @@ services:
       # First-party Telegram poller (dsh-pai-telegram seed). "false" skips
       # the seed install; the joint tree stays available in the image.
       DSH_WITH_TELEGRAM: ${DSH_WITH_TELEGRAM:-true}
+      # Third-party dsh-skill-studio plugin (skill management UI).
+      DSH_WITH_SKILL_STUDIO: ${DSH_WITH_SKILL_STUDIO:-true}
       DSH_DEFAULT_ADMIN_USER: ${DSH_DEFAULT_ADMIN_USER:-admin}
       DSH_ADMIN_PASSWORD: ${DSH_ADMIN_PASSWORD:-}
       # Telegram — separate DSH bot (see .env.example §9). DSH_TELEGRAM_TOKEN

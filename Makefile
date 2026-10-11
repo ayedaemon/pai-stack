@@ -136,7 +136,7 @@ hermes-config: ## Validate compose configuration with hermes profile
 
 hermes-perms: ## Create volume + fix ownership to host UID:GID
 	docker volume create --label com.docker.compose.project=$(COMPOSE_PROJECT_NAME) --label com.docker.compose.volume=hermes-data $(HERMES_DATA_VOLUME) >/dev/null
-	docker run --rm -v $(HERMES_DATA_VOLUME):/data alpine chown -R $(UID):$(GID) /data
+	docker run --rm -v $(HERMES_DATA_VOLUME):/data alpine chown -R 10000:10000 /data
 
 # ── All Profiles (start everything) ──
 

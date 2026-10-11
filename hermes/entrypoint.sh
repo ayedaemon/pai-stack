@@ -8,6 +8,10 @@
 
 set -e
 
+# Ensure hermes user can write to /opt/hermes/data (directory owned by 502:20 with 755;
+# root has only rx as "other", so make it world-writable for root entrypoint operations)
+chmod 777 /opt/hermes/data 2>/dev/null || true
+
 # Ensure lazy-packages directory exists inside hermes-data volume
 mkdir -p /opt/hermes/data/lazy-packages
 
@@ -74,6 +78,14 @@ fi
 umask 000
 find /opt/hermes/data -type f \( -name '*.db' -o -name '*.db-wal' -o -name '*.db-shm' -o -name '*.db.dispatch.lock' -o -name '*.db.init.lock' \) -exec chmod -c a+rw {} + 2>/dev/null || true
 
+# Fix tmpfs ownership for s6-overlay (run as root before dropping privileges)
+# Don't use -R on /run (contains read-only bind mounts like docker.sock)
+chown "${HERMES_UID:-1000}:${HERMES_GID:-1000}" /run /tmp /var/run
+echo "DEBUG: after chown, /run owner=$(stat -c %u /run) /var_run owner=$(stat -c %u /var/run) chown_exit=$?" >&2
+ls -ld /run /var/run /tmp >&2
+
+# Remove existing config (may be owned by root from cont-init) so hermes user can recreate
+rm -f /opt/hermes/data/hermes-config.yaml
 cp /tmp/hermes-config.yaml.host /opt/hermes/data/hermes-config.yaml
 
 DATA_DIR="${HERMES_DATA_DIR:-/opt/data/workspace}"
@@ -83,15 +95,16 @@ python3 -c "
 import re
 with open('/opt/hermes/data/hermes-config.yaml', 'r') as f:
     content = f.read()
-content = content.replace('/opt/hermes/data/workspace', '${DATA_DIR}')
-content = content.replace('/stack_root', '${DATA_DIR}')
-content = re.sub(r'(/opt/data)+/workspace', '${DATA_DIR}', content)
-content = re.sub(r'(?<!/opt/data)/workspace', '${DATA_DIR}', content)
+content = content.replace('/opt/hermes/data/workspace', '\${DATA_DIR}')
+content = content.replace('/stack_root', '\${DATA_DIR}')
+content = re.sub(r'(/opt/data)+/workspace', '\${DATA_DIR}', content)
+content = re.sub(r'(?<!/opt/data)/workspace', '\${DATA_DIR}', content)
 with open('/opt/hermes/data/hermes-config.yaml', 'w') as f:
     f.write(content)
 "
 
 # Ensure CLI reads the same config
+rm -f /opt/hermes/data/config.yaml
 cp /opt/hermes/data/hermes-config.yaml /opt/hermes/data/config.yaml
 
 # Silence harmless upstream syntax warning in update_cmd.py
@@ -121,4 +134,7 @@ export HERMES_CONFIG=/opt/hermes/data/hermes-config.yaml
 # reaches the daemon via its entrypoint's proxy socket (DOCKER_HOST).
 chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" /opt/hermes/data 2>/dev/null || true
 
-exec /opt/hermes/docker/entrypoint-dispatch.sh "$@"
+# Drop privileges to host UID/GID before starting upstream entrypoint (s6-overlay)
+# --init-groups requires user in /etc/passwd (created later by cont-init), so use --keep-groups
+# Use a wrapper to chown /run AFTER dropping privileges (preinit checks /run ownership)
+exec setpriv --reuid="${HERMES_UID:-1000}" --regid="${HERMES_GID:-1000}" --keep-groups /bin/sh -c 'echo "DEBUG wrapper: uid=$(id -u) /run owner=$(stat -c %u /run) before chown" >&2; chown "${HERMES_UID:-1000}:${HERMES_GID:-1000}" /run /tmp /var/run 2>/dev/null || true; echo "DEBUG wrapper: /run owner=$(stat -c %u /run) after chown" >&2; exec /opt/hermes/docker/entrypoint-dispatch.sh "$@"' "$@"

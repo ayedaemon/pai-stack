@@ -19,8 +19,9 @@ RUN set -eux; \
     uv --version
 
 # Install runtime dependencies (curl + Docker CLI for the `docker` skill: native docker/compose over the mounted socket)
+# util-linux provides setpriv for privilege drop in entrypoint
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates gnupg && \
+    apt-get install -y --no-install-recommends curl ca-certificates gnupg util-linux && \
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     chmod a+r /etc/apt/keyrings/docker.gpg && \
