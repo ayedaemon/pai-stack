@@ -114,8 +114,6 @@ export function apply(ctx, config) {
         type: "integer",
         description: "Max search results ('search' only). Default: 20.",
         default: 20,
-        minimum: 1,
-        maximum: 200,
       },
     },
     output: {
@@ -144,6 +142,11 @@ export function apply(ctx, config) {
         const params = {};
         for (const key of ["path", "slug", "query", "project", "file", "limit"]) {
           if (args[key] !== undefined) params[key] = args[key];
+        }
+
+        // Validate limit if provided
+        if (params.limit !== undefined && (params.limit < 1 || params.limit > 200)) {
+          return { error: "limit must be between 1 and 200" };
         }
         
         const [code, out] = await post(action, params);

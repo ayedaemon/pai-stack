@@ -298,9 +298,6 @@ ARG WITH_TELEGRAM_PLUGIN=true
 ARG TELEGRAM_PLUGIN_NAME=dsh-pai-telegram
 # First-party pai-stack plugins (in-repo source at plugins/dsh-pai-*)
 ARG WITH_PAI_PLUGINS=true
-# Third-party dsh-skill-studio plugin (in-repo source at plugins/dsh-skill-studio)
-ARG WITH_SKILL_STUDIO_PLUGIN=true
-ARG SKILL_STUDIO_PLUGIN_NAME=dsh-skill-studio
 
 # The /opt/dsh-remote-seed directory is already present from the remote-plugin-seed stage
 # (which is an ancestor of docker-cli). Verify it exists.
@@ -348,7 +345,7 @@ RUN set -eux; \
         for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
             if [ -f "${tmp_profile}/${f}" ]; then cp -a "${tmp_profile}/${f}" "${staging}/${f}"; fi; \
         done; \
-        test -f "${staging}/node_modules/${AUTOMATION_PLUGIN_NAME}/package.json"; \
+test -f "${staging}/node_modules/${AUTOMATION_PLUGIN_NAME}/package.json"; \
         test -f "${staging}/node_modules/${AUTOMATION_PLUGIN_NAME}/cordis.patch.yml"; \
         node -e "const p=require('${staging}/node_modules/${AUTOMATION_PLUGIN_NAME}/package.json'); if(!p.dsh||!p.dsh.bundle||!p.dsh.bundle.patch) throw new Error('not a DSH bundle: '+p.name); console.log('[seed] automation plugin', p.name+'@'+p.version, 'bundle patch:', p.dsh.bundle.patch)"; \
         chmod -R a+rX "${staging}"; \
@@ -357,8 +354,15 @@ RUN set -eux; \
     else \
         echo "[seed] WITH_AUTOMATION_PLUGIN=false or version empty, skipping automation seed"; \
         mkdir -p /opt/dsh-auto-seed; \
+fi
+ 
+# Patch dsh-automation to force English locale (Zg function) at build time
+RUN AUTOMATION_CLIENT="/opt/dsh-auto-seed/node_modules/@michengai/dsh-automation/lib/client.js" && \
+    if [ -f "${AUTOMATION_CLIENT}" ]; then \
+        sed -i 's/function Zg(e){return [^}]*}/function Zg(e){return w3}/g' "${AUTOMATION_CLIENT}" && \
+        echo "[seed] Patched dsh-automation Zg function to force English locale"; \
     fi
-
+ 
 # ── First-party Telegram seed (dsh-pai-telegram, joint tree) ─────────────
 # In-repo source (no registry): extends the automation joint tree by
 # manual copy + manifest merge (same as entrypoint does at runtime).
@@ -420,7 +424,6 @@ COPY plugins/dsh-pai-adr /tmp/dsh-pai-adr-src
 COPY plugins/dsh-pai-design /tmp/dsh-pai-design-src
 COPY plugins/dsh-pai-terrain /tmp/dsh-pai-terrain-src
 COPY plugins/dsh-pai-git /tmp/dsh-pai-git-src
-COPY plugins/dsh-pai-memory /tmp/dsh-pai-memory-src
 COPY plugins/dsh-pai-web /tmp/dsh-pai-web-src
 RUN set -eux; \
     if [ "${WITH_PAI_PLUGINS:-true}" = "true" ]; then \
@@ -433,7 +436,7 @@ RUN set -eux; \
         node -p "require('${tmp_profile}/package.json').name" | grep -qE "^(seed|dsh-profile-web|dsh-remote-seed|dsh-mnemon-seed|dsh-auto-seed|dsh-telegram-seed|dsh-pai-seed)$" || exit 1; \
         mkdir -p "${tmp_profile}/node_modules"; \
         PAI_SEED_VER="$(node -p "require('/tmp/dsh-pai-notebook-src/package.json').version")"; \
-        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-memory dsh-pai-web; do \
+        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-web; do \
             cp -a "/tmp/${plugin}-src" "${tmp_profile}/node_modules/${plugin}"; \
         done; \
         node -e " \
@@ -449,7 +452,6 @@ RUN set -eux; \
                 'dsh-pai-design':'${PAI_SEED_VER}', \
                 'dsh-pai-terrain':'${PAI_SEED_VER}', \
                 'dsh-pai-git':'${PAI_SEED_VER}', \
-                'dsh-pai-memory':'${PAI_SEED_VER}', \
                 'dsh-pai-web':'${PAI_SEED_VER}', \
             }); \
             p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{}; \
@@ -461,7 +463,6 @@ RUN set -eux; \
                 'dsh-pai-design', \
                 'dsh-pai-terrain', \
                 'dsh-pai-git', \
-                'dsh-pai-memory', \
                 'dsh-pai-web', \
             ]; \
             const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[]; \
@@ -474,7 +475,7 @@ RUN set -eux; \
         for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
             if [ -f "${tmp_profile}/${f}" ]; then cp -a "${tmp_profile}/${f}" "${staging}/${f}"; fi; \
         done; \
-        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-memory dsh-pai-web; do \
+        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-web; do \
             test -f "${staging}/node_modules/${plugin}/package.json"; \
             test -f "${staging}/node_modules/${plugin}/cordis.patch.yml"; \
             test -f "${staging}/node_modules/${plugin}/lib/index.js"; \
@@ -488,75 +489,12 @@ RUN set -eux; \
             /tmp/dsh-pai-design-src \
             /tmp/dsh-pai-terrain-src \
             /tmp/dsh-pai-git-src \
-            /tmp/dsh-pai-memory-src \
             /tmp/dsh-pai-web-src; \
-        echo '[seed] pai-stack plugins staged at /opt/dsh-pai-seed (joint tree)'; \
+echo '[seed] pai-stack plugins staged at /opt/dsh-pai-seed (joint tree)'; \
     else \
         echo "[seed] WITH_PAI_PLUGINS=false, skipping pai plugins seed"; \
         mkdir -p /opt/dsh-pai-seed; \
         rm -rf /tmp/dsh-pai-notebook-src /tmp/dsh-pai-adr-src /tmp/dsh-pai-design-src /tmp/dsh-pai-terrain-src /tmp/dsh-pai-git-src /tmp/dsh-pai-memory-src /tmp/dsh-pai-web-src; \
-    fi
-
-# ── Third-party dsh-skill-studio seed (dsh-skill-studio, joint tree) ────────
-# In-repo source (no registry): extends the pai joint tree by manual copy + manifest merge.
-# Built here in final so toolchain layers stay cached. This plugin provides a web UI
-# for managing skills and tools: skillmgr_* / skillmgr_extract_*.
-COPY plugins/dsh-skill-studio /tmp/dsh-skill-studio-src
-RUN set -eux; \
-    if [ "${WITH_SKILL_STUDIO_PLUGIN:-true}" = "true" ]; then \
-        echo "[seed] Installing dsh-skill-studio (joint with pai seed) via manual copy:"; \
-        staging=/opt/dsh-skill-studio-seed; \
-        tmp_profile=/tmp/skill-studio-seed-profile; \
-        rm -rf "${staging}" "${tmp_profile}"; \
-        mkdir -p "${staging}" "${tmp_profile}"; \
-        cp -a /opt/dsh-pai-seed/. "${tmp_profile}/"; \
-        node -p "require('${tmp_profile}/package.json').name" | grep -qE "^(seed|dsh-profile-web|dsh-remote-seed|dsh-mnemon-seed|dsh-auto-seed|dsh-telegram-seed|dsh-pai-seed|dsh-skill-studio-seed)$" || exit 1; \
-        mkdir -p "${tmp_profile}/node_modules"; \
-        cp -a /tmp/dsh-skill-studio-src "${tmp_profile}/node_modules/${SKILL_STUDIO_PLUGIN_NAME}"; \
-        SKILL_STUDIO_SEED_VER="$(node -p "require('/tmp/dsh-skill-studio-src/package.json').version")"; \
-        node -e " \
-            const fs=require('fs'); \
-            const pf='${tmp_profile}/package.json'; \
-            let p={}; \
-            try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; } \
-            p.name='dsh-profile-web'; \
-            if (p.private!==false) p.private=true; \
-            p.dependencies=Object.assign({},p.dependencies,{'${SKILL_STUDIO_PLUGIN_NAME}':'${SKILL_STUDIO_SEED_VER}'}); \
-            p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{}; \
-            const want=[ \
-                '@deepseek-ai/dsh-base', \
-                '@deepseek-ai/dsh-web-app', \
-                'dsh-pai-notebook', \
-                'dsh-pai-adr', \
-                'dsh-pai-design', \
-                'dsh-pai-terrain', \
-                'dsh-pai-git', \
-                'dsh-pai-memory', \
-                'dsh-pai-web', \
-                '${SKILL_STUDIO_PLUGIN_NAME}', \
-            ]; \
-            const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[]; \
-            for (const b of want) if(!have.includes(b)) have.push(b); \
-            p.dsh.profile.bundles=have; \
-            fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n'); \
-        "; \
-        cp -a "${tmp_profile}/node_modules" "${staging}/node_modules"; \
-        cp -a "${tmp_profile}/package.json" "${staging}/package.json"; \
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
-            if [ -f "${tmp_profile}/${f}" ]; then cp -a "${tmp_profile}/${f}" "${staging}/${f}"; fi; \
-        done; \
-        test -f "${staging}/node_modules/${SKILL_STUDIO_PLUGIN_NAME}/package.json"; \
-        test -f "${staging}/node_modules/${SKILL_STUDIO_PLUGIN_NAME}/cordis.patch.yml"; \
-        test -f "${staging}/node_modules/${SKILL_STUDIO_PLUGIN_NAME}/lib/index.js"; \
-        node -e "const p=require('${staging}/node_modules/${SKILL_STUDIO_PLUGIN_NAME}/package.json'); if(!p.dsh||!p.dsh.bundle||!p.dsh.bundle.patch) throw new Error('not a DSH bundle: '+p.name); console.log('[seed] skill-studio plugin', p.name+'@'+p.version, 'bundle patch:', p.dsh.bundle.patch)"; \
-        node --check "${staging}/node_modules/${SKILL_STUDIO_PLUGIN_NAME}/lib/index.js"; \
-        chmod -R a+rX "${staging}"; \
-        rm -rf "${tmp_profile}" /tmp/dsh-skill-studio-src; \
-        echo '[seed] skill-studio plugin staged at /opt/dsh-skill-studio-seed (joint tree)'; \
-    else \
-        echo "[seed] WITH_SKILL_STUDIO_PLUGIN=false, skipping skill-studio seed"; \
-        mkdir -p /opt/dsh-skill-studio-seed; \
-        rm -rf /tmp/dsh-skill-studio-src; \
     fi
 
 # Automation tasks (official experimental schedule bundle). Ships inside the
@@ -601,10 +539,8 @@ RUN set -eux; \
     if [ -d /opt/dsh-auto-seed ]; then chmod -R a+rX /opt/dsh-auto-seed; fi; \
     # Also ensure telegram plugin seed is readable
     if [ -d /opt/dsh-telegram-seed ]; then chmod -R a+rX /opt/dsh-telegram-seed; fi; \
-    # Also ensure pai plugins seed is readable
-    if [ -d /opt/dsh-pai-seed ]; then chmod -R a+rX /opt/dsh-pai-seed; fi; \
-    # Also ensure skill-studio plugin seed is readable
-    if [ -d /opt/dsh-skill-studio-seed ]; then chmod -R a+rX /opt/dsh-skill-studio-seed; fi
+# Also ensure pai plugins seed is readable
+    if [ -d /opt/dsh-pai-seed ]; then chmod -R a+rX /opt/dsh-pai-seed; fi
 
 # Single canonical home: /data/dsh/home lives on the data volume, so it is
 # writable at runtime (the image layer is read_only:true). Session cwd comes

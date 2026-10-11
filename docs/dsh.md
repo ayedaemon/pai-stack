@@ -592,7 +592,7 @@ the `@deepseek-ai/dsh` image itself (verified at build time by `dsh/Dockerfile`)
 so there is no seed copy and no npm install. The entrypoint enables it the same
 way the plugin manager does: appends the bundle to the web profile's
 `dsh.profile.bundles` iff absent (idempotent, preserves everything else).
-Opt out with `DSH_WITH_SCHEDULE=false` (rebuild not needed — compose-only).
+**Default: off** (`DSH_WITH_SCHEDULE=false`). Opt in with `DSH_WITH_SCHEDULE=true` (rebuild not needed — compose-only).
 
 What it adds: `schedule_create` / `schedule_list` / `schedule_update` /
 `schedule_delete` tools for live root agents, the sidebar **Automation tasks**

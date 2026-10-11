@@ -136,12 +136,59 @@ retire_default_workspace_plugin() {
     fi
 }
 
+# Force English locale by pre-seeding locale preference.
+# The dsh-automation plugin has Chinese prompts hardcoded; DSH locale
+# defaults to browser language with 'en' fallback. In headless containers,
+# browser detection may not work reliably. Explicitly set locale.preference=en
+# in the Host settings so the UI and plugin prompts use English.
+# Gate with DSH_SEED_LOCALE=false to skip.
+seed_locale_preference() {
+    if [ "${DSH_SEED_LOCALE:-true}" != "true" ]; then
+        elog "[locale-seed] DSH_SEED_LOCALE=false, skipping"
+        return 0
+    fi
+    local store_dir="/data/dsh/storages"
+    local locale_json="${store_dir}/locale.json"
+    if [ -f "${locale_json}" ]; then
+        # Check if already set to English
+        if node -e "const fs=require('fs'); const d=JSON.parse(fs.readFileSync('${locale_json}','utf8')); process.exit(d.tables?.settings?.locale?.preference==='en'?0:1)" 2>/dev/null; then
+            elog "[locale-seed] locale preference already set to English, skipping"
+            return 0
+        fi
+        elog "[locale-seed] updating locale preference to English"
+    else
+        elog "[locale-seed] pre-seeding locale preference to English"
+    fi
+    mkdir -p "${store_dir}" 2>/dev/null || true
+    cat > "${locale_json}" <<EOF
+{
+  "unit": {
+    "name": "locale",
+    "version": 1
+  },
+  "global": {
+    "initialized": true
+  },
+  "tables": {
+    "settings": {
+      "locale": {
+        "preference": "en"
+      }
+    }
+  }
+}
+EOF
+}
+
 # Writable dirs on the data volume (created as the runtime user — no chown).
 mkdir -p "${HOME:-/data/dsh/home}" "${HOME:-/data/dsh/home}/.cache" 2>/dev/null || true
 case "${TMPDIR:-/data/dsh/tmp}" in
     /data/dsh/*) mkdir -p "${TMPDIR}" 2>/dev/null || true ;;
 esac
 mkdir -p /data/dsh/home/.docker 2>/dev/null || true
+
+# Force English locale before plugin seeds initialize
+seed_locale_preference
 
 # Auth plugin seed (@xgone/dsh-remote) into the web profile. Mirrors
 # `dsh plugin --profile web add`: full seed tree + manifest merge, never
@@ -255,6 +302,7 @@ if [ "${DSH_WITH_AUTOMATION:-true}" = "true" ] && [ "${RESCUE_PROFILE}" = "web" 
                 ${CP} "${AUTO_SEED_DIR}/${f}" "${WEB_DIR}/${f}"
             fi
         done
+        
         AUTO_SEED_VER="$(node -p "require('${AUTO_SEED_PLUGIN}').version")"
         node -e "
 const fs=require('fs');
@@ -368,7 +416,6 @@ p.dependencies=Object.assign({},p.dependencies,{
     'dsh-pai-design':'${PAI_SEED_VER}',
     'dsh-pai-terrain':'${PAI_SEED_VER}',
     'dsh-pai-git':'${PAI_SEED_VER}',
-    'dsh-pai-memory':'${PAI_SEED_VER}',
     'dsh-pai-web':'${PAI_SEED_VER}',
 });
 p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{};
@@ -380,7 +427,6 @@ const want=[
     'dsh-pai-design',
     'dsh-pai-terrain',
     'dsh-pai-git',
-    'dsh-pai-memory',
     'dsh-pai-web',
 ];
 const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[];
@@ -392,78 +438,19 @@ fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
     fi
 fi
 
-# Third-party dsh-skill-studio plugin seed.
-# Same contract: installed wholesale (last copy wins on fresh volumes),
-# manifest merge only ADDS the dep and bundle. cordis.patch.yml is NEVER overwritten.
-# Gate with DSH_WITH_SKILL_STUDIO=false to skip. This plugin provides a web UI
-# for managing skills and tools: skillmgr_* / skillmgr_extract_*.
-SKILL_STUDIO_SEED_DIR="/opt/dsh-skill-studio-seed"
-SKILL_STUDIO_SEED_PLUGIN="${SKILL_STUDIO_SEED_DIR}/node_modules/dsh-skill-studio/package.json"
-if [ "${DSH_WITH_SKILL_STUDIO:-true}" = "true" ] && [ "${RESCUE_PROFILE}" = "web" ] && [ -f "${SKILL_STUDIO_SEED_PLUGIN}" ]; then
-    SKILL_STUDIO_SEED_VER="$(node -p "require('${SKILL_STUDIO_SEED_PLUGIN}').version" 2>/dev/null || echo "")"
-    SKILL_STUDIO_LIVE_VER="$(node -p "require('${WEB_DIR}/node_modules/dsh-skill-studio/package.json').version" 2>/dev/null || echo "")"
-    if [ -n "${SKILL_STUDIO_SEED_VER}" ] && [ "${SKILL_STUDIO_SEED_VER}" = "${SKILL_STUDIO_LIVE_VER}" ] \
-       && node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('dsh-skill-studio'))) process.exit(1)" 2>/dev/null \
-       && [ -f "${WEB_DIR}/node_modules/dsh-skill-studio/package.json" ]; then
-        elog "[entrypoint] skill-studio plugin seed already installed, skipping"
-    else
-        if [ -n "${SKILL_STUDIO_LIVE_VER}" ] && [ "${SKILL_STUDIO_SEED_VER}" != "${SKILL_STUDIO_LIVE_VER}" ]; then
-            elog "[entrypoint] Upgrading skill-studio plugin ${SKILL_STUDIO_LIVE_VER} -> ${SKILL_STUDIO_SEED_VER}"
-        else
-            elog "[entrypoint] Installing skill-studio plugin seed to web profile"
-        fi
-        mkdir -p "${WEB_DIR}/node_modules"
-        CP="cp -r --no-preserve=mode,ownership,timestamps"
-        rm -rf "${WEB_DIR}/node_modules"
-        ${CP} "${SKILL_STUDIO_SEED_DIR}/node_modules" "${WEB_DIR}/node_modules"
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do
-            if [ -f "${SKILL_STUDIO_SEED_DIR}/${f}" ]; then
-                ${CP} "${SKILL_STUDIO_SEED_DIR}/${f}" "${WEB_DIR}/${f}"
-            fi
-        done
-        SKILL_STUDIO_SEED_VER="$(node -p "require('${SKILL_STUDIO_SEED_PLUGIN}').version")"
-        node -e "
-const fs=require('fs');
-const pf='${WEB_DIR}/package.json';
-let p={};
-try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; }
-p.name='dsh-profile-web';
-if (p.private!==false) p.private=true;
-p.dependencies=Object.assign({},p.dependencies,{'dsh-skill-studio':'${SKILL_STUDIO_SEED_VER}'});
-p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{};
-const want=[
-    '@deepseek-ai/dsh-base',
-    '@deepseek-ai/dsh-web-app',
-    'dsh-pai-notebook',
-    'dsh-pai-adr',
-    'dsh-pai-design',
-    'dsh-pai-terrain',
-    'dsh-pai-git',
-    'dsh-pai-memory',
-    'dsh-pai-web',
-    'dsh-skill-studio',
-];
-const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[];
-for (const b of want) if(!have.includes(b)) have.push(b);
-p.dsh.profile.bundles=have;
-fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
-"
-        elog "[entrypoint] Skill-studio plugin seed installed"
-    fi
-fi
-
 # Automation tasks (official experimental schedule bundle). Manifest-only:
 # the bundle ships inside the image and resolves from the dsh installation,
 # so no node_modules copy is needed — selecting it in the plugin manager
 # does exactly this append to dsh.profile.bundles. Gate with
 # DSH_WITH_SCHEDULE=false to leave the shipped composition untouched.
-if [ "${DSH_WITH_SCHEDULE:-true}" = "true" ] && [ "${RESCUE_PROFILE}" = "web" ]; then
-    if node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('@deepseek-ai/dsh-experimental-schedule-bundle'))) process.exit(1)" 2>/dev/null; then
-        elog "[entrypoint] schedule bundle already enabled, skipping"
-    else
-        elog "[entrypoint] Enabling Automation tasks (schedule bundle)"
-        mkdir -p "${WEB_DIR}"
-        node -e "
+if [ "${RESCUE_PROFILE}" = "web" ]; then
+    if [ "${DSH_WITH_SCHEDULE:-true}" = "true" ]; then
+        if node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('@deepseek-ai/dsh-experimental-schedule-bundle'))) process.exit(1)" 2>/dev/null; then
+            elog "[entrypoint] schedule bundle already enabled, skipping"
+        else
+            elog "[entrypoint] Enabling Automation tasks (schedule bundle)"
+            mkdir -p "${WEB_DIR}"
+            node -e "
 const fs=require('fs');
 const pf='${WEB_DIR}/package.json';
 let p={};
@@ -477,7 +464,22 @@ for (const b of want) if(!have.includes(b)) have.push(b);
 p.dsh.profile.bundles=have;
 fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
 "
-        elog "[entrypoint] Automation tasks enabled"
+        fi
+    else
+        # DSH_WITH_SCHEDULE=false: remove the schedule bundle if present
+        if node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('@deepseek-ai/dsh-experimental-schedule-bundle'))) process.exit(1)" 2>/dev/null; then
+            elog "[entrypoint] Disabling Automation tasks (schedule bundle)"
+            mkdir -p "${WEB_DIR}"
+            node -e "
+const fs=require('fs');
+const pf='${WEB_DIR}/package.json';
+let p=JSON.parse(fs.readFileSync(pf,'utf8'));
+if (p.dsh && p.dsh.profile && Array.isArray(p.dsh.profile.bundles)) {
+    p.dsh.profile.bundles = p.dsh.profile.bundles.filter(b => b !== '@deepseek-ai/dsh-experimental-schedule-bundle');
+    fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
+}
+"
+fi
     fi
 fi
 
@@ -496,6 +498,23 @@ cleanup() {
     exit 0
 }
 trap cleanup SIGTERM SIGINT SIGQUIT
+
+# Force English locale in web app (patch index.html lang attribute and add locale cookie)
+INDEX_HTML="/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html"
+if [ -f "${INDEX_HTML}" ]; then
+    sed -i 's/<html lang="[^"]*"/<html lang="en"/' "${INDEX_HTML}" 2>/dev/null || true
+    # Add locale cookie setter script before </head> using python for reliability
+    python3 -c "
+import sys
+with open('${INDEX_HTML}', 'r') as f:
+    content = f.read()
+script = '<script>(function(){try{document.documentElement.lang=\"en\";document.cookie=\"dsh_locale=en;path=/;max-age=31536000\"}catch(e){}})()</script>'
+content = content.replace('</head>', script + '\n</head>')
+with open('${INDEX_HTML}', 'w') as f:
+    f.write(content)
+" 2>/dev/null || true
+    elog "[entrypoint] Patched web app locale to English"
+fi
 
 elog "[entrypoint] starting dsh web (internal 127.0.0.1:${PORT_INNER})"
 # shellcheck disable=SC2086

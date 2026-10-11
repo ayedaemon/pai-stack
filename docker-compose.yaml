@@ -258,10 +258,6 @@ services:
         # joint tree built in final; no registry, no version to pin)
         WITH_TELEGRAM_PLUGIN: ${DSH_WITH_TELEGRAM_PLUGIN:-true}
         TELEGRAM_PLUGIN_NAME: dsh-pai-telegram
-        # Third-party dsh-skill-studio plugin (in-repo plugins/dsh-skill-studio,
-        # joint tree built in final; no registry, no version to pin)
-        WITH_SKILL_STUDIO_PLUGIN: ${DSH_WITH_SKILL_STUDIO_PLUGIN:-true}
-        SKILL_STUDIO_PLUGIN_NAME: dsh-skill-studio
     image: ${DSH_IMAGE:-pai-stack-dsh:custom}
     container_name: dsh
     restart: unless-stopped
@@ -293,16 +289,17 @@ services:
       DSH_SETUP_REMOTE: ${DSH_SETUP_REMOTE:-on}
       # Automation tasks: official experimental schedule bundle (ships in the
       # image, enabled by appending it to the web profile bundles — no install).
-      # "false" leaves the shipped composition untouched.
-      DSH_WITH_SCHEDULE: ${DSH_WITH_SCHEDULE:-true}
+      # "false" leaves the shipped composition untouched. Default: off (use @michengai/dsh-automation instead).
+      DSH_WITH_SCHEDULE: ${DSH_WITH_SCHEDULE:-false}
       # Durable automation (cron that fires with no chat open). "false" skips
       # the seed install; the joint tree stays available in the image.
       DSH_WITH_AUTOMATION: ${DSH_WITH_AUTOMATION:-true}
       # First-party Telegram poller (dsh-pai-telegram seed). "false" skips
       # the seed install; the joint tree stays available in the image.
       DSH_WITH_TELEGRAM: ${DSH_WITH_TELEGRAM:-true}
-      # Third-party dsh-skill-studio plugin (skill management UI).
-      DSH_WITH_SKILL_STUDIO: ${DSH_WITH_SKILL_STUDIO:-true}
+      # Pre-seed locale preference to English (dsh-automation has Chinese prompts).
+      # "false" skips seeding; the joint tree stays available in the image.
+      DSH_SEED_LOCALE: ${DSH_SEED_LOCALE:-true}
       DSH_DEFAULT_ADMIN_USER: ${DSH_DEFAULT_ADMIN_USER:-admin}
       DSH_ADMIN_PASSWORD: ${DSH_ADMIN_PASSWORD:-}
       # Telegram — separate DSH bot (see .env.example §9). DSH_TELEGRAM_TOKEN

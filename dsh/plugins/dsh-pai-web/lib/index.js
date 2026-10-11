@@ -33,8 +33,8 @@ export function apply(ctx, config) {
       query: { type: "string", description: "Search query" },
       url: { type: "string", description: "URL to fetch" },
       urls: { type: "array", items: { type: "string" }, description: "URLs to fetch (for search_and_fetch)" },
-      max_results: { type: "integer", description: "Max search results", default: 10, minimum: 1, maximum: 50 },
-      recency_days: { type: "integer", description: "Limit results to last N days", minimum: 1, maximum: 365 },
+      max_results: { type: "integer", description: "Max search results", default: 10 },
+      recency_days: { type: "integer", description: "Limit results to last N days" },
       safe_search: { type: "boolean", description: "Enable safe search", default: true },
     },
     output: {
@@ -51,6 +51,16 @@ export function apply(ctx, config) {
         }
         
         const getTool = (name) => mnemonTools.get(name);
+
+        // Validate max_results if provided
+        if (args.max_results !== undefined && (args.max_results < 1 || args.max_results > 50)) {
+          return { error: "max_results must be between 1 and 50" };
+        }
+        
+        // Validate recency_days if provided
+        if (args.recency_days !== undefined && (args.recency_days < 1 || args.recency_days > 365)) {
+          return { error: "recency_days must be between 1 and 365" };
+        }
         
         if (action === "search") {
           if (!args.query) return { error: "query required" };

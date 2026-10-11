@@ -1,5 +1,0 @@
-- insert:
-    - id: pai-memory
-      name: dsh-pai-memory
-      config:
-        enabled: true
