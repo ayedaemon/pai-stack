@@ -1,7 +1,7 @@
 {
   "name": "dsh-pai-web",
-  "version": "0.1.0",
-  "description": "DSH plugin for web search and fetch operations. Provides `pai_web_ops` tool with actions: search, fetch, search_and_fetch. Uses DSH's built-in web tools or direct fetch fallback. Supports max_results (1-50) and recency_days (1-365) with manual validation.",
+  "version": "0.2.0",
+  "description": "DSH plugin for LOCAL web surfing (no remote search API). Provides `pai_web_ops` with actions: search, fetch, search_and_fetch, browse. Search runs in local headless Chromium (Playwright) over a public HTML engine; fetch prefers local web_fetch (http), then Chromium, then plain fetch. DeepSeek-hosted web_search is disabled by overlay.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -14,7 +14,8 @@
   "dependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
     "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
-    "@deepseek-ai/schemastery": "^3.18.4"
+    "@deepseek-ai/schemastery": "^3.18.4",
+    "playwright": "1.49.1"
   },
   "dsh": {
     "bundle": {

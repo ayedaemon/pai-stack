@@ -258,6 +258,8 @@ services:
         # joint tree built in final; no registry, no version to pin)
         WITH_TELEGRAM_PLUGIN: ${DSH_WITH_TELEGRAM_PLUGIN:-true}
         TELEGRAM_PLUGIN_NAME: dsh-pai-telegram
+        # Local browser surfing (Playwright + Chromium, replaces DeepSeek search)
+        PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION:-1.49.1}
     image: ${DSH_IMAGE:-pai-stack-dsh:custom}
     container_name: dsh
     restart: unless-stopped
@@ -300,6 +302,11 @@ services:
       # Pre-seed locale preference to English (dsh-automation has Chinese prompts).
       # "false" skips seeding; the joint tree stays available in the image.
       DSH_SEED_LOCALE: ${DSH_SEED_LOCALE:-true}
+      # DeepSeek-hosted web search off by default (entrypoint overlay:
+      # tool-web.search:false + web-search-deepseek.disabled). DSH surfs
+      # with local Playwright/Chromium (dsh-pai-web) + web-fetch-http +
+      # notebook/terrain/mnemon instead. "false" keeps upstream search.
+      DSH_DISABLE_WEB_SEARCH: ${DSH_DISABLE_WEB_SEARCH:-true}
       DSH_DEFAULT_ADMIN_USER: ${DSH_DEFAULT_ADMIN_USER:-admin}
       DSH_ADMIN_PASSWORD: ${DSH_ADMIN_PASSWORD:-}
       # Telegram — separate DSH bot (see .env.example §9). DSH_TELEGRAM_TOKEN

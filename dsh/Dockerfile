@@ -60,6 +60,7 @@ RUN set -eux; \
         python3-dev \
         python3-pip \
         python3-venv \
+        python3-yaml \
         build-essential \
         pkg-config \
         libssl-dev \
@@ -68,7 +69,8 @@ RUN set -eux; \
         socat \
         openssh-client \
     ; \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/*; \
+    python3 -c "import yaml; print('[deps] python3-yaml', yaml.__version__)"
 
 # ── Stage 2: Install DSH (official npm package) ─────────────────────────
 FROM deps AS dsh-install
@@ -298,6 +300,10 @@ ARG WITH_TELEGRAM_PLUGIN=true
 ARG TELEGRAM_PLUGIN_NAME=dsh-pai-telegram
 # First-party pai-stack plugins (in-repo source at plugins/dsh-pai-*)
 ARG WITH_PAI_PLUGINS=true
+# Local browser surfing (replaces DeepSeek-hosted web search):
+# Playwright library + Chromium. Pinned exact; bump deliberately
+# (browser build is ~300MB and needs `make dsh-build && make dsh-up`).
+ARG PLAYWRIGHT_VERSION=1.49.1
 
 # The /opt/dsh-remote-seed directory is already present from the remote-plugin-seed stage
 # (which is an ancestor of docker-cli). Verify it exists.
@@ -505,6 +511,38 @@ RUN BUNDLE=/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-a
     test -f "${BUNDLE}/package.json" && test -f "${BUNDLE}/cordis.patch.yml" \
     && node -e "const p=require('${BUNDLE}/package.json'); if(!p.dsh||!p.dsh.bundle||!p.dsh.bundle.patch) throw new Error('not a DSH bundle: '+p.name); console.log('[final] schedule bundle', p.name+'@'+p.version)"
 
+# ── Local browser surfing (Playwright + Chromium, replaces DeepSeek search) ─
+# DSH has no browser; dsh-pai-web surfs with this instead of the
+# deepseek-official search provider (a model turn per query). Browsers live in
+# the image layer (read-only OK); profiles/tmp stay on the data volume at
+# runtime (see ENV below). `--with-deps` apt-installs the Chromium system
+# libs (needs root at build time). The library is also staged into the pai
+# seed's node_modules so the plugin's plain `import('playwright')` resolves
+# inside the web profile (global installs are invisible to ESM otherwise).
+RUN set -eux; \
+    NPM_CONFIG_PREFIX=/usr/local npm install -g "playwright@${PLAYWRIGHT_VERSION}"; \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium; \
+    chmod -R a+rX /opt/ms-playwright /usr/local/lib/node_modules/playwright; \
+    node -p "require('/usr/local/lib/node_modules/playwright/package.json').version" | grep -qx "${PLAYWRIGHT_VERSION}"; \
+    if [ -d /opt/dsh-pai-seed/node_modules ]; then \
+        rm -rf /opt/dsh-pai-seed/node_modules/playwright; \
+        cp -a /usr/local/lib/node_modules/playwright /opt/dsh-pai-seed/node_modules/playwright; \
+        node -e " \
+            const fs=require('fs'); \
+            const pf='/opt/dsh-pai-seed/package.json'; \
+            const p=JSON.parse(fs.readFileSync(pf,'utf8')); \
+            p.dependencies=Object.assign({},p.dependencies,{'playwright':'${PLAYWRIGHT_VERSION}'}); \
+            fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n'); \
+        "; \
+        node -p "require('/opt/dsh-pai-seed/node_modules/playwright/package.json').version" | grep -qx "${PLAYWRIGHT_VERSION}"; \
+        chmod -R a+rX /opt/dsh-pai-seed/node_modules/playwright; \
+        echo "[final] playwright ${PLAYWRIGHT_VERSION} staged into pai seed"; \
+    else \
+        echo "[final] pai seed not built yet, playwright global only"; \
+    fi; \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright /usr/local/bin/node --input-type=module -e "import('/opt/dsh-pai-seed/node_modules/playwright').then(async(m)=>{const b=await m.chromium.launch({args:['--no-sandbox']});await b.close();console.log('[final] playwright smoke: chromium launches')})" 2>&1 || echo "[final] WARN playwright launch smoke skipped (sandbox unavailable at build)"; \
+    echo "[final] playwright browsers at /opt/ms-playwright:"; ls /opt/ms-playwright
+
 # Dedicated runtime user matching the host UID/GID (compose `user:` runs as
 # this numeric id from PID 1 — no setpriv, no groupmod). Reuses an existing
 # group id when taken (e.g. Debian `dialout` owns 20, macOS staff is 20):
@@ -550,6 +588,11 @@ RUN set -eux; \
 ENV DSH_HOME=/data/dsh \
     HOME=/data/dsh/home \
     PATH=/usr/local/go/bin:/usr/local/cargo/bin:/usr/local/bin:${PATH} \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
+    # Chromium launch flags are set per-call in dsh-pai-web (--no-sandbox,
+    # --disable-dev-shm-usage): the container drops ALL caps, so the sandbox
+    # can never initialize; profiles live under TMPDIR (data volume), never
+    # in the 128MB /tmp tmpfs.
     GOROOT=/usr/local/go \
     RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \

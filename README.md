@@ -64,7 +64,7 @@ DSH plugins (`dsh/plugins/`, plus bundled `dsh-mnemon` and `@michengai/dsh-autom
 | `pai_design_ops` (`paiOpsDesign`) | OpenDesign integration |
 | `pai_terrain_ops` | Code intelligence via Terrain service |
 | `pai_git_ops` | Git + worktree operations |
-| `pai_web_ops` | Web search + fetch (with built-in fallback) |
+| `pai_web_ops` | Local web surfing via Chromium (no remote search API) |
 | `automation_*` | Scheduled coding tasks via `@michengai/dsh-automation` |
 | `mnemon_*` | Memory engine via `dsh-mnemon` |
 

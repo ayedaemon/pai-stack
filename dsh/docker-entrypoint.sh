@@ -136,6 +136,55 @@ retire_default_workspace_plugin() {
     fi
 }
 
+# Disable DeepSeek-hosted web search; force local browser surfing.
+# DSH ships `web.searchProvider: deepseek-official` (an Anthropic-messages
+# model turn per query via api.deepseek.com). That cost + external dependency
+# is off by default here: the agent surfs with local Playwright/Chromium
+# (dsh-pai-web, no remote search API) + local fetch-http + notebook/terrain/
+# mnemon. `tool-web.search:false` unregisters model-facing `web_search`
+# (keeps `web_fetch`); `web-search-deepseek.disabled` stops the provider;
+# `web.fetchProvider:http` drops the search pin. Patch replaces whole
+# `config`, so tool-web restates every default (fetch 30s, search 60s).
+# Gate with DSH_DISABLE_WEB_SEARCH=false to keep upstream search.
+ensure_no_deepseek_search() {
+    if [ "${DSH_DISABLE_WEB_SEARCH:-true}" != "true" ]; then
+        elog "[websearch-seed] DSH_DISABLE_WEB_SEARCH=false, keeping DeepSeek search"
+        return 0
+    fi
+    local web_dir="/data/dsh/profiles/web"
+    local web_patch="${web_dir}/cordis.patch.yml"
+    if [ ! -d "${web_dir}" ]; then
+        elog "[websearch-seed] no web profile yet, skipping (applied on next boot)"
+        return 0
+    fi
+    if grep -q "pai-stack: disable-deepseek-search" "${web_patch}" 2>/dev/null; then
+        elog "[websearch-seed] DeepSeek search already disabled, skipping"
+        return 0
+    fi
+    elog "[websearch-seed] disabling DeepSeek search (local Playwright + fetch-http instead)"
+    mkdir -p "${web_dir}" 2>/dev/null || true
+    touch "${web_patch}" 2>/dev/null || true
+    cat >> "${web_patch}" <<'EOF'
+# pai-stack: disable-deepseek-search (DSH_DISABLE_WEB_SEARCH=true).
+# DeepSeek search costs a model turn per query; DSH surfs with local
+# Playwright/Chromium (dsh-pai-web) + web-fetch-http + notebook/terrain/mnemon.
+- id: tool-web
+  config:
+    search: false
+    fetch: true
+    searchMaxResults: 8
+    searchMaxQueries: 4
+    fetchTimeoutMs: 30000
+    searchTimeoutMs: 60000
+    fetchMaxOutputChars: 200000
+- id: web-search-deepseek
+  disabled: true
+- id: web
+  config:
+    fetchProvider: http
+EOF
+}
+
 # Force English locale by pre-seeding locale preference.
 # The dsh-automation plugin has Chinese prompts hardcoded; DSH locale
 # defaults to browser language with 'en' fallback. In headless containers,
@@ -438,6 +487,19 @@ fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
     fi
 fi
 
+# Playwright library into the live web profile (for pre-existing volumes).
+# The pai seed carries node_modules/playwright since the image build, but
+# volumes created before that lack it and the seed's version gate (notebook
+# version) may not fire. Copy iff missing — never overwrites cordis.patch.yml.
+if [ "${RESCUE_PROFILE}" = "web" ] && [ -d "${PAI_SEED_DIR}/node_modules/playwright" ] && [ ! -f "${WEB_DIR}/node_modules/playwright/package.json" ]; then
+    elog "[entrypoint] Installing playwright library into live web profile"
+    mkdir -p "${WEB_DIR}/node_modules" 2>/dev/null || true
+    CP="cp -r --no-preserve=mode,ownership,timestamps"
+    rm -rf "${WEB_DIR}/node_modules/playwright"
+    ${CP} "${PAI_SEED_DIR}/node_modules/playwright" "${WEB_DIR}/node_modules/playwright"
+    elog "[entrypoint] Playwright library installed"
+fi
+
 # Automation tasks (official experimental schedule bundle). Manifest-only:
 # the bundle ships inside the image and resolves from the dsh installation,
 # so no node_modules copy is needed — selecting it in the plugin manager
@@ -486,6 +548,7 @@ fi
 retire_default_workspace_plugin
 seed_workspace_registry
 ensure_workspace_controller_row
+ensure_no_deepseek_search
 
 start_socat
 

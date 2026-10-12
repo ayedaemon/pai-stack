@@ -1,6 +1,6 @@
 {
   "name": "dsh-pai-terrain",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSH plugin for code intelligence via Terrain service. Provides `pai_terrain_ops` tool with actions: index, refresh, search, read, overview, projects, unregister, source, init, ask. Connects to Terrain service (port 7878) for code indexing and queries. Indexing is free (no LLM); ask/init require TERRAIN_ALLOW_LLM=1.",
   "type": "module",
   "main": "lib/index.js",

@@ -31,7 +31,7 @@ The container ships **Python 3, Go, and Rust** so agents can run the test suites
 
 | Tool | Version | Path |
 |---|---|---|
-| Python | 3.11 (Debian 12) + `python3-dev`/`python3-venv` | `/usr/bin/python3` |
+| Python | 3.11 (Debian 12) + `python3-dev`/`python3-venv`/`python3-yaml` (PyYAML global) | `/usr/bin/python3` |
 | uv | 0.12.23 | `/usr/local/bin/uv`, `uvx` |
 | Go | 1.27.1 (linux arm64/amd64, checksum-verified) | `/usr/local/go` |
 | Rust | rustc + cargo 1.99.0, minimal profile + `clippy` + `rustfmt` | `/usr/local/cargo`, `/usr/local/rustup` |
@@ -93,6 +93,7 @@ Edit the ARGs at the top of [`dsh/Dockerfile`](../dsh/Dockerfile) and `make dsh-
 - **Go** — `GO_VERSION` *and both* `GO_SHA256_*`. Read the new checksums from `https://go.dev/dl/?mode=json`; the build fails on a mismatch rather than installing an unverified tarball.
 - **uv** — the release tag from GitHub.
 - **Rust** — take the version from the `[pkg.rust]` block of `https://static.rust-lang.org/dist/channel-rust-<v>.toml`, **not** the first `version =` line of `channel-rust-stable.toml`: that one is *cargo's* (reads `0.100.0` while rustc reads `1.99.0`).
+- **Playwright** — `PLAYWRIGHT_VERSION` in `.env` (= compose arg = Dockerfile `ARG` = `dsh-pai-web` dependency, currently 1.49.1). Keep all three in sync; then `make dsh-build && make dsh-up`.
 
 The image verifies every toolchain at the end of the build (`go version`, `cargo fmt --version`, …). A missing tool fails the build rather than surfacing mid-test-run.
 
@@ -108,7 +109,35 @@ The image verifies every toolchain at the end of the build (`go version`, `cargo
 | `dsh-pai-design` | `pai_design_ops` | OpenDesign integration |
 | `dsh-pai-terrain` | `pai_terrain_ops` | Code intelligence via Terrain |
 | `dsh-pai-git` | `pai_git_ops` | Git + worktree ops |
-| `dsh-pai-web` | `pai_web_ops` | Web search + fetch (with validation) |
+| `dsh-pai-web` | `pai_web_ops` | Local web surfing (Playwright/Chromium, no remote search API) |
+
+## Web search: DeepSeek off, local Chromium on
+
+DSH ships a DeepSeek-hosted search provider (`web.searchProvider: deepseek-official`
+via `api.deepseek.com`, one auxiliary model turn per query). It is **disabled by
+default** (`DSH_DISABLE_WEB_SEARCH=true`): on every boot the entrypoint appends an
+idempotent overlay to `profiles/web/cordis.patch.yml` — `tool-web.search:false`
+(unregisters model-facing `web_search`, keeps local `web_fetch`/http),
+`web-search-deepseek.disabled:true`, `web.fetchProvider:http`. Set
+`DSH_DISABLE_WEB_SEARCH=false` to keep upstream search.
+
+The replacement is local: `dsh-pai-web` (`pai_web_ops`) never calls `web_search`.
+`search`/`search_and_fetch` drive local headless Chromium (Playwright 1.49.1,
+baked into the image at `/opt/ms-playwright`, `--no-sandbox`), Bing first with
+DuckDuckGo HTML as fallback, and parse result links — no API key, no model turn.
+(Bing verified 200 + organic results from container egress; DDG HTML 202s with an
+empty shell from here, so it stays fallback-only. Google SERP is deliberately not
+used — it serves a bot-check shell to datacenter IPs.) `fetch` tries
+local `web_fetch` (http) first, then Chromium (JS-rendered pages), then plain
+fetch. New `browse` action = JS-rendered fetch of one URL. Pair with
+`pai_notebook_ops` / `pai_terrain_ops` / `mnemon_recall` and cite URLs.
+
+Constraints: Chromium profiles live under `TMPDIR=/data/dsh/tmp` (the 128 MB
+`/tmp` tmpfs is too small); first browser launch after a build writes there, so
+it needs the usual approval escalation under `workspace-write`. Neither HTML engine
+has a recency filter — `recency_days` is accepted and ignored with a note. Per-engine
+hit counts log as `[pai-web] surfSearch bing=N / ddg=N` in the container logs, so the
+next engine blockage shows up there instead of failing silent.
 
 ## Core Hermes plugins (bundled in image)
 
@@ -152,7 +181,7 @@ Telegram bot for DSH: chat round-trip, live drafts, inline approvals/questions, 
 | `dsh-pai-design` | `pai_design_ops` | OpenDesign integration |
 | `dsh-pai-terrain` | `pai_terrain_ops` | Code intelligence via Terrain |
 | `dsh-pai-git` | `pai_git_ops` | Git + worktree |
-| `dsh-pai-web` | `pai_web_ops` | Web search + fetch |
+| `dsh-pai-web` | `pai_web_ops` | Local web surfing (search/fetch/search_and_fetch/browse) |
 
 ## Docker Socket
 
