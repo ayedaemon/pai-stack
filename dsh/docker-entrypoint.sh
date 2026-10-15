@@ -327,7 +327,7 @@ auth|DSH_WITH_AUTH|@xgone/dsh-remote/package.json|@xgone/dsh-remote|
 memory|DSH_WITH_MNEMON|dsh-mnemon/package.json|dsh-mnemon|
 automation|DSH_WITH_AUTOMATION|@michengai/dsh-automation/package.json|@michengai/dsh-automation|
 telegram|DSH_WITH_TELEGRAM|dsh-pai-telegram/package.json|dsh-pai-telegram|
-pai|DSH_WITH_PAI_PLUGINS|dsh-pai-notebook/package.json|dsh-pai-notebook|dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-task-complete-sound dsh-pai-git dsh-pai-web
+pai|DSH_WITH_PAI_PLUGINS|dsh-pai-notebook/package.json|dsh-pai-notebook|dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-web
 PLUGIN_TABLE
     if [ "${need_copy}" = 1 ] || [ ! -d "${web_dir}/node_modules" ]; then
         elog "[entrypoint] Installing joint plugin tree to web profile"

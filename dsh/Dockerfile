@@ -249,7 +249,6 @@ COPY plugins/dsh-pai-adr /tmp/dsh-pai-adr-src
 COPY plugins/dsh-pai-design /tmp/dsh-pai-design-src
 COPY plugins/dsh-pai-terrain /tmp/dsh-pai-terrain-src
 COPY plugins/dsh-pai-git /tmp/dsh-pai-git-src
-COPY plugins/dsh-pai-task-complete-sound /tmp/dsh-pai-task-complete-sound-src
 COPY plugins/dsh-pai-web /tmp/dsh-pai-web-src
 RUN set -eux; \
     . /usr/local/bin/dsh-seed-lib.sh; \
@@ -283,7 +282,7 @@ RUN set -eux; \
     if [ "${WITH_PAI_PLUGINS:-true}" = "true" ]; then \
         echo "[seed] Staging pai-stack plugins via manual copy"; \
         _ver="$(node -p "require('/tmp/dsh-pai-notebook-src/package.json').version")"; \
-        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-task-complete-sound dsh-pai-web; do \
+        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-web; do \
             seed_copy_src /tmp/seed-profile "/tmp/${plugin}-src" "${plugin}"; \
             MANIFEST="${MANIFEST} ${plugin}:${_ver}"; \
             FIRST="${FIRST} ${plugin}"; \

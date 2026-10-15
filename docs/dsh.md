@@ -200,7 +200,7 @@ log `skipping` / `in sync`). Per-engine `sync_plugin_tree` logs plus
 | `DSH_WITH_AUTH` / `DSH_WITH_MNEMON` | `true` | Login / memory plugin unloaded |
 | `DSH_WITH_AUTOMATION` | `true` | Cron plugin unloaded (use `DSH_WITH_SCHEDULE` for the stock bundle instead) |
 | `DSH_WITH_TELEGRAM` | `true` | Telegram plugin unloaded |
-| `DSH_WITH_PAI_PLUGINS` | `true` | All six `dsh-pai-*` plugins unloaded |
+| `DSH_WITH_PAI_PLUGINS` | `true` | All `dsh-pai-*` plugins unloaded (incl. the sound plugin) |
 | `DSH_DISABLE_WEB_SEARCH` | `true` | Keeps upstream DeepSeek search (see above) |
 
 `make dsh-versions-check` asserts every pin and gate is wired consistently.
