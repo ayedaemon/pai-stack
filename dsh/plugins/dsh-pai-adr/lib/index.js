@@ -10,12 +10,13 @@
  * check_drift compares code symbols against ADR references to detect drift.
  */
 import z from "@deepseek-ai/schemastery";
+import { defineTool } from "@deepseek-ai/dsh-tools";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 
 export const name = "pai-adr";
-export const inject = [];
+export const inject = ["tools"];
 
 export const Config = z.object({
   enabled: z.boolean().default(true),
@@ -47,7 +48,32 @@ export function apply(ctx, config) {
   const cfg = { enabled: true, ...(config ?? {}) };
   if (!cfg.enabled) return;
 
-  ctx.provide("paiAdrOps", {
+  const adrTool = defineTool({
+    name: "pai_adr_ops",
+    description: "Living ADR creation & code symbol drift detection.",
+    parameters: {
+      action: {
+        type: "string",
+        required: true,
+        enum: ["list_adrs", "create_adr", "check_drift"],
+        description: "ADR operation to perform"
+      },
+      execution_dir: { type: "string", description: "Project execution directory (holds .planning/research/)" },
+      // create_adr
+      adr_number: { type: "string", description: "ADR number (create_adr)", default: "001" },
+      title: { type: "string", description: "ADR title (create_adr)" },
+      context: { type: "string", description: "Context section content (create_adr)" },
+      decision: { type: "string", description: "Decision section content (create_adr)" },
+      symbols: {
+        type: "array",
+        items: { type: "string" },
+        description: "Symbols to track (create_adr), each formatted @symbol:<file>:<symbol>"
+      },
+    },
+    output: {
+      schema: { type: "json" },
+      render: (_args, value) => [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }]
+    },
     execute(args) {
       const action = args.action;
       try {
@@ -117,6 +143,10 @@ export function apply(ctx, config) {
       } catch (err) {
         return { error: err.message };
       }
-    }
+    },
   });
+
+  ctx.tools.register(adrTool);
 }
+
+export default { Config, apply, inject, name };

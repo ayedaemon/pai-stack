@@ -8,9 +8,10 @@
  * Use for design project management, folder imports, and design collaboration workflows.
  */
 import z from "@deepseek-ai/schemastery";
+import { defineTool } from "@deepseek-ai/dsh-tools";
 
 export const name = "pai-design";
-export const inject = [];
+export const inject = ["tools"];
 
 export const Config = z.object({
   enabled: z.boolean().default(true),
@@ -20,7 +21,24 @@ export function apply(ctx, config) {
   const cfg = { enabled: true, ...(config ?? {}) };
   if (!cfg.enabled) return;
 
-  ctx.provide("paiOpsDesign", {
+  const designTool = defineTool({
+    name: "pai_design_ops",
+    description: "OpenDesign visual generation / mockups bridge.",
+    parameters: {
+      action: {
+        type: "string",
+        required: true,
+        enum: ["health", "list_projects", "get_project", "create_project", "import_folder", "get_status"],
+        description: "OpenDesign operation to perform"
+      },
+      project_id: { type: "string", description: "Project id (get_project, get_status)" },
+      name: { type: "string", description: "Project name (create_project)" },
+      path: { type: "string", description: "Folder path to import (import_folder)" },
+    },
+    output: {
+      schema: { type: "json" },
+      render: (_args, value) => [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }]
+    },
     async execute(args) {
       const action = args.action;
       const token = process.env.OD_API_TOKEN || "";
@@ -65,6 +83,10 @@ export function apply(ctx, config) {
       } catch (err) {
         return { error: err.message };
       }
-    }
+    },
   });
+
+  ctx.tools.register(designTool);
 }
+
+export default { Config, apply, inject, name };

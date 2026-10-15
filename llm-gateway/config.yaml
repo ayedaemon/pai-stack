@@ -17,6 +17,14 @@ model_list:
       timeout: 1800
       drop_params: true
 
+  - model_name: kilo/kilo-auto/free
+    litellm_params:
+      model: mistral/kilo-auto/free
+      api_base: https://api.kilo.ai/api/gateway
+      api_key: os.environ/KILO_GATEWAY_API_KEY
+      timeout: 1800
+      drop_params: true
+
   - model_name: kilo/liquid/lfm-2.5-2.6b:free
     litellm_params:
       model: mistral/liquid/lfm-2.5-2.6b:free
@@ -33,9 +41,9 @@ model_list:
       timeout: 1800
       drop_params: true
 
-  - model_name: kilo/stepfun/step-5-preview-free
+  - model_name: kilo/nvidia/nemotron-3.5-lightning:free
     litellm_params:
-      model: mistral/stepfun/step-5-preview-free
+      model: mistral/nvidia/nemotron-3.5-lightning:free
       api_base: https://api.kilo.ai/api/gateway
       api_key: os.environ/KILO_GATEWAY_API_KEY
       timeout: 1800
@@ -115,12 +123,6 @@ model_list:
       timeout: 1800
 
   # ── OpenRouter ───────────────────────────────────────────────────
-  - model_name: openrouter/apodex/apodex-1.1-mini:free
-    litellm_params:
-      model: openrouter/apodex/apodex-1.1-mini:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      timeout: 1800
-
   - model_name: openrouter/cohere/north-mini-code:free
     litellm_params:
       model: openrouter/cohere/north-mini-code:free
@@ -175,6 +177,12 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
       timeout: 1800
 
+  - model_name: openrouter/poolside/laguna-xs-2.1:free
+    litellm_params:
+      model: openrouter/poolside/laguna-xs-2.1:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 1800
+
   # ── Upstream Language Models (Clean Canonical Names) ──────────────────
   - model_name: qwen3.8-27b-uncensored
     litellm_params:
@@ -195,7 +203,7 @@ model_list:
   # ── Default (fastest live model first, rest via fallbacks) ────────────
   - model_name: default
     litellm_params:
-      model: mistral/mistral-code-latest
+      model: mistral/codestral-latest
       api_key: os.environ/MISTRAL_API_KEY
       timeout: 1800
 
@@ -204,7 +212,7 @@ router_settings:
   timeout: 1800              # 30m request timeout for large models & deep reasoning
   stream_timeout: 1800       # 30m chunk timeout for slow reasoning token streams
   fallbacks:
-    - {"default": ["mistral/codestral-2508", "mistral/mistral-code-fim-latest", "mistral/ministral-3b-latest", "mistral/codestral-latest", "mistral/ministral-3b-2512", "mistral/voxtral-small-latest", "mistral/voxtral-small-2507", "mistral/ministral-8b-2512", "openrouter/nvidia/nemotron-3.5-content-safety:free", "openrouter/liquid/lfm-2.5-2.6b:free", "mistral/ministral-8b-latest", "openrouter/cohere/north-mini-code:free", "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "kilo/stepfun/step-5-preview-free", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "spark-x2.5-4b-uncensored", "mistral/ministral-14b-2512", "mistral/ministral-14b-latest", "openrouter/nvidia/nemotron-3.5-lightning:free", "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", "openrouter/apodex/apodex-1.1-mini:free", "kilo/liquid/lfm-2.5-2.6b:free", "kilo/dots-studio/dots-3-note-preview:free", "kilo/nvidia/nemotron-3-ultra-550b-a55b:free", "qwen3.8-27b-uncensored", "openrouter/free", "openrouter/dots-studio/dots-3-note-preview:free"]}
+    - {"default": ["mistral/mistral-code-latest", "mistral/ministral-3b-2512", "mistral/ministral-3b-latest", "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "openrouter/liquid/lfm-2.5-2.6b:free", "kilo/liquid/lfm-2.5-2.6b:free", "mistral/voxtral-small-latest", "openrouter/nvidia/nemotron-3.5-content-safety:free", "kilo/nvidia/nemotron-3.5-lightning:free", "openrouter/cohere/north-mini-code:free", "mistral/ministral-8b-latest", "mistral/ministral-8b-2512", "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "mistral/ministral-14b-latest", "mistral/codestral-2508", "mistral/voxtral-small-2507", "kilo/kilo-auto/free", "mistral/ministral-14b-2512", "openrouter/nvidia/nemotron-3.5-lightning:free", "spark-x2.5-4b-uncensored", "mistral/mistral-code-fim-latest", "openrouter/dots-studio/dots-3-note-preview:free", "openrouter/poolside/laguna-xs-2.1:free", "kilo/dots-studio/dots-3-note-preview:free", "openrouter/free", "kilo/nvidia/nemotron-3-ultra-550b-a55b:free", "qwen3.8-27b-uncensored", "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"]}
 
 # ── General Settings ─────────────────────────────────────────────────────
 general_settings:

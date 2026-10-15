@@ -1,0 +1,5 @@
+- insert:
+    - id: pai-task-complete-sound
+      name: dsh-pai-task-complete-sound
+      config:
+        enabled: true

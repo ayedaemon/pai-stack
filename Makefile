@@ -8,7 +8,7 @@
 	hermes-up hermes-down hermes-logs hermes-config hermes-build hermes-clean \
 	all-up all-down all-clean \
 	design-up design-down design-logs design-config design-build design-perms design-import \
-	dsh-up dsh-down dsh-logs dsh-config dsh-build dsh-perms dsh-sync-models dsh-ensure-web dsh-password dsh-clean \
+	dsh-up dsh-down dsh-logs dsh-config dsh-build dsh-perms dsh-sync-models dsh-ensure-web dsh-password dsh-clean dsh-versions-check \
 	terrain-up terrain-down terrain-logs terrain-config terrain-build terrain-perms terrain-index terrain-ask \
 	sync sync-dry
 
@@ -234,6 +234,9 @@ dsh-password: ## Print the one-time login token URL
 
 dsh-config: ## Validate compose configuration with dsh profile
 	$(COMPOSE) $(PROFILE_DSH) config
+
+dsh-versions-check: ## Verify DSH pins/gates agree across .env.example, compose, Dockerfile, plugins
+	python3 scripts/check-dsh-versions.py
 
 # ── Terrain Profile (terrain) ──
 

@@ -11,11 +11,11 @@ Custom build: `pai-stack-dsh:custom` (built from `dsh/Dockerfile`). Pinned to `@
 | Base | `node:24-slim` + git + socat + openssh-client + ca-certificates |
 | Toolchain | `python3` + `uv`, `go`, `rustc`/`cargo` + C toolchain |
 | Docker CLI | `docker-ce-cli` + `docker-compose-plugin` + `jq`, client-only (no daemon) |
-| DSH program | `@deepseek-ai/dsh@0.2.0-rc.2` pre-installed into `/opt/dsh-seed` at build time |
-| Runtime | Seed copied to `/opt/dsh` volume on first boot (offline, version-pinned) |
+| DSH program | `@deepseek-ai/dsh@0.2.0-rc.2` global npm install at `/usr/local/lib/node_modules/@deepseek-ai/dsh` (not pre-installed into `/opt/dsh-seed`) |
+| Runtime | Seed copied to the `dsh_data` volume (`/data/dsh`, mounted read-write on first boot; offline, version-pinned) |
 | Web UI | `dsh web` on `127.0.0.1:3081`, socat forwards `0.0.0.0:3080` → `3081` |
 | Auth | `@xgone/dsh-remote` plugin — admin + random 16-char password (printed once in first-boot logs) |
-| Security | Non-root (uid 1000), read-only root FS, `no-new-privileges`, `cap_drop: [ALL]` + 4 minimal caps |
+| Security | Non-root (uid 1000), read-only root FS, `no-new-privileges`, `cap_drop: [ALL]` with **no** `cap_add` — zero capabilities total |
 | Self-healing | Rescue system: snapshot rollback → plugin removal → escalated rollback → lifeboat |
 
 **Pin a version** (locked to `dsh@0.2.0-rc.2`):
@@ -94,6 +94,8 @@ Edit the ARGs at the top of [`dsh/Dockerfile`](../dsh/Dockerfile) and `make dsh-
 - **uv** — the release tag from GitHub.
 - **Rust** — take the version from the `[pkg.rust]` block of `https://static.rust-lang.org/dist/channel-rust-<v>.toml`, **not** the first `version =` line of `channel-rust-stable.toml`: that one is *cargo's* (reads `0.100.0` while rustc reads `1.99.0`).
 - **Playwright** — `PLAYWRIGHT_VERSION` in `.env` (= compose arg = Dockerfile `ARG` = `dsh-pai-web` dependency, currently 1.49.1). Keep all three in sync; then `make dsh-build && make dsh-up`.
+
+After any bump, run `make dsh-versions-check` — it asserts every pin agrees across `.env.example`, compose defaults, Dockerfile defaults, and plugin manifests, that all six `dsh-pai-*` plugins share one version (the entrypoint upgrade gate keys the whole tree off `dsh-pai-notebook`), and that every `DSH_WITH_*` gate the entrypoint reads is wired and documented.
 
 The image verifies every toolchain at the end of the build (`go version`, `cargo fmt --version`, …). A missing tool fails the build rather than surfacing mid-test-run.
 
@@ -182,6 +184,26 @@ Telegram bot for DSH: chat round-trip, live drafts, inline approvals/questions, 
 | `dsh-pai-terrain` | `pai_terrain_ops` | Code intelligence via Terrain |
 | `dsh-pai-git` | `pai_git_ops` | Git + worktree |
 | `dsh-pai-web` | `pai_web_ops` | Local web surfing (search/fetch/search_and_fetch/browse) |
+
+### Plugin seeds & gates
+
+All plugins resolve jointly into **one** image tree (`/opt/dsh-seed`, ~150 MB).
+On every boot the entrypoint copies it once and reconciles the profile
+manifest: only plugins with their `DSH_WITH_*` gate on are listed in
+`dependencies` + `dsh.profile.bundles`, so gated-off code stays on disk but
+never loads. Steady-state boots copy nothing and rewrite nothing (both steps
+log `skipping` / `in sync`). Per-engine `sync_plugin_tree` logs plus
+`[pai-web] surfSearch` hit counts in `make dsh-logs` show what ran.
+
+| Gate | Default | Effect when `false` |
+|---|---|---|
+| `DSH_WITH_AUTH` / `DSH_WITH_MNEMON` | `true` | Login / memory plugin unloaded |
+| `DSH_WITH_AUTOMATION` | `true` | Cron plugin unloaded (use `DSH_WITH_SCHEDULE` for the stock bundle instead) |
+| `DSH_WITH_TELEGRAM` | `true` | Telegram plugin unloaded |
+| `DSH_WITH_PAI_PLUGINS` | `true` | All six `dsh-pai-*` plugins unloaded |
+| `DSH_DISABLE_WEB_SEARCH` | `true` | Keeps upstream DeepSeek search (see above) |
+
+`make dsh-versions-check` asserts every pin and gate is wired consistently.
 
 ## Docker Socket
 

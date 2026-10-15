@@ -7,7 +7,7 @@
 #   owned correctly by creation.
 # - Docker access is via the mounted /var/run/docker.sock + `group_add`
 #   (no proxy socket). DOCKER_CONFIG lives on the data volume.
-# - Workspace bind at /opt/data/workspace is never chowned.
+# - Workspace bind at ${WORKSPACE_PATH} is never chowned.
 #
 # This script only: ensures writable dirs, seeds plugins + default workspace
 # registry, starts the 3080->3081 forwarder, execs `dsh web`.
@@ -15,6 +15,16 @@
 set -euo pipefail
 
 elog() { printf '[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*"; }
+
+# Container-internal workspace path. NOTE this is the IN-CONTAINER path, not
+# the host path: every pai-stack service binds its ${WORKSPACE_DIR} host
+# directory to this one target (docker-compose.yaml — hermes, terrain, dsh and
+# open-design all use target /opt/data/workspace), so hermes and dsh agree on
+# it by construction and share filepaths. Changing it means changing every
+# mount target, which is why it is derived here once instead of at each call
+# site below. Compose passes WORKSPACE_DIR because the directory-picker patch
+# in the Dockerfile resolves it inside the container.
+WORKSPACE_PATH="${WORKSPACE_DIR:-/opt/data/workspace}"
 
 DSH_HOME="${DSH_HOME:-/data/dsh}"
 PORT_INNER=3081
@@ -36,11 +46,11 @@ if [ -n "${DSH_TRUSTED_HOSTS:-}" ]; then
     done
 fi
 
+# Docker socket probe: cap_drop:[ALL] means `docker ps` only reports the
+# container's effective caps, not the group_add-mounted socket — it cannot
+# fail meaningfully here. A cheap -S test covers the real abort case.
 if [ -S /var/run/docker.sock ]; then
     elog "[entrypoint] docker socket present, DOCKER_HOST=${DOCKER_HOST:-<default socket>}"
-    if ! docker ps >/dev/null 2>&1; then
-        elog "[entrypoint] WARN 'docker ps' failed — check group_add DOCKER_GID (Desktop=0, Linux=docker gid)"
-    fi
 else
     elog "[entrypoint] WARN no /var/run/docker.sock mounted — docker commands will fail"
 fi
@@ -58,6 +68,8 @@ start_socat() {
 # pre-seed storages/workspace.json iff absent. documentsDirectory row below
 # is fallback only (it appends a fixed `deepseek-harness/default-workspace`
 # suffix and can never yield the mount root itself).
+# Both paths derive from WORKSPACE_PATH so the seeded registry and the
+# documentsDirectory row can never drift apart.
 seed_workspace_registry() {
     local store_dir="/data/dsh/storages"
     local ws_json="${store_dir}/workspace.json"
@@ -73,7 +85,7 @@ seed_workspace_registry() {
     fi
     mkdir -p "${store_dir}" 2>/dev/null || true
     ts="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
-    elog "[workspace-seed] pre-seeding default workspace /opt/data/workspace"
+    elog "[workspace-seed] pre-seeding default workspace ${WORKSPACE_PATH}"
     cat > "${ws_json}" <<EOF
 {
   "unit": {
@@ -92,7 +104,7 @@ seed_workspace_registry() {
   "tables": {
     "workspaces": {
       "${ws_id}": {
-        "path": "/opt/data/workspace",
+        "path": "${WORKSPACE_PATH}",
         "title": "workspace",
         "sessionIds": [],
         "createdAt": "${ts}",
@@ -116,10 +128,10 @@ ensure_workspace_controller_row() {
         return 0
     fi
     elog "[workspace-seed] setting workspace-controller documentsDirectory"
-    cat >> "${web_patch}" <<'EOF'
+    cat >> "${web_patch}" <<EOF
 - id: workspace-controller
   config:
-    documentsDirectory: /opt/data/workspace
+    documentsDirectory: ${WORKSPACE_PATH}
 EOF
 }
 
@@ -185,11 +197,13 @@ ensure_no_deepseek_search() {
 EOF
 }
 
-# Force English locale by pre-seeding locale preference.
-# The dsh-automation plugin has Chinese prompts hardcoded; DSH locale
-# defaults to browser language with 'en' fallback. In headless containers,
-# browser detection may not work reliably. Explicitly set locale.preference=en
-# in the Host settings so the UI and plugin prompts use English.
+# Force English locale by pre-seeding the locale preference in storages.
+# The dsh-automation plugin ships Chinese prompt fragments; DSH locale
+# otherwise defaults to browser language. This writes the volume-side
+# store (`/data/dsh/storages/locale.json`) — the one mechanism that works
+# under `read_only: true`. The former index.html `sed`/`python3` patch that
+# ran alongside this always failed silently (it targeted the read-only image
+# layer, and upstream ships `<html lang="en">` anyway), so it was removed.
 # Gate with DSH_SEED_LOCALE=false to skip.
 seed_locale_preference() {
     if [ "${DSH_SEED_LOCALE:-true}" != "true" ]; then
@@ -200,7 +214,7 @@ seed_locale_preference() {
     local locale_json="${store_dir}/locale.json"
     if [ -f "${locale_json}" ]; then
         # Check if already set to English
-        if node -e "const fs=require('fs'); const d=JSON.parse(fs.readFileSync('${locale_json}','utf8')); process.exit(d.tables?.settings?.locale?.preference==='en'?0:1)" 2>/dev/null; then
+        if grep -q '"preference"[[:space:]]*:[[:space:]]*"en"' "${locale_json}" 2>/dev/null; then
             elog "[locale-seed] locale preference already set to English, skipping"
             return 0
         fi
@@ -209,7 +223,7 @@ seed_locale_preference() {
         elog "[locale-seed] pre-seeding locale preference to English"
     fi
     mkdir -p "${store_dir}" 2>/dev/null || true
-    cat > "${locale_json}" <<EOF
+    cat > "${locale_json}" <<'EOF'
 {
   "unit": {
     "name": "locale",
@@ -229,6 +243,15 @@ seed_locale_preference() {
 EOF
 }
 
+# Read a package.json "version" field without spawning Node (~13ms each).
+# grep/sed are shell builtins with no interpreter startup; this replaces the
+# former `node -p "require(...).version"` probes (10 per boot) in the
+# plugin sync loop. Prints the version, or nothing if absent/invalid.
+extract_pkg_version() {
+    [ -f "$1" ] || return 0
+    sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -1
+}
+
 # Writable dirs on the data volume (created as the runtime user — no chown).
 mkdir -p "${HOME:-/data/dsh/home}" "${HOME:-/data/dsh/home}/.cache" 2>/dev/null || true
 case "${TMPDIR:-/data/dsh/tmp}" in
@@ -239,264 +262,157 @@ mkdir -p /data/dsh/home/.docker 2>/dev/null || true
 # Force English locale before plugin seeds initialize
 seed_locale_preference
 
-# Auth plugin seed (@xgone/dsh-remote) into the web profile. Mirrors
-# `dsh plugin --profile web add`: full seed tree + manifest merge, never
-# overwrites cordis.patch.yml (user patch layer). cp --no-preserve because
-# cap_drop:[ALL] lacks CAP_FOWNER.
-SEED_DIR="/opt/dsh-remote-seed"
-SEED_PLUGIN="${SEED_DIR}/node_modules/@xgone/dsh-remote/package.json"
-WEB_DIR="/data/dsh/profiles/web"
-if [ "${RESCUE_PROFILE}" = "web" ] && [ -f "${SEED_PLUGIN}" ]; then
-    if node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('@xgone/dsh-remote'))) process.exit(1)" 2>/dev/null \
-       && [ -f "${WEB_DIR}/node_modules/@xgone/dsh-remote/package.json" ]; then
-        elog "[entrypoint] auth plugin seed already installed, skipping"
-    else
-        elog "[entrypoint] Installing auth plugin seed to web profile"
-        mkdir -p "${WEB_DIR}/node_modules"
-        CP="cp -r --no-preserve=mode,ownership,timestamps"
-        rm -rf "${WEB_DIR}/node_modules"
-        ${CP} "${SEED_DIR}/node_modules" "${WEB_DIR}/node_modules"
+# Plugin seeds: ONE joint tree in the image (/opt/dsh-seed — all plugins
+# resolved together at build time). The entrypoint copies it once and
+# enforces gates at manifest level: only enabled plugins are listed in
+# dependencies + dsh.profile.bundles, so disabled plugin code sits on disk
+# but never loads. cordis.patch.yml (the user patch layer) is NEVER
+# overwritten. cp --no-preserve because cap_drop:[ALL] lacks CAP_FOWNER.
+#
+# Table columns (pipe-separated):
+#   id | runtime gate ("" = always on) | probe (in-tree package.json)
+#   | dep name | extra same-version deps (space-separated)
+# Runtime gates are DSH_WITH_* (.env.example §8): "false" drops the plugin
+# from the manifest (code stays on disk, unloaded — it never *deletes*
+# installed files). Build-time WITH_* (Dockerfile) only controls what is
+# baked into the image — a runtime gate cannot install what was never baked.
+# NOTE: extras share the probe (primary dep) version — the pai plugins are
+# versioned in lockstep (see make dsh-versions-check).
+sync_plugin_tree() {
+    if [ "${RESCUE_PROFILE}" != "web" ]; then
+        return 0
+    fi
+    local web_dir="${WEB_DIR:-/data/dsh/profiles/web}"
+    # DSH_SEED_DIR override exists for offline testing (default = image path).
+    local seed_dir="${DSH_SEED_DIR:-/opt/dsh-seed}"
+    if [ ! -d "${seed_dir}/node_modules" ]; then
+        elog "[entrypoint] no joint seed tree in image, skipping plugin sync"
+        return 0
+    fi
+    local need_copy=0
+    local managed=""
+    local id gate probe dep extras gate_val seed_ver live_ver d
+    while IFS='|' read -r id gate probe dep extras; do
+        [ -n "${id}" ] || continue
+        gate_val="true"
+        if [ -n "${gate}" ]; then
+            gate_val="${!gate:-true}"
+        fi
+        if [ "${gate_val}" != "true" ]; then
+            # shellcheck disable=SC2086 — intentional word splitting of the table field
+            for d in "${dep}" ${extras}; do
+                managed="${managed},'${d}':null"
+            done
+            continue
+        fi
+        seed_ver="$(extract_pkg_version "${seed_dir}/node_modules/${probe}")"
+        if [ -z "${seed_ver}" ]; then
+            elog "[entrypoint] ${id} plugin not baked into image, skipping"
+            # shellcheck disable=SC2086 — intentional word splitting of the table field
+            for d in "${dep}" ${extras}; do
+                managed="${managed},'${d}':null"
+            done
+            continue
+        fi
+        live_ver="$(extract_pkg_version "${web_dir}/node_modules/${probe}")"
+        if [ "${seed_ver}" != "${live_ver}" ]; then
+            need_copy=1
+        fi
+        # shellcheck disable=SC2086 — intentional word splitting of the table field
+        for d in "${dep}" ${extras}; do
+            managed="${managed},'${d}':'${seed_ver}'"
+        done
+    done <<'PLUGIN_TABLE'
+auth|DSH_WITH_AUTH|@xgone/dsh-remote/package.json|@xgone/dsh-remote|
+memory|DSH_WITH_MNEMON|dsh-mnemon/package.json|dsh-mnemon|
+automation|DSH_WITH_AUTOMATION|@michengai/dsh-automation/package.json|@michengai/dsh-automation|
+telegram|DSH_WITH_TELEGRAM|dsh-pai-telegram/package.json|dsh-pai-telegram|
+pai|DSH_WITH_PAI_PLUGINS|dsh-pai-notebook/package.json|dsh-pai-notebook|dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-task-complete-sound dsh-pai-git dsh-pai-web
+PLUGIN_TABLE
+    if [ "${need_copy}" = 1 ] || [ ! -d "${web_dir}/node_modules" ]; then
+        elog "[entrypoint] Installing joint plugin tree to web profile"
+        mkdir -p "${web_dir}/node_modules"
+        rm -rf "${web_dir}/node_modules"
+        cp -r --no-preserve=mode,ownership,timestamps "${seed_dir}/node_modules" "${web_dir}/node_modules"
+        local f
         for f in pnpm-lock.yaml pnpm-workspace.yaml; do
-            if [ -f "${SEED_DIR}/${f}" ]; then
-                ${CP} "${SEED_DIR}/${f}" "${WEB_DIR}/${f}"
+            if [ -f "${seed_dir}/${f}" ]; then
+                cp -r --no-preserve=mode,ownership,timestamps "${seed_dir}/${f}" "${web_dir}/${f}"
             fi
         done
-        SEED_VER="$(node -p "require('${SEED_PLUGIN}').version")"
-        node -e "
+        elog "[entrypoint] Plugin tree installed"
+    else
+        elog "[entrypoint] Plugin tree already installed, skipping"
+    fi
+    # Reconcile the manifest: managed deps/bundles match the gates exactly;
+    # anything else in the manifest (user-added via `dsh plugin add`) is
+    # preserved. Writes only on change.
+    node -e "
 const fs=require('fs');
-const pf='${WEB_DIR}/package.json';
+const pf='${web_dir}/package.json';
 let p={};
 try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; }
 p.name='dsh-profile-web';
 if (p.private!==false) p.private=true;
-p.dependencies=Object.assign({},p.dependencies,{'@xgone/dsh-remote':'${SEED_VER}'});
+if (!p.dependencies || typeof p.dependencies !== 'object') p.dependencies={};
+const managed={${managed#,}};
+let changed=false;
+for (const name of Object.keys(managed)) {
+    const want=managed[name];
+    if (want == null) {
+        if (name in p.dependencies) { delete p.dependencies[name]; changed=true; }
+    } else if (p.dependencies[name] !== want) {
+        p.dependencies[name]=want; changed=true;
+    }
+}
 p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{};
-const want=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app','@xgone/dsh-remote'];
+const base=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app'];
+const wantBundles=base.concat(Object.keys(managed).filter((n)=>managed[n] != null));
 const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[];
-for (const b of want) if(!have.includes(b)) have.push(b);
-p.dsh.profile.bundles=have;
-fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
+const managedSet=new Set(Object.keys(managed));
+const next=[];
+for (const b of have) {
+    if (managedSet.has(b) && !wantBundles.includes(b)) { changed=true; continue; }
+    if (!next.includes(b)) next.push(b);
+}
+for (const b of wantBundles) {
+    if (!next.includes(b)) { next.push(b); changed=true; }
+}
+if (JSON.stringify(next) !== JSON.stringify(have)) { p.dsh.profile.bundles=next; changed=true; }
+if (changed) {
+    fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
+    console.log('[entrypoint] manifest reconciled to gates');
+} else {
+    console.log('[entrypoint] manifest in sync, skipping');
+}
 "
-        if [ -f "${WEB_DIR}/cordis.patch.yml" ] \
-           && cmp -s "${WEB_DIR}/cordis.patch.yml" "${SEED_DIR}/node_modules/@xgone/dsh-remote/cordis.patch.yml"; then
-            cat > "${WEB_DIR}/cordis.patch.yml" <<'PPF'
+    # Auth only: if the live patch layer is byte-identical to the shipped
+    # bundle patch, it was never personalized — restore the empty user layer.
+    if [ -f "${web_dir}/cordis.patch.yml" ] \
+       && cmp -s "${web_dir}/cordis.patch.yml" "${seed_dir}/node_modules/@xgone/dsh-remote/cordis.patch.yml"; then
+        cat > "${web_dir}/cordis.patch.yml" <<'PPF'
 # Your patch layer for this dsh profile, applied after every bundle layer:
 # a top-level YAML array of loader patch entries (id-targeted config
 # overrides, disables, and insert lists; `!!js` expressions allowed).
 []
 PPF
-            elog "[entrypoint] restored user-layer cordis.patch.yml"
-        fi
-        elog "[entrypoint] Auth plugin seed installed"
+        elog "[entrypoint] restored user-layer cordis.patch.yml"
     fi
-fi
+}
 
-# Memory plugin seed (dsh-mnemon, joint tree). Same contract as above.
-MNEMON_SEED_DIR="/opt/dsh-mnemon-seed"
-MNEMON_SEED_PLUGIN="${MNEMON_SEED_DIR}/node_modules/dsh-mnemon/package.json"
-if [ "${RESCUE_PROFILE}" = "web" ] && [ -f "${MNEMON_SEED_PLUGIN}" ]; then
-    if node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('dsh-mnemon'))) process.exit(1)" 2>/dev/null \
-       && [ -f "${WEB_DIR}/node_modules/dsh-mnemon/package.json" ]; then
-        elog "[entrypoint] memory plugin seed already installed, skipping"
-    else
-        elog "[entrypoint] Installing memory plugin seed to web profile"
-        mkdir -p "${WEB_DIR}/node_modules"
-        CP="cp -r --no-preserve=mode,ownership,timestamps"
-        rm -rf "${WEB_DIR}/node_modules"
-        ${CP} "${MNEMON_SEED_DIR}/node_modules" "${WEB_DIR}/node_modules"
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do
-            if [ -f "${MNEMON_SEED_DIR}/${f}" ]; then
-                ${CP} "${MNEMON_SEED_DIR}/${f}" "${WEB_DIR}/${f}"
-            fi
-        done
-        MNEMON_SEED_VER="$(node -p "require('${MNEMON_SEED_PLUGIN}').version")"
-        node -e "
-const fs=require('fs');
-const pf='${WEB_DIR}/package.json';
-let p={};
-try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; }
-p.name='dsh-profile-web';
-if (p.private!==false) p.private=true;
-p.dependencies=Object.assign({},p.dependencies,{'dsh-mnemon':'${MNEMON_SEED_VER}'});
-p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{};
-const want=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app','dsh-mnemon'];
-const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[];
-for (const b of want) if(!have.includes(b)) have.push(b);
-p.dsh.profile.bundles=have;
-fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
-"
-        elog "[entrypoint] Memory plugin seed installed"
-    fi
-fi
-
-# Durable automation seed (@michengai/dsh-automation, full joint tree with the
-# auth+memory seeds). Same layout contract: installed wholesale (last copy
-# wins on fresh volumes, all three blocks skip on steady state), manifest
-# merge only ADDS the dep and bundle. cordis.patch.yml is NEVER overwritten.
-# Gate with DSH_WITH_AUTOMATION=false to skip. Version pinned exact in .env.
-AUTO_SEED_DIR="/opt/dsh-auto-seed"
-AUTO_SEED_PLUGIN="${AUTO_SEED_DIR}/node_modules/@michengai/dsh-automation/package.json"
-if [ "${DSH_WITH_AUTOMATION:-true}" = "true" ] && [ "${RESCUE_PROFILE}" = "web" ] && [ -f "${AUTO_SEED_PLUGIN}" ]; then
-    if node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('@michengai/dsh-automation'))) process.exit(1)" 2>/dev/null \
-       && [ -f "${WEB_DIR}/node_modules/@michengai/dsh-automation/package.json" ]; then
-        elog "[entrypoint] automation plugin seed already installed, skipping"
-    else
-        elog "[entrypoint] Installing automation plugin seed to web profile"
-        mkdir -p "${WEB_DIR}/node_modules"
-        CP="cp -r --no-preserve=mode,ownership,timestamps"
-        rm -rf "${WEB_DIR}/node_modules"
-        ${CP} "${AUTO_SEED_DIR}/node_modules" "${WEB_DIR}/node_modules"
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do
-            if [ -f "${AUTO_SEED_DIR}/${f}" ]; then
-                ${CP} "${AUTO_SEED_DIR}/${f}" "${WEB_DIR}/${f}"
-            fi
-        done
-        
-        AUTO_SEED_VER="$(node -p "require('${AUTO_SEED_PLUGIN}').version")"
-        node -e "
-const fs=require('fs');
-const pf='${WEB_DIR}/package.json';
-let p={};
-try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; }
-p.name='dsh-profile-web';
-if (p.private!==false) p.private=true;
-p.dependencies=Object.assign({},p.dependencies,{'@michengai/dsh-automation':'${AUTO_SEED_VER}'});
-p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{};
-const want=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app','@michengai/dsh-automation'];
-const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[];
-for (const b of want) if(!have.includes(b)) have.push(b);
-p.dsh.profile.bundles=have;
-fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
-"
-        elog "[entrypoint] Automation plugin seed installed"
-    fi
-fi
-
-# First-party Telegram seed (dsh-pai-telegram, joint tree with automation).
-# Same contract: installed wholesale (last copy wins on fresh volumes, all
-# blocks skip on steady state), manifest merge only ADDS the dep and bundle.
-# cordis.patch.yml is NEVER overwritten. Gate with DSH_WITH_TELEGRAM=false
-# to skip. Host-only plugin (inject:[]) — cannot red-screen the web UI.
-TELEGRAM_SEED_DIR="/opt/dsh-telegram-seed"
-TELEGRAM_SEED_PLUGIN="${TELEGRAM_SEED_DIR}/node_modules/dsh-pai-telegram/package.json"
-if [ "${DSH_WITH_TELEGRAM:-true}" = "true" ] && [ "${RESCUE_PROFILE}" = "web" ] && [ -f "${TELEGRAM_SEED_PLUGIN}" ]; then
-    TELEGRAM_SEED_VER="$(node -p "require('${TELEGRAM_SEED_PLUGIN}').version" 2>/dev/null || echo "")"
-    TELEGRAM_LIVE_VER="$(node -p "require('${WEB_DIR}/node_modules/dsh-pai-telegram/package.json').version" 2>/dev/null || echo "")"
-    if [ -n "${TELEGRAM_SEED_VER}" ] && [ "${TELEGRAM_SEED_VER}" = "${TELEGRAM_LIVE_VER}" ] \
-       && node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('dsh-pai-telegram'))) process.exit(1)" 2>/dev/null \
-       && [ -f "${WEB_DIR}/node_modules/dsh-pai-telegram/package.json" ]; then
-        elog "[entrypoint] telegram plugin seed already installed, skipping"
-    else
-        if [ -n "${TELEGRAM_LIVE_VER}" ] && [ "${TELEGRAM_SEED_VER}" != "${TELEGRAM_LIVE_VER}" ]; then
-            elog "[entrypoint] Upgrading telegram plugin ${TELEGRAM_LIVE_VER} -> ${TELEGRAM_SEED_VER}"
-        else
-            elog "[entrypoint] Installing telegram plugin seed to web profile"
-        fi
-        mkdir -p "${WEB_DIR}/node_modules"
-        CP="cp -r --no-preserve=mode,ownership,timestamps"
-        rm -rf "${WEB_DIR}/node_modules"
-        ${CP} "${TELEGRAM_SEED_DIR}/node_modules" "${WEB_DIR}/node_modules"
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do
-            if [ -f "${TELEGRAM_SEED_DIR}/${f}" ]; then
-                ${CP} "${TELEGRAM_SEED_DIR}/${f}" "${WEB_DIR}/${f}"
-            fi
-        done
-        TELEGRAM_SEED_VER="$(node -p "require('${TELEGRAM_SEED_PLUGIN}').version")"
-        node -e "
-const fs=require('fs');
-const pf='${WEB_DIR}/package.json';
-let p={};
-try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; }
-p.name='dsh-profile-web';
-if (p.private!==false) p.private=true;
-p.dependencies=Object.assign({},p.dependencies,{'dsh-pai-telegram':'${TELEGRAM_SEED_VER}'});
-p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{};
-const want=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app','dsh-pai-telegram'];
-const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[];
-for (const b of want) if(!have.includes(b)) have.push(b);
-p.dsh.profile.bundles=have;
-fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
-"
-        elog "[entrypoint] Telegram plugin seed installed"
-    fi
-fi
-
-# First-party pai-stack plugins seed (notebook, adr, design, terrain, git, memory, web).
-# Same contract: installed wholesale (last copy wins on fresh volumes, all
-# blocks skip on steady state), manifest merge only ADDS the deps and bundles.
-# cordis.patch.yml is NEVER overwritten. Gate with DSH_WITH_PAI_PLUGINS=false
-# to skip. These plugins provide tools: pai_notebook_ops, pai_adr_ops, 
-# pai_ops_design_ops, pai_terrain_ops, pai_git_ops, pai_memory_ops, pai_web_ops.
-PAI_SEED_DIR="/opt/dsh-pai-seed"
-PAI_SEED_PLUGIN="${PAI_SEED_DIR}/node_modules/dsh-pai-notebook/package.json"
-if [ "${DSH_WITH_PAI_PLUGINS:-true}" = "true" ] && [ "${RESCUE_PROFILE}" = "web" ] && [ -f "${PAI_SEED_PLUGIN}" ]; then
-    PAI_SEED_VER="$(node -p "require('${PAI_SEED_PLUGIN}').version" 2>/dev/null || echo "")"
-    PAI_LIVE_VER="$(node -p "require('${WEB_DIR}/node_modules/dsh-pai-notebook/package.json').version" 2>/dev/null || echo "")"
-    if [ -n "${PAI_SEED_VER}" ] && [ "${PAI_SEED_VER}" = "${PAI_LIVE_VER}" ] \
-       && node -e "const p=require('${WEB_DIR}/package.json'); if(!(p.dsh&&p.dsh.profile&&Array.isArray(p.dsh.profile.bundles)&&p.dsh.profile.bundles.includes('dsh-pai-notebook'))) process.exit(1)" 2>/dev/null \
-       && [ -f "${WEB_DIR}/node_modules/dsh-pai-notebook/package.json" ]; then
-        elog "[entrypoint] pai-stack plugins seed already installed, skipping"
-    else
-        if [ -n "${PAI_LIVE_VER}" ] && [ "${PAI_SEED_VER}" != "${PAI_LIVE_VER}" ]; then
-            elog "[entrypoint] Upgrading pai-stack plugins ${PAI_LIVE_VER} -> ${PAI_SEED_VER}"
-        else
-            elog "[entrypoint] Installing pai-stack plugins seed to web profile"
-        fi
-        mkdir -p "${WEB_DIR}/node_modules"
-        CP="cp -r --no-preserve=mode,ownership,timestamps"
-        rm -rf "${WEB_DIR}/node_modules"
-        ${CP} "${PAI_SEED_DIR}/node_modules" "${WEB_DIR}/node_modules"
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do
-            if [ -f "${PAI_SEED_DIR}/${f}" ]; then
-                ${CP} "${PAI_SEED_DIR}/${f}" "${WEB_DIR}/${f}"
-            fi
-        done
-        PAI_SEED_VER="$(node -p "require('${PAI_SEED_PLUGIN}').version")"
-        node -e "
-const fs=require('fs');
-const pf='${WEB_DIR}/package.json';
-let p={};
-try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; }
-p.name='dsh-profile-web';
-if (p.private!==false) p.private=true;
-p.dependencies=Object.assign({},p.dependencies,{
-    'dsh-pai-notebook':'${PAI_SEED_VER}',
-    'dsh-pai-adr':'${PAI_SEED_VER}',
-    'dsh-pai-design':'${PAI_SEED_VER}',
-    'dsh-pai-terrain':'${PAI_SEED_VER}',
-    'dsh-pai-git':'${PAI_SEED_VER}',
-    'dsh-pai-web':'${PAI_SEED_VER}',
-});
-p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{};
-const want=[
-    '@deepseek-ai/dsh-base',
-    '@deepseek-ai/dsh-web-app',
-    'dsh-pai-notebook',
-    'dsh-pai-adr',
-    'dsh-pai-design',
-    'dsh-pai-terrain',
-    'dsh-pai-git',
-    'dsh-pai-web',
-];
-const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[];
-for (const b of want) if(!have.includes(b)) have.push(b);
-p.dsh.profile.bundles=have;
-fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n');
-"
-        elog "[entrypoint] Pai-stack plugins seed installed"
-    fi
-fi
+WEB_DIR="/data/dsh/profiles/web"
+sync_plugin_tree
 
 # Playwright library into the live web profile (for pre-existing volumes).
-# The pai seed carries node_modules/playwright since the image build, but
-# volumes created before that lack it and the seed's version gate (notebook
-# version) may not fire. Copy iff missing — never overwrites cordis.patch.yml.
-if [ "${RESCUE_PROFILE}" = "web" ] && [ -d "${PAI_SEED_DIR}/node_modules/playwright" ] && [ ! -f "${WEB_DIR}/node_modules/playwright/package.json" ]; then
+# The joint seed carries node_modules/playwright since the image build, but
+# volumes synced before that lack it. Copy iff missing — never overwrites
+# cordis.patch.yml.
+if [ "${RESCUE_PROFILE}" = "web" ] && [ -d "/opt/dsh-seed/node_modules/playwright" ] && [ ! -f "${WEB_DIR}/node_modules/playwright/package.json" ]; then
     elog "[entrypoint] Installing playwright library into live web profile"
     mkdir -p "${WEB_DIR}/node_modules" 2>/dev/null || true
     CP="cp -r --no-preserve=mode,ownership,timestamps"
     rm -rf "${WEB_DIR}/node_modules/playwright"
-    ${CP} "${PAI_SEED_DIR}/node_modules/playwright" "${WEB_DIR}/node_modules/playwright"
+    ${CP} "/opt/dsh-seed/node_modules/playwright" "${WEB_DIR}/node_modules/playwright"
     elog "[entrypoint] Playwright library installed"
 fi
 
@@ -561,23 +477,6 @@ cleanup() {
     exit 0
 }
 trap cleanup SIGTERM SIGINT SIGQUIT
-
-# Force English locale in web app (patch index.html lang attribute and add locale cookie)
-INDEX_HTML="/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-web-frontend/dist/index.html"
-if [ -f "${INDEX_HTML}" ]; then
-    sed -i 's/<html lang="[^"]*"/<html lang="en"/' "${INDEX_HTML}" 2>/dev/null || true
-    # Add locale cookie setter script before </head> using python for reliability
-    python3 -c "
-import sys
-with open('${INDEX_HTML}', 'r') as f:
-    content = f.read()
-script = '<script>(function(){try{document.documentElement.lang=\"en\";document.cookie=\"dsh_locale=en;path=/;max-age=31536000\"}catch(e){}})()</script>'
-content = content.replace('</head>', script + '\n</head>')
-with open('${INDEX_HTML}', 'w') as f:
-    f.write(content)
-" 2>/dev/null || true
-    elog "[entrypoint] Patched web app locale to English"
-fi
 
 elog "[entrypoint] starting dsh web (internal 127.0.0.1:${PORT_INNER})"
 # shellcheck disable=SC2086

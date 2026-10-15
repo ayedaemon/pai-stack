@@ -72,6 +72,13 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*; \
     python3 -c "import yaml; print('[deps] python3-yaml', yaml.__version__)"
 
+# Shared seed-tree builders, sourced by every seed stage below (all stages
+# descend from `deps`, so one COPY covers them).
+COPY build-seed-lib.sh /usr/local/bin/dsh-seed-lib.sh
+RUN chmod 755 /usr/local/bin/dsh-seed-lib.sh \
+    && sh -n /usr/local/bin/dsh-seed-lib.sh \
+    && echo "[deps] seed lib installed"
+
 # ── Stage 2: Install DSH (official npm package) ─────────────────────────
 FROM deps AS dsh-install
 
@@ -100,100 +107,15 @@ RUN set -eux; \
     && /usr/local/bin/mnemon --version \
     && chmod -R a+rX /usr/local/lib/node_modules/@mnemon-dev/mnemon
 
-# ── Stage 4: Prepare auth plugin seed (@xgone/dsh-remote) ─────────────────
-# This replicates upstream's approach: pre-install plugin via pnpm into a seed
-# directory, then entrypoint copies it to the web profile on first boot.
-FROM mnemon AS remote-plugin-seed
-
-ARG WITH_REMOTE_PLUGIN=true
-ARG REMOTE_PLUGIN_VERSION=0.3.5
-ARG REMOTE_PLUGIN_NAME=@xgone/dsh-remote
-
-# pnpm is installed with DSH at /usr/local/bin/pnpm (from NPM_CONFIG_PREFIX=/usr/local)
-RUN set -eux; \
-    if [ "${WITH_REMOTE_PLUGIN}" = "true" ] && [ -n "${REMOTE_PLUGIN_VERSION}" ]; then \
-        echo "[seed] Installing ${REMOTE_PLUGIN_NAME}@${REMOTE_PLUGIN_VERSION} via pnpm"; \
-        staging=/opt/dsh-remote-seed; \
-        tmp_profile=/tmp/remote-seed-profile; \
-        pnpm_bin=/usr/local/bin/pnpm; \
-        if [ ! -x "${pnpm_bin}" ]; then \
-            echo "[seed] FATAL: ${pnpm_bin} not found" >&2; exit 1; \
-        fi; \
-        rm -rf "${staging}" "${tmp_profile}"; \
-        mkdir -p "${staging}" "${tmp_profile}"; \
-        printf '{\n  "name": "dsh-remote-seed",\n  "private": true,\n  "dependencies": {}\n}\n' > "${tmp_profile}/package.json"; \
-        printf 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n' > "${tmp_profile}/pnpm-workspace.yaml"; \
-        cd "${tmp_profile}"; \
-        export NPM_CONFIG_CACHE=/root/.npm; \
-        "${pnpm_bin}" add --store-dir /root/.pnpm-store --ignore-scripts "${REMOTE_PLUGIN_NAME}@${REMOTE_PLUGIN_VERSION}"; \
-        cp -a "${tmp_profile}/node_modules" "${staging}/node_modules"; \
-        cp -a "${tmp_profile}/package.json" "${staging}/package.json"; \
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
-            if [ -f "${tmp_profile}/${f}" ]; then cp -a "${tmp_profile}/${f}" "${staging}/${f}"; fi; \
-        done; \
-        # Verify plugin structure
-        test -f "${staging}/node_modules/${REMOTE_PLUGIN_NAME}/package.json"; \
-        test -f "${staging}/node_modules/${REMOTE_PLUGIN_NAME}/cordis.patch.yml"; \
-        node -e "const p=require('${staging}/node_modules/${REMOTE_PLUGIN_NAME}/package.json'); if(!p.dsh||!p.dsh.bundle||!p.dsh.bundle.patch) throw new Error('not a DSH bundle: '+p.name); console.log('[seed] auth plugin', p.name+'@'+p.version, 'bundle patch:', p.dsh.bundle.patch)"; \
-        chmod -R a+rX "${staging}"; \
-        rm -rf "${tmp_profile}"; \
-        echo '[seed] auth plugin staged at /opt/dsh-remote-seed'; \
-    else \
-        echo "[seed] WITH_REMOTE_PLUGIN=false or version empty, skipping auth plugin seed"; \
-        mkdir -p /opt/dsh-remote-seed; \
-    fi
-
-# ── Stage 4b: Prepare memory plugin seed (dsh-mnemon) ───────────────────
-# Joint tree: starts as a copy of the auth seed (when enabled) so pnpm
-# resolves BOTH plugins together — exactly what `dsh plugin add` does live
-# (verified: remote 0.3.5 + mnemon 0.5.24 resolve cleanly). The entrypoint
-# installs this tree wholesale, so no runtime merge conflicts are possible.
-FROM remote-plugin-seed AS mnemon-plugin-seed
-
-ARG WITH_REMOTE_PLUGIN=true
-ARG WITH_MNEMON_PLUGIN=true
-ARG MNEMON_PLUGIN_VERSION=0.5.24
-ARG MNEMON_PLUGIN_NAME=dsh-mnemon
-
-RUN set -eux; \
-    if [ "${WITH_MNEMON_PLUGIN}" = "true" ] && [ -n "${MNEMON_PLUGIN_VERSION}" ]; then \
-        echo "[seed] Installing ${MNEMON_PLUGIN_NAME}@${MNEMON_PLUGIN_VERSION} (joint with auth seed) via pnpm"; \
-        staging=/opt/dsh-mnemon-seed; \
-        tmp_profile=/tmp/mnemon-seed-profile; \
-        pnpm_bin=/usr/local/bin/pnpm; \
-        if [ ! -x "${pnpm_bin}" ]; then \
-            echo "[seed] FATAL: ${pnpm_bin} not found" >&2; exit 1; \
-        fi; \
-        rm -rf "${staging}" "${tmp_profile}"; \
-        mkdir -p "${staging}" "${tmp_profile}"; \
-        if [ "${WITH_REMOTE_PLUGIN}" = "true" ] && [ -d /opt/dsh-remote-seed/node_modules ]; then \
-            cp -a /opt/dsh-remote-seed/. "${tmp_profile}/"; \
-            node -p "require('${tmp_profile}/package.json').name" | grep -qE "^(seed|dsh-profile-web|dsh-remote-seed|dsh-mnemon-seed|dsh-auto-seed|dsh-telegram-seed|dsh-pai-seed)$" || exit 1; \
-        else \
-            printf '{\n  "name": "dsh-mnemon-seed",\n  "private": true,\n  "dependencies": {}\n}\n' > "${tmp_profile}/package.json"; \
-            printf 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n' > "${tmp_profile}/pnpm-workspace.yaml"; \
-        fi; \
-        cd "${tmp_profile}"; \
-        export NPM_CONFIG_CACHE=/root/.npm; \
-        "${pnpm_bin}" add --store-dir /root/.pnpm-store --ignore-scripts "${MNEMON_PLUGIN_NAME}@${MNEMON_PLUGIN_VERSION}"; \
-        cp -a "${tmp_profile}/node_modules" "${staging}/node_modules"; \
-        cp -a "${tmp_profile}/package.json" "${staging}/package.json"; \
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
-            if [ -f "${tmp_profile}/${f}" ]; then cp -a "${tmp_profile}/${f}" "${staging}/${f}"; fi; \
-        done; \
-        test -f "${staging}/node_modules/${MNEMON_PLUGIN_NAME}/package.json"; \
-        test -f "${staging}/node_modules/${MNEMON_PLUGIN_NAME}/cordis.patch.yml"; \
-        node -e "const p=require('${staging}/node_modules/${MNEMON_PLUGIN_NAME}/package.json'); if(!p.dsh||!p.dsh.bundle||!p.dsh.bundle.patch) throw new Error('not a DSH bundle: '+p.name); console.log('[seed] memory plugin', p.name+'@'+p.version, 'bundle patch:', p.dsh.bundle.patch)"; \
-        chmod -R a+rX "${staging}"; \
-        rm -rf "${tmp_profile}"; \
-        echo '[seed] memory plugin staged at /opt/dsh-mnemon-seed (joint tree)'; \
-    else \
-        echo "[seed] WITH_MNEMON_PLUGIN=false or version empty, skipping memory plugin seed"; \
-        mkdir -p /opt/dsh-mnemon-seed; \
-    fi
+# ── Plugin seeds are built ONCE in final (single joint tree at /opt/dsh-seed).
+# Earlier revisions built one cumulative tree per plugin (remote → mnemon →
+# auto → telegram → pai); all four earlier trees were strict subsets of the
+# last — ~300MB of duplicated image layers. Gates are now enforced at
+# manifest level by the entrypoint (unlisted bundles never load), so one
+# tree suffices. See the joint seed build in final below.
 
 # ── Stage 5: Install Go toolchain ───────────────────────────────────────
-FROM mnemon-plugin-seed AS go-toolchain
+FROM mnemon AS go-toolchain
 
 ARG GO_VERSION=1.27.1
 ARG GO_SHA256_AMD64=63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445
@@ -281,226 +203,111 @@ FROM docker-cli AS final
 ARG TARGET_UID=1000
 ARG TARGET_GID=1000
 ARG WITH_DOCKER_SOCKET=true
-# Auth plugin seed args (passed through from earlier stage)
+# Plugin seed versions (all plugins resolve jointly in the single seed build
+# below; entrypoint gates are runtime-only DSH_WITH_* — see .env.example §8).
+# Auth plugin (@xgone/dsh-remote) — matches upstream default
 ARG WITH_REMOTE_PLUGIN=true
 ARG REMOTE_PLUGIN_VERSION=0.3.5
 ARG REMOTE_PLUGIN_NAME=@xgone/dsh-remote
-# Memory plugin seed args (passed through from earlier stage)
+# Memory plugin (dsh-mnemon) — tools surface as mnemon_* (no rename support
+# upstream); shared skills keep calling Hermes-native mnemosyne_*
 ARG WITH_MNEMON_PLUGIN=true
 ARG MNEMON_PLUGIN_VERSION=0.5.24
 ARG MNEMON_PLUGIN_NAME=dsh-mnemon
-# Durable automation plugin (joint tree built here, in final — placing it in
-# an earlier stage would invalidate the cached Go/uv/Rust layers below)
+# Durable automation plugin (@michengai/dsh-automation) — peerDeps cover this
+# DSH version explicitly (verified Oct-2026 — the alternatives only allow
+# <0.2.0). `--ignore-scripts` blocks lifecycle scripts at seed time.
+# Pinned exact in .env (AUTOMATION_PLUGIN_VERSION).
 ARG WITH_AUTOMATION_PLUGIN=true
 ARG AUTOMATION_PLUGIN_VERSION=0.1.54
 ARG AUTOMATION_PLUGIN_NAME=@michengai/dsh-automation
-# First-party Telegram plugin (in-repo source at plugins/dsh-pai-telegram,
-# joint tree built here in final alongside automation)
+# First-party Telegram plugin (in-repo plugins/dsh-pai-telegram).
+# Host-only (inject:[]) so it cannot red-screen the web UI.
 ARG WITH_TELEGRAM_PLUGIN=true
 ARG TELEGRAM_PLUGIN_NAME=dsh-pai-telegram
 # First-party pai-stack plugins (in-repo source at plugins/dsh-pai-*)
+# Always baked (in-repo source, zero registry risk); the entrypoint's
+# DSH_WITH_PAI_PLUGINS runtime gate controls installation instead.
+# (No compose passthrough by design — unlike the registry plugins above.)
 ARG WITH_PAI_PLUGINS=true
 # Local browser surfing (replaces DeepSeek-hosted web search):
 # Playwright library + Chromium. Pinned exact; bump deliberately
 # (browser build is ~300MB and needs `make dsh-build && make dsh-up`).
 ARG PLAYWRIGHT_VERSION=1.49.1
 
-# The /opt/dsh-remote-seed directory is already present from the remote-plugin-seed stage
-# (which is an ancestor of docker-cli). Verify it exists.
-RUN if [ "${WITH_REMOTE_PLUGIN}" = "true" ] && [ -n "${REMOTE_PLUGIN_VERSION}" ]; then \
-        test -d /opt/dsh-remote-seed && test -f /opt/dsh-remote-seed/node_modules/${REMOTE_PLUGIN_NAME}/cordis.patch.yml \
-        && echo "[final] Auth plugin seed verified at /opt/dsh-remote-seed"; \
-    else \
-        echo "[final] No auth plugin seed (WITH_REMOTE_PLUGIN=${WITH_REMOTE_PLUGIN})"; \
-    fi
-
-# Same for the memory plugin seed (ancestor mnemon-plugin-seed).
-RUN if [ "${WITH_MNEMON_PLUGIN}" = "true" ] && [ -n "${MNEMON_PLUGIN_VERSION}" ]; then \
-        test -d /opt/dsh-mnemon-seed && test -f /opt/dsh-mnemon-seed/node_modules/${MNEMON_PLUGIN_NAME}/cordis.patch.yml \
-        && echo "[final] Memory plugin seed verified at /opt/dsh-mnemon-seed"; \
-    else \
-        echo "[final] No memory plugin seed (WITH_MNEMON_PLUGIN=${WITH_MNEMON_PLUGIN})"; \
-    fi
-
-# ── Durable automation seed (@michengai/dsh-automation, joint tree) ─────────
-# Extends the mnemon joint tree (remote+mnemon) the same way the mnemon seed
-# extended the auth seed: copy + `pnpm add`, so the entrypoint installs one
-# superset tree with no runtime merge conflicts by construction. Built here in
-# final (not as an earlier stage) so the cached toolchain layers above stay
-# valid. Pinned exact in .env (AUTOMATION_PLUGIN_VERSION); peerDeps cover
-# DSH 0.2.0-rc.2 explicitly (verified Oct-2026 — the alternatives only allow
-# <0.2.0). `--ignore-scripts` blocks lifecycle scripts at seed time.
-RUN set -eux; \
-    if [ "${WITH_AUTOMATION_PLUGIN}" = "true" ] && [ -n "${AUTOMATION_PLUGIN_VERSION}" ]; then \
-        echo "[seed] Installing ${AUTOMATION_PLUGIN_NAME}@${AUTOMATION_PLUGIN_VERSION} (joint with auth+memory seeds) via pnpm"; \
-        staging=/opt/dsh-auto-seed; \
-        tmp_profile=/tmp/auto-seed-profile; \
-        pnpm_bin=/usr/local/bin/pnpm; \
-        if [ ! -x "${pnpm_bin}" ]; then \
-            echo "[seed] FATAL: ${pnpm_bin} not found" >&2; exit 1; \
-        fi; \
-        rm -rf "${staging}" "${tmp_profile}"; \
-        mkdir -p "${staging}" "${tmp_profile}"; \
-        cp -a /opt/dsh-mnemon-seed/. "${tmp_profile}/"; \
-        node -p "require('${tmp_profile}/package.json').name" | grep -qE "^(seed|dsh-profile-web|dsh-remote-seed|dsh-mnemon-seed|dsh-auto-seed|dsh-telegram-seed|dsh-pai-seed)$" || exit 1; \
-        cd "${tmp_profile}"; \
-        export NPM_CONFIG_CACHE=/root/.npm; \
-        "${pnpm_bin}" add --store-dir /root/.pnpm-store --ignore-scripts "${AUTOMATION_PLUGIN_NAME}@${AUTOMATION_PLUGIN_VERSION}"; \
-        cp -a "${tmp_profile}/node_modules" "${staging}/node_modules"; \
-        cp -a "${tmp_profile}/package.json" "${staging}/package.json"; \
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
-            if [ -f "${tmp_profile}/${f}" ]; then cp -a "${tmp_profile}/${f}" "${staging}/${f}"; fi; \
-        done; \
-test -f "${staging}/node_modules/${AUTOMATION_PLUGIN_NAME}/package.json"; \
-        test -f "${staging}/node_modules/${AUTOMATION_PLUGIN_NAME}/cordis.patch.yml"; \
-        node -e "const p=require('${staging}/node_modules/${AUTOMATION_PLUGIN_NAME}/package.json'); if(!p.dsh||!p.dsh.bundle||!p.dsh.bundle.patch) throw new Error('not a DSH bundle: '+p.name); console.log('[seed] automation plugin', p.name+'@'+p.version, 'bundle patch:', p.dsh.bundle.patch)"; \
-        chmod -R a+rX "${staging}"; \
-        rm -rf "${tmp_profile}"; \
-        echo '[seed] automation plugin staged at /opt/dsh-auto-seed (joint tree)'; \
-    else \
-        echo "[seed] WITH_AUTOMATION_PLUGIN=false or version empty, skipping automation seed"; \
-        mkdir -p /opt/dsh-auto-seed; \
-fi
- 
-# Patch dsh-automation to force English locale (Zg function) at build time
-RUN AUTOMATION_CLIENT="/opt/dsh-auto-seed/node_modules/@michengai/dsh-automation/lib/client.js" && \
-    if [ -f "${AUTOMATION_CLIENT}" ]; then \
-        sed -i 's/function Zg(e){return [^}]*}/function Zg(e){return w3}/g' "${AUTOMATION_CLIENT}" && \
-        echo "[seed] Patched dsh-automation Zg function to force English locale"; \
-    fi
- 
-# ── First-party Telegram seed (dsh-pai-telegram, joint tree) ─────────────
-# In-repo source (no registry): extends the automation joint tree by
-# manual copy + manifest merge (same as entrypoint does at runtime).
-# Avoids pnpm file: deps which break when source is cleaned up.
-# Built here in final so toolchain layers stay cached. Phase 3 scaffold is
-# host-only (inject:[]) so it cannot red-screen the web UI.
+# ── Joint plugin seed (ALL plugins, ONE tree at /opt/dsh-seed) ──────────
+# One tmp profile resolves everything jointly — the same operations the old
+# per-plugin stages did, minus the 4 redundant cumulative trees: registry
+# plugins via pnpm (in dependency order), in-repo plugins via copy (pnpm
+# file: deps break on cleanup), one manifest merge, one verify. Built here
+# in final (not as earlier stages) so the cached toolchain layers above
+# stay valid. The entrypoint copies this tree once and enforces gates at
+# manifest level (unlisted bundles never load).
 COPY plugins/dsh-pai-telegram /tmp/dsh-pai-telegram-src
-RUN set -eux; \
-    if [ "${WITH_TELEGRAM_PLUGIN:-true}" = "true" ]; then \
-        echo "[seed] Installing dsh-pai-telegram (joint with auto seed) via manual copy:"; \
-        staging=/opt/dsh-telegram-seed; \
-        tmp_profile=/tmp/telegram-seed-profile; \
-        rm -rf "${staging}" "${tmp_profile}"; \
-        mkdir -p "${staging}" "${tmp_profile}"; \
-        cp -a /opt/dsh-auto-seed/. "${tmp_profile}/"; \
-        node -p "require('${tmp_profile}/package.json').name" | grep -qE "^(seed|dsh-profile-web|dsh-remote-seed|dsh-mnemon-seed|dsh-auto-seed|dsh-telegram-seed|dsh-pai-seed)$" || exit 1; \
-        mkdir -p "${tmp_profile}/node_modules"; \
-        cp -a /tmp/dsh-pai-telegram-src "${tmp_profile}/node_modules/${TELEGRAM_PLUGIN_NAME}"; \
-        TELEGRAM_SEED_VER="$(node -p "require('/tmp/dsh-pai-telegram-src/package.json').version")"; \
-        node -e " \
-            const fs=require('fs'); \
-            const pf='${tmp_profile}/package.json'; \
-            let p={}; \
-            try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; } \
-            p.name='dsh-profile-web'; \
-            if (p.private!==false) p.private=true; \
-            p.dependencies=Object.assign({},p.dependencies,{'${TELEGRAM_PLUGIN_NAME}':'${TELEGRAM_SEED_VER}'}); \
-            p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{}; \
-            const want=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app','${TELEGRAM_PLUGIN_NAME}']; \
-            const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[]; \
-            for (const b of want) if(!have.includes(b)) have.push(b); \
-            p.dsh.profile.bundles=have; \
-            fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n'); \
-        "; \
-        cp -a "${tmp_profile}/node_modules" "${staging}/node_modules"; \
-        cp -a "${tmp_profile}/package.json" "${staging}/package.json"; \
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
-            if [ -f "${tmp_profile}/${f}" ]; then cp -a "${tmp_profile}/${f}" "${staging}/${f}"; fi; \
-        done; \
-        test -f "${staging}/node_modules/${TELEGRAM_PLUGIN_NAME}/package.json"; \
-        test -f "${staging}/node_modules/${TELEGRAM_PLUGIN_NAME}/cordis.patch.yml"; \
-        test -f "${staging}/node_modules/${TELEGRAM_PLUGIN_NAME}/lib/index.js"; \
-        node -e "const p=require('${staging}/node_modules/${TELEGRAM_PLUGIN_NAME}/package.json'); if(!p.dsh||!p.dsh.bundle||!p.dsh.bundle.patch) throw new Error('not a DSH bundle: '+p.name); console.log('[seed] telegram plugin', p.name+'@'+p.version, 'bundle patch:', p.dsh.bundle.patch)"; \
-        node --check "${staging}/node_modules/${TELEGRAM_PLUGIN_NAME}/lib/index.js"; \
-        chmod -R a+rX "${staging}"; \
-        rm -rf "${tmp_profile}" /tmp/dsh-pai-telegram-src; \
-        echo '[seed] telegram plugin staged at /opt/dsh-telegram-seed (joint tree)'; \
-    else \
-        echo "[seed] WITH_TELEGRAM_PLUGIN=false, skipping telegram seed"; \
-        mkdir -p /opt/dsh-telegram-seed; \
-        rm -rf /tmp/dsh-pai-telegram-src; \
-    fi
-
-# First-party pai-stack plugins seed (notebook, adr, design, terrain, git, memory, web)
-# Extends the telegram joint tree by manual copy + manifest merge (same as entrypoint).
-# Avoids pnpm file: deps which break when source is cleaned up.
 COPY plugins/dsh-pai-notebook /tmp/dsh-pai-notebook-src
 COPY plugins/dsh-pai-adr /tmp/dsh-pai-adr-src
 COPY plugins/dsh-pai-design /tmp/dsh-pai-design-src
 COPY plugins/dsh-pai-terrain /tmp/dsh-pai-terrain-src
 COPY plugins/dsh-pai-git /tmp/dsh-pai-git-src
+COPY plugins/dsh-pai-task-complete-sound /tmp/dsh-pai-task-complete-sound-src
 COPY plugins/dsh-pai-web /tmp/dsh-pai-web-src
 RUN set -eux; \
+    . /usr/local/bin/dsh-seed-lib.sh; \
+    seed_begin /opt/dsh-seed /tmp/seed-profile dsh-seed; \
+    MANIFEST=""; REGISTRY=""; FIRST=""; \
+    if [ "${WITH_REMOTE_PLUGIN}" = "true" ] && [ -n "${REMOTE_PLUGIN_VERSION}" ]; then \
+        echo "[seed] Resolving ${REMOTE_PLUGIN_NAME}@${REMOTE_PLUGIN_VERSION} via pnpm"; \
+        seed_pnpm_add /tmp/seed-profile "${REMOTE_PLUGIN_NAME}@${REMOTE_PLUGIN_VERSION}"; \
+        MANIFEST="${MANIFEST} ${REMOTE_PLUGIN_NAME}:${REMOTE_PLUGIN_VERSION}"; \
+        REGISTRY="${REGISTRY} ${REMOTE_PLUGIN_NAME}"; \
+    fi; \
+    if [ "${WITH_MNEMON_PLUGIN}" = "true" ] && [ -n "${MNEMON_PLUGIN_VERSION}" ]; then \
+        echo "[seed] Resolving ${MNEMON_PLUGIN_NAME}@${MNEMON_PLUGIN_VERSION} via pnpm"; \
+        seed_pnpm_add /tmp/seed-profile "${MNEMON_PLUGIN_NAME}@${MNEMON_PLUGIN_VERSION}"; \
+        MANIFEST="${MANIFEST} ${MNEMON_PLUGIN_NAME}:${MNEMON_PLUGIN_VERSION}"; \
+        REGISTRY="${REGISTRY} ${MNEMON_PLUGIN_NAME}"; \
+    fi; \
+    if [ "${WITH_AUTOMATION_PLUGIN}" = "true" ] && [ -n "${AUTOMATION_PLUGIN_VERSION}" ]; then \
+        echo "[seed] Resolving ${AUTOMATION_PLUGIN_NAME}@${AUTOMATION_PLUGIN_VERSION} via pnpm"; \
+        seed_pnpm_add /tmp/seed-profile "${AUTOMATION_PLUGIN_NAME}@${AUTOMATION_PLUGIN_VERSION}"; \
+        MANIFEST="${MANIFEST} ${AUTOMATION_PLUGIN_NAME}:${AUTOMATION_PLUGIN_VERSION}"; \
+        REGISTRY="${REGISTRY} ${AUTOMATION_PLUGIN_NAME}"; \
+    fi; \
+    if [ "${WITH_TELEGRAM_PLUGIN:-true}" = "true" ]; then \
+        echo "[seed] Staging dsh-pai-telegram via manual copy"; \
+        seed_copy_src /tmp/seed-profile /tmp/dsh-pai-telegram-src "${TELEGRAM_PLUGIN_NAME}"; \
+        _ver="$(node -p "require('/tmp/dsh-pai-telegram-src/package.json').version")"; \
+        MANIFEST="${MANIFEST} ${TELEGRAM_PLUGIN_NAME}:${_ver}"; \
+        FIRST="${FIRST} ${TELEGRAM_PLUGIN_NAME}"; \
+    fi; \
     if [ "${WITH_PAI_PLUGINS:-true}" = "true" ]; then \
-        echo "[seed] Installing pai-stack plugins (joint with telegram seed) via manual copy:"; \
-        staging=/opt/dsh-pai-seed; \
-        tmp_profile=/tmp/pai-seed-profile; \
-        rm -rf "${staging}" "${tmp_profile}"; \
-        mkdir -p "${staging}" "${tmp_profile}"; \
-        cp -a /opt/dsh-telegram-seed/. "${tmp_profile}/"; \
-        node -p "require('${tmp_profile}/package.json').name" | grep -qE "^(seed|dsh-profile-web|dsh-remote-seed|dsh-mnemon-seed|dsh-auto-seed|dsh-telegram-seed|dsh-pai-seed)$" || exit 1; \
-        mkdir -p "${tmp_profile}/node_modules"; \
-        PAI_SEED_VER="$(node -p "require('/tmp/dsh-pai-notebook-src/package.json').version")"; \
-        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-web; do \
-            cp -a "/tmp/${plugin}-src" "${tmp_profile}/node_modules/${plugin}"; \
+        echo "[seed] Staging pai-stack plugins via manual copy"; \
+        _ver="$(node -p "require('/tmp/dsh-pai-notebook-src/package.json').version")"; \
+        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-task-complete-sound dsh-pai-web; do \
+            seed_copy_src /tmp/seed-profile "/tmp/${plugin}-src" "${plugin}"; \
+            MANIFEST="${MANIFEST} ${plugin}:${_ver}"; \
+            FIRST="${FIRST} ${plugin}"; \
         done; \
-        node -e " \
-            const fs=require('fs'); \
-            const pf='${tmp_profile}/package.json'; \
-            let p={}; \
-            try { p=JSON.parse(fs.readFileSync(pf,'utf8')); } catch(e) { p={}; } \
-            p.name='dsh-profile-web'; \
-            if (p.private!==false) p.private=true; \
-            p.dependencies=Object.assign({},p.dependencies,{ \
-                'dsh-pai-notebook':'${PAI_SEED_VER}', \
-                'dsh-pai-adr':'${PAI_SEED_VER}', \
-                'dsh-pai-design':'${PAI_SEED_VER}', \
-                'dsh-pai-terrain':'${PAI_SEED_VER}', \
-                'dsh-pai-git':'${PAI_SEED_VER}', \
-                'dsh-pai-web':'${PAI_SEED_VER}', \
-            }); \
-            p.dsh=p.dsh||{}; p.dsh.profile=p.dsh.profile||{}; \
-            const want=[ \
-                '@deepseek-ai/dsh-base', \
-                '@deepseek-ai/dsh-web-app', \
-                'dsh-pai-notebook', \
-                'dsh-pai-adr', \
-                'dsh-pai-design', \
-                'dsh-pai-terrain', \
-                'dsh-pai-git', \
-                'dsh-pai-web', \
-            ]; \
-            const have=Array.isArray(p.dsh.profile.bundles)?p.dsh.profile.bundles:[]; \
-            for (const b of want) if(!have.includes(b)) have.push(b); \
-            p.dsh.profile.bundles=have; \
-            fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n'); \
-        "; \
-        cp -a "${tmp_profile}/node_modules" "${staging}/node_modules"; \
-        cp -a "${tmp_profile}/package.json" "${staging}/package.json"; \
-        for f in pnpm-lock.yaml pnpm-workspace.yaml; do \
-            if [ -f "${tmp_profile}/${f}" ]; then cp -a "${tmp_profile}/${f}" "${staging}/${f}"; fi; \
-        done; \
-        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-web; do \
-            test -f "${staging}/node_modules/${plugin}/package.json"; \
-            test -f "${staging}/node_modules/${plugin}/cordis.patch.yml"; \
-            test -f "${staging}/node_modules/${plugin}/lib/index.js"; \
-            node -e "const p=require('${staging}/node_modules/${plugin}/package.json'); if(!p.dsh||!p.dsh.bundle||!p.dsh.bundle.patch) throw new Error('not a DSH bundle: '+p.name); console.log('[seed] pai plugin', p.name+'@'+p.version, 'bundle patch:', p.dsh.bundle.patch)"; \
-            node --check "${staging}/node_modules/${plugin}/lib/index.js"; \
-        done; \
-        chmod -R a+rX "${staging}"; \
-        rm -rf "${tmp_profile}" \
-            /tmp/dsh-pai-notebook-src \
-            /tmp/dsh-pai-adr-src \
-            /tmp/dsh-pai-design-src \
-            /tmp/dsh-pai-terrain-src \
-            /tmp/dsh-pai-git-src \
-            /tmp/dsh-pai-web-src; \
-echo '[seed] pai-stack plugins staged at /opt/dsh-pai-seed (joint tree)'; \
-    else \
-        echo "[seed] WITH_PAI_PLUGINS=false, skipping pai plugins seed"; \
-        mkdir -p /opt/dsh-pai-seed; \
-        rm -rf /tmp/dsh-pai-notebook-src /tmp/dsh-pai-adr-src /tmp/dsh-pai-design-src /tmp/dsh-pai-terrain-src /tmp/dsh-pai-git-src /tmp/dsh-pai-memory-src /tmp/dsh-pai-web-src; \
+    fi; \
+    seed_manifest /tmp/seed-profile ${MANIFEST}; \
+    seed_publish /opt/dsh-seed /tmp/seed-profile; \
+    seed_verify /opt/dsh-seed ${REGISTRY}; \
+    seed_verify /opt/dsh-seed ${FIRST} --check-lib; \
+    rm -rf \
+        /tmp/dsh-pai-telegram-src \
+        /tmp/dsh-pai-notebook-src \
+        /tmp/dsh-pai-adr-src \
+        /tmp/dsh-pai-design-src \
+        /tmp/dsh-pai-terrain-src \
+        /tmp/dsh-pai-git-src \
+        /tmp/dsh-pai-web-src; \
+    echo '[seed] joint plugin tree staged at /opt/dsh-seed'
+
+# Patch dsh-automation to force English locale (Zg function) at build time
+RUN AUTOMATION_CLIENT="/opt/dsh-seed/node_modules/@michengai/dsh-automation/lib/client.js" && \
+    if [ -f "${AUTOMATION_CLIENT}" ]; then \
+        sed -i 's/function Zg(e){return [^}]*}/function Zg(e){return w3}/g' "${AUTOMATION_CLIENT}" && \
+        echo "[seed] Patched dsh-automation Zg function to force English locale"; \
     fi
 
 # Automation tasks (official experimental schedule bundle). Ships inside the
@@ -516,31 +323,34 @@ RUN BUNDLE=/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-a
 # deepseek-official search provider (a model turn per query). Browsers live in
 # the image layer (read-only OK); profiles/tmp stay on the data volume at
 # runtime (see ENV below). `--with-deps` apt-installs the Chromium system
-# libs (needs root at build time). The library is also staged into the pai
+# libs (needs root at build time). The library is also staged into the joint
 # seed's node_modules so the plugin's plain `import('playwright')` resolves
 # inside the web profile (global installs are invisible to ESM otherwise).
+# `--no-shell`: the full chromium-1148 build covers every
+# `chromium.launch({headless:true})` call the plugin makes; the extra
+# chromium_headless_shell-1148 tree (254 MB) has no launcher in this image.
 RUN set -eux; \
     NPM_CONFIG_PREFIX=/usr/local npm install -g "playwright@${PLAYWRIGHT_VERSION}"; \
-    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium; \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright npx -y "playwright@${PLAYWRIGHT_VERSION}" install --with-deps --no-shell chromium; \
     chmod -R a+rX /opt/ms-playwright /usr/local/lib/node_modules/playwright; \
     node -p "require('/usr/local/lib/node_modules/playwright/package.json').version" | grep -qx "${PLAYWRIGHT_VERSION}"; \
-    if [ -d /opt/dsh-pai-seed/node_modules ]; then \
-        rm -rf /opt/dsh-pai-seed/node_modules/playwright; \
-        cp -a /usr/local/lib/node_modules/playwright /opt/dsh-pai-seed/node_modules/playwright; \
+    if [ -d /opt/dsh-seed/node_modules ]; then \
+        rm -rf /opt/dsh-seed/node_modules/playwright; \
+        cp -a /usr/local/lib/node_modules/playwright /opt/dsh-seed/node_modules/playwright; \
         node -e " \
             const fs=require('fs'); \
-            const pf='/opt/dsh-pai-seed/package.json'; \
+            const pf='/opt/dsh-seed/package.json'; \
             const p=JSON.parse(fs.readFileSync(pf,'utf8')); \
             p.dependencies=Object.assign({},p.dependencies,{'playwright':'${PLAYWRIGHT_VERSION}'}); \
             fs.writeFileSync(pf,JSON.stringify(p,null,2)+'\n'); \
         "; \
-        node -p "require('/opt/dsh-pai-seed/node_modules/playwright/package.json').version" | grep -qx "${PLAYWRIGHT_VERSION}"; \
-        chmod -R a+rX /opt/dsh-pai-seed/node_modules/playwright; \
-        echo "[final] playwright ${PLAYWRIGHT_VERSION} staged into pai seed"; \
+        node -p "require('/opt/dsh-seed/node_modules/playwright/package.json').version" | grep -qx "${PLAYWRIGHT_VERSION}"; \
+        chmod -R a+rX /opt/dsh-seed/node_modules/playwright; \
+        echo "[final] playwright ${PLAYWRIGHT_VERSION} staged into joint seed"; \
     else \
-        echo "[final] pai seed not built yet, playwright global only"; \
+        echo "[final] joint seed not built, playwright global only"; \
     fi; \
-    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright /usr/local/bin/node --input-type=module -e "import('/opt/dsh-pai-seed/node_modules/playwright').then(async(m)=>{const b=await m.chromium.launch({args:['--no-sandbox']});await b.close();console.log('[final] playwright smoke: chromium launches')})" 2>&1 || echo "[final] WARN playwright launch smoke skipped (sandbox unavailable at build)"; \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright /usr/local/bin/node --input-type=module -e "import('/opt/dsh-seed/node_modules/playwright').then(async(m)=>{const b=await m.chromium.launch({args:['--no-sandbox']});await b.close();console.log('[final] playwright smoke: chromium launches')})" 2>&1 || echo "[final] WARN playwright launch smoke skipped (sandbox unavailable at build)"; \
     echo "[final] playwright browsers at /opt/ms-playwright:"; ls /opt/ms-playwright
 
 # Dedicated runtime user matching the host UID/GID (compose `user:` runs as
@@ -569,16 +379,8 @@ RUN set -eux; \
 # Ensure all installed toolchains are readable by the node user
 RUN set -eux; \
     chmod -R a+rX /usr/local/go /usr/local/rustup /usr/local/cargo /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/dsh /usr/local/bin/mnemon 2>/dev/null || true; \
-    # Also ensure auth plugin seed is readable
-    if [ -d /opt/dsh-remote-seed ]; then chmod -R a+rX /opt/dsh-remote-seed; fi; \
-    # Also ensure memory plugin seed is readable
-    if [ -d /opt/dsh-mnemon-seed ]; then chmod -R a+rX /opt/dsh-mnemon-seed; fi; \
-    # Also ensure automation plugin seed is readable
-    if [ -d /opt/dsh-auto-seed ]; then chmod -R a+rX /opt/dsh-auto-seed; fi; \
-    # Also ensure telegram plugin seed is readable
-    if [ -d /opt/dsh-telegram-seed ]; then chmod -R a+rX /opt/dsh-telegram-seed; fi; \
-# Also ensure pai plugins seed is readable
-    if [ -d /opt/dsh-pai-seed ]; then chmod -R a+rX /opt/dsh-pai-seed; fi
+    # Also ensure the joint plugin seed is readable
+    if [ -d /opt/dsh-seed ]; then chmod -R a+rX /opt/dsh-seed; fi
 
 # Single canonical home: /data/dsh/home lives on the data volume, so it is
 # writable at runtime (the image layer is read_only:true). Session cwd comes
@@ -611,9 +413,7 @@ ENV DSH_HOME=/data/dsh \
     # TMPDIR must point to data volume (not tmpfs) for large temp files
     TMPDIR=/data/dsh/tmp \
     # Native bindings must load from executable volume
-    NARB_DISABLE_NATIVE_CACHE=1 \
-    # Timezone
-    TZ=Asia/Shanghai
+    NARB_DISABLE_NATIVE_CACHE=1
 
 # /tmp is tmpfs at runtime; image-layer home paths are unused
 # (HOME=/data/dsh/home on the volume). Volume content above is the

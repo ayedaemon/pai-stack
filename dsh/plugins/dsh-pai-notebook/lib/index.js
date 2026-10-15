@@ -62,7 +62,7 @@ function parseFrontmatter(content) {
   
   const meta = {};
   let currentListKey = null;
-  for (const line of parts[1].splitlines()) {
+  for (const line of parts[1].split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     if (trimmed.startsWith("- ") && currentListKey) {
