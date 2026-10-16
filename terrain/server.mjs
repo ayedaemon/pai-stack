@@ -62,7 +62,32 @@ function seedAcpConfig() {
 /** Actions exposed to agents. Anything not listed here is unreachable. */
 const FORBIDDEN = new Set(['env', 'sdd', 'settings', 'usage', 'tools'])
 
-/** action → { bin: [argv prefix], llm: boolean } */
+/**
+ * Provider credentials that must never reach terrain's ACP agent.
+ *
+ * `init` and `ask` work ONLY while these are absent. Terrain does not write its
+ * knowledge assets through an OpenAI-compatible endpoint — it spawns `opencode
+ * acp`, and if opencode finds a provider credential it resolves the ACP session
+ * to a catalog model instead of keyless Zen. Both actions then die with no
+ * useful error.
+ *
+ * Compose already guarantees this: the terrain service declares an explicit
+ * `environment:` map with no `env_file:` and no `- VAR` passthrough, so nothing
+ * in .env reaches the container. This is belt-and-braces for `docker run -e`, a
+ * future `env_file:`, or a hand-edit of the compose block.
+ *
+ * Deleted, not blanked. `ENV FOO=""` leaves FOO *defined*, and provider
+ * selection branches on presence rather than truthiness — blanking would trade a
+ * guaranteed-absent variable for an ambiguous one.
+ */
+const PROVIDER_KEYS = [
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'OPENROUTER_API_KEY',
+  'NVIDIA_API_KEY',
+]
+
+/** action → { bin: [argv prefix], llm: boolean, hint?: string } */
 const ACTIONS = {
   index: { bin: ['scan'], llm: false },
   init: { bin: ['init'], llm: true },
@@ -72,7 +97,21 @@ const ACTIONS = {
   overview: { bin: ['project', 'overview'], llm: false },
   projects: { bin: ['project', 'list'], llm: false },
   unregister: { bin: ['project', 'remove'], llm: false },
-  source: { bin: ['source', 'read'], llm: false, repoFlag: true },
+  source: {
+    bin: ['source', 'read'],
+    llm: false,
+    repoFlag: true,
+    // The two path params have DIFFERENT bases, and both clients got this
+    // wrong independently. `path` → --repo-path, repo-relative (confine()
+    // resolves a relative path against WORKSPACE too, but the binary then
+    // treats it as the repo root). `file` → --file, confined against WORKSPACE
+    // directly, so a bare "README.md" becomes /opt/data/workspace/README.md
+    // and fails. Ship the distinction in the tool description rather than
+    // hoping every client documents it.
+    hint: "`path` is REPO-relative (the repo to read from); `file` is WORKSPACE-relative " +
+          "and must repeat the project directory, e.g. " +
+          "file='github.com/ayedaemon/pai-stack/README.md' — a bare 'README.md' fails.",
+  },
   ask: { bin: ['ask', 'query'], llm: true },
 }
 
@@ -176,14 +215,34 @@ function run(action, params) {
   const mutating = ['index', 'refresh', 'init'].includes(action)
   const key = (mutating ? 'write|' : 'read|') + (params.path ?? '')
 
+  // Terrain's registry must stay off the shared workspace mount, and no
+  // provider key may reach the ACP grandchild. Built once per call rather than
+  // mutating process.env, so the shim's own view is never altered.
+  const childEnv = { ...process.env, HOME: process.env.HOME ?? '/var/lib/terrain' }
+  for (const k of PROVIDER_KEYS) delete childEnv[k]
+
+  // Terrain's `git` collector (declared in .terrain/.meta/sync.json) runs inside
+  // this container, where the bind-mounted repo is owned by the host UID while we
+  // run as uid 1000. Git 2.35.2+ refuses every command in that situation
+  // ("detected dubious ownership"), and terrain does not surface the failure —
+  // it records the consequence instead. The drift ledger then claims
+  // commits_since_baseline=0 (i.e. "the index is current") no matter how far
+  // the repo has actually advanced, stale_reason comes out as
+  // "baseline_unreachable", and tech-stack detection silently yields nothing.
+  //
+  // Passed as environment rather than written to $HOME/.gitconfig: per-spawn,
+  // no persisted state to go stale, and no secret or config baked into a layer.
+  // `*` is scoped to this container's filesystem view, which is the read-only
+  // image plus the workspace bind. A static path list would break on the next
+  // project — the workspace is multi-project by design.
+  childEnv.GIT_CONFIG_COUNT = '1'
+  childEnv.GIT_CONFIG_KEY_0 = 'safe.directory'
+  childEnv.GIT_CONFIG_VALUE_0 = '*'
+
   return serialise(key, () => new Promise((res) => {
     const child = spawn(BIN, argv, {
       cwd: WORKSPACE,
-      env: {
-        ...process.env,
-        // Terrain's registry must stay off the shared workspace mount.
-        HOME: process.env.HOME ?? '/var/lib/terrain',
-      },
+      env: childEnv,
       timeout: 10 * 60 * 1000,
     })
     let out = '', err = ''
@@ -207,7 +266,8 @@ function mcpTools() {
     description:
       `Terrain ${name} — ${v.llm ? 'uses an LLM (keyless Zen models)' : 'offline, no LLM call'}. ` +
       `Params: ${Object.keys(SCHEMAS[name]).join(', ') || 'none'}. ` +
-      `Writes .terrain/ into the indexed repo.`,
+      `Writes .terrain/ into the indexed repo. ` +
+      (v.hint ?? ''),
     inputSchema: {
       type: 'object',
       properties: Object.fromEntries(
@@ -363,5 +423,12 @@ server.listen(PORT, '0.0.0.0', () => {
     console.error(`[terrain] llm actions ENABLED: ${LLM_ACTIONS.join(', ')} (keyless Zen models via opencode acp — NOT llm-gateway)`)
   } else {
     console.error(`[terrain] llm actions gated OFF: ${LLM_ACTIONS.join(', ')} (TERRAIN_ALLOW_LLM=1 to enable)`)
+  }
+  // A leaked key is stripped before every spawn, so init/ask keep working — but
+  // say so loudly rather than letting a stray credential sit in the env until
+  // someone debugs a mysterious provider-billing line. The source is the bug.
+  const leaked = PROVIDER_KEYS.filter((k) => process.env[k])
+  if (leaked.length) {
+    console.error(`[terrain] WARNING: ${leaked.join(', ')} present in container env — stripped before every spawn, but fix the source. Compose passes these only if the environment: map or env_file: is edited.`)
   }
 })

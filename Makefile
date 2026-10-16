@@ -264,7 +264,7 @@ terrain-index: ## Index a project: make terrain-index d=/opt/data/workspace/<dir
 	@SLUG=""; if [ -n "$(n)" ]; then SLUG="--slug $(n)"; fi; \
 	docker exec terrain terrain scan "$(d)" $$SLUG
 
-terrain-ask: ## Knowledge Q&A: make terrain-ask q="<question>" [n=<slug>]
+terrain-ask: ## Knowledge Q&A: make terrain-ask q="<question>" [n=<slug>] — keyless Zen, gated only if TERRAIN_ALLOW_LLM=0
 	@if [ -z "$(q)" ]; then echo "Usage: make terrain-ask q=\"<question>\" [n=<slug>]"; exit 1; fi
 	@SLUG=""; if [ -n "$(n)" ]; then SLUG="--project $(n)"; fi; \
 	docker exec terrain terrain ask query "$(q)" $$SLUG

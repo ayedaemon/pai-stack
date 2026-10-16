@@ -61,7 +61,7 @@ hermes (ask_notebook) ──→ llm-gateway:4000 (synthesis)
 dsh    ──→ llm-gateway:4000     LLM completions & reasoning
 open-design ──→ llm-gateway:4000  LLM completions (BYOK or gateway)
 terrain ──→ <repo>/.terrain/    the ONLY writer of index artifacts
-terrain ──→ opencode acp (ACP)  only when TERRAIN_ALLOW_LLM=1 (ask/init)
+terrain ──→ opencode acp (ACP)  ask/init — enabled by default (TERRAIN_ALLOW_LLM=1)
          └─ NOT llm-gateway. Terrain holds no gateway link and no provider key:
             its ACP agent runs OpenCode's keyless Zen models. Do NOT re-add
             OPENAI_API_KEY — it makes opencode pin the ACP session to a catalog
@@ -114,8 +114,17 @@ agent ──→ terrain:7878 ──→ terrain CLI ──→ <repo>/.terrain/
   indexes, which structurally enforces the `EXECUTION_DIR` boundary below.
 - **Indexing is free.** `index`/`refresh` make no LLM call. `refresh` explicitly skips
   Litho, Terrain's LLM doc generator. Only `ask` and `init` invoke an LLM — via
-  Terrain's own ACP agent on keyless Zen models, not the gateway — and the service
-  refuses them unless `TERRAIN_ALLOW_LLM=1`.
+  Terrain's own ACP agent on keyless Zen models, not the gateway — and they are
+  **enabled by default**; the service refuses them only at `TERRAIN_ALLOW_LLM=0`.
+  Because they are keyless, enabling them costs latency, not tokens. `init` is the
+  expensive one: it regenerates the whole `human/` corpus, so request it rather than
+  running it unprompted — and note a stale corpus survives any number of `refresh`
+  calls, since only `init` runs Litho.
+- **The registry and the index can drift apart.** `registry.json` lives in the
+  `terrain_data` volume; `.terrain/` lives in the indexed repo on the workspace bind.
+  Recreating the volume drops the registry and leaves the index intact, so `projects`
+  returns `[]` while `<repo>/.terrain/` is fully populated — which silently breaks every
+  project-scoped call. Recovery is one free `scan`. See [`docs/terrain.md`](docs/terrain.md).
 - **Degrades cleanly.** Terrain is optional. `pai_terrain_ops` probes `/healthz` and
   hides itself when the service is down; without it, locate code with `grep` + targeted
   reads. Nothing breaks.
@@ -123,45 +132,18 @@ agent ──→ terrain:7878 ──→ terrain CLI ──→ <repo>/.terrain/
 
 Start it with `make terrain-up`; see [`docs/terrain.md`](docs/terrain.md).
 
-### Skills — procedural knowledge (native Hermes skills)
+### Skills — procedural knowledge
 
-Hermes loads skill `<name>` via `skill_view(name="<name>")` before working on any unknown stack or process (or lists them via `skills_list()`).
-Skills are markdown files in `./skills/`, mounted read-only into Hermes via `skills.external_dirs` — zero model tokens to load.
+Skills are Markdown files under `skills/`, mounted read-only into every agent
+(`hermes` → `/opt/pai/skills`, `dsh` → `/data/dsh/.agents/skills`). They load on demand, so
+a large catalogue costs nothing until used.
 
-| Skill | Purpose |
-|---|---|
-| `stack-discovery` | Detect stack markers before any codebase work |
-| `python` | Python discovery router (uv-run) → `senior-backend` for authoring |
-| `docker` | Docker discovery router → `docker-development` (validators advisory-only) |
-| `react` | React discovery router → `vercel-react-best-practices` et al. |
-| `nodejs` | Node.js discovery → `senior-backend` for backend authoring |
-| `sql` | DB discovery router → `supabase-postgres-best-practices` for depth |
-| `planning` | Planning discipline: paths, 2-op rule, 3-strike, plus plan authorship + execution with verification gates (self-contained) |
-| `system-design` | System design methodology, capacity planning, and trade-off matrices |
-| `gitops` | Git safety + mechanics: topology, `.worktrees/` sandboxing, confirmation gate, test-first merge (self-contained) |
-| `vercel-react-best-practices` / `vercel-composition-patterns` / `frontend-design` | Vendored React/perf/design depth (MIT/MIT/Apache-2.0) |
-| `supabase-postgres-best-practices` / `senior-backend` / `docker-development` | Vendored Postgres/backend/Docker depth + scripts (MIT) |
-| `web-design-guidelines` / `webapp-testing` / `mcp-builder` | Vendored UI-audit / browser-testing / MCP scaffolding (MIT/Apache-2.0) |
-| `code-reviewer` / `skill-security-auditor` | Vendored review rubrics + skill supply-chain gate (MIT) |
-| `gstack` + 25 `gstack-*` | Vendored gstack workflow suite: router, office-hours/spec/autoplan, plan reviews (ceo/eng/design/devex), review/investigate/cso/health, ship/land-and-deploy/document-*, learn/retro/context-*, careful/freeze/guard (MIT; provenance in `skills/gstack/VENDORED.md`) |
-| `mermaid` | Mermaid diagram authoring guide (type selection, syntax safety, C4 abstraction protocol) |
-| `research` | Per-project wiki (SCHEMA/index/log, ingest/query/lint) in `.project/research/` — load for wiki/kb/notes tasks |
-| `opencode-delegate` | Keyless OpenCode delegation (background+poll, branch review) — load for implementation handoffs |
-| `agents` | Ground rules injected at session start |
+**There is deliberately no hand-written catalogue in this file.** `skills_list()` is the
+catalogue — it emits every skill with its description at runtime. Duplicating it by hand is
+how `teach` and `visualize` ended up mounted but invisible to agents for months.
 
-#### Tools (native `pai` toolset, `pai_tools` plugin)
-
-| Tool | Purpose | Allowed actions |
-|---|---|---|
-| `pai_notebook_ops` | Query and manage per-project Research Brain (file vault in `.project/research/`) | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
-| `pai_adr_ops` | Living ADR creation & code symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
-| `pai_ops_design_ops` | OpenDesign visual generation / mockups bridge | (see `opendesign-integration` skill) |
-| `pai_terrain_ops` | Code intelligence via the Terrain service (opt-in; hidden when down) | `index`, `refresh`, `search`, `read`, `overview`, `projects`, `unregister`, `source`, `init`, `ask` |
-| `skill_view` | Load a procedural skill by name | `name="<skill>"` |
-| `skills_list` | Discover all available native skills | (none) |
-
-Docker is native CLI over the mounted socket (see `docker` skill) — no tool, no audit log.
-
+Operating rules and skill **routing** (task → skill) live in one place:
+[`skills/agents/SKILL.md`](skills/agents/SKILL.md).
 ### Mnemosyne — agent memory (decisions, execution outcomes, lessons learned)
 
 Mnemosyne is Hermes's native, local-first agent memory layer. It operates entirely within Hermes
@@ -177,88 +159,44 @@ using embedded SQLite (`/opt/hermes/data/mnemosyne/data/mnemosyne.db`) and local
 | **Research Brain** | External knowledge & notes | `<EXECUTION_DIR>/.project/research/` | RFCs, API docs, papers, research notes in Markdown |
 | **Mnemosyne** | Agent experience | `/opt/hermes/data/mnemosyne` | Decisions, prior fixes, session continuity, user preferences |
 
-## Startup Protocol: Workspace Understanding & Boundaries
+## Operating Protocol
 
-> **CRITICAL INVARIANT**: The host workspace (`$WORKSPACE_DIR` mounted to `/opt/data/workspace`)
-> is often a multi-project container holding several independent repositories or projects side-by-side.
-> Hermes must never confuse one project with another or treat `/opt/data/workspace` as a monolithic project
-> **unless the workspace root itself is confirmed to be a single isolated repository**.
+**Maintained in exactly one place: [`skills/agents/SKILL.md`](skills/agents/SKILL.md).**
+That file is agent-neutral, mounted into every agent in the stack, and is the first thing
+Hermes loads each session. It owns:
 
-On **Turn 1 of every session**:
-1. **Discover skills**: Call `skills_list()` to confirm `research` and other skills are available.
-2. **Recall Known Boundaries + services (parallel)**: Call `mnemosyne_recall(query="workspace projects structure boundaries")` and run `docker ps` with the pai-stack label filter (see `docker` skill).
-3. **Survey Directory Structure**: List `/opt/data/workspace` (depth 1) to identify project subdirectories and identify root markers (`.git/`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Makefile`).
-4. **Determine Execution Mode**:
-   - **Single-project mode**: If `/opt/data/workspace` itself contains root markers (`.git/`, manifest files) and NO subdirectories with their own root markers → `EXECUTION_DIR = /opt/data/workspace`. Treat workspace as the project.
-   - **Multi-project mode**: If subdirectories each contain root markers → pick one subdirectory as `EXECUTION_DIR = /opt/data/workspace/<project>`. Announce the choice.
-5. **Orient on the stack**: If the stack is unknown, load the `stack-discovery` skill first; otherwise read the project's manifest (`pyproject.toml`, `package.json`, …).
-6. **Orient on wiki (IFF research task OR `<EXECUTION_DIR>/.project/research/SCHEMA.md` exists)**: Load `skill_view(name="research")`, then read `.project/research/{SCHEMA.md,index.md,log.md}` tail-20 only (index-first, top-3 pages max).
-7. **Persist Boundaries**: Record discovered project boundaries using `mnemosyne_remember(content="Workspace Project: '<name>' at /opt/data/workspace/<name>...")`.
-8. **Enforce Boundary Isolation**: Strictly avoid cross-project contamination of files, git branches, or planning files.
-9. **Check the index (if terrain is running)**: `pai_terrain_ops(action="projects")`. If `EXECUTION_DIR` is absent from the list, `pai_terrain_ops(action="index", path="<project>")` before code work — it costs no LLM tokens.
+- the **Turn-1 startup protocol** (survey workspace → declare `EXECUTION_DIR` → check the
+  terrain index → orient on the stack)
+- the **`EXECUTION_DIR` invariant** and project-boundary isolation
+- **propose-before-writing** and the confirmation gate for mutating git
+- **planning discipline** and the `.project/planning/` layout
+- **code intelligence** via `pai_terrain_ops`, including the registry-lost recovery case
+- **skill routing** — which skill to load for which task
 
-## Execution Directory Invariant
+Hermes-only depth — Mnemosyne, dual-brain symbol anchors, the empirical lab, Living ADRs,
+Kanban swarms — is split into [`skills/hermes-memory/SKILL.md`](skills/hermes-memory/SKILL.md)
+so the shared rules stay readable by agents that have none of those tools.
 
-Hermes must strictly isolate its operations to a single project execution directory:
-1. **Declare `EXECUTION_DIR` on Turn 1**: Hermes explicitly chooses `EXECUTION_DIR = /opt/data/workspace/<project>` (or `/opt/data/workspace` only if the workspace root is confirmed to be a single repo). Announce this to the user.
-2. **Strict Persistence Throughout Session**:
-   - **Terminal Commands**: ALWAYS run within or prefix with `cd <EXECUTION_DIR> && <cmd>`. Never run build/test/git commands in `/opt/data/workspace` root.
-   - **Planning Artifacts**: Write exclusively to `<EXECUTION_DIR>/.project/planning/<YYYY-MM-DD-slug>/`.
-   - **Code Changes**: Anchor all edits inside `<EXECUTION_DIR>`.
-
-## Where Hermes Writes
-
-| What | Where | When |
-|---|---|---|
-| Code changes | `<EXECUTION_DIR>/<file>` | After user confirms the proposed diff |
-| Planning files | `<EXECUTION_DIR>/.project/planning/<slug>/` | When starting a complex task |
-| Helper scripts & scratch tools | `/opt/data/<tool_name>` | For internal Hermes operations |
-| Agent memory (Mnemosyne DB) | `hermes-data` volume (`/opt/hermes/data/mnemosyne/data/`) | Post-turn capture & explicit remember calls |
-| App state (DB, sessions) | `hermes-data` Docker volume | Automatically — never touches workspace |
-
-Planning files (`task_plan.md`, `findings.md`, `progress.md`) are developer artifacts.
-They live in the project and are searchable with `grep` in future sessions.
-
-## Planning Discipline (planning-with-files)
-
-For any task with 3+ steps, research, or multi-file changes, Hermes creates:
-
-```
-<EXECUTION_DIR>/.project/planning/<YYYY-MM-DD-slug>/
-  task_plan.md   — phases, current status, decisions, next step
-  findings.md    — discoveries: symbols, blast radius, root causes, key facts
-  progress.md    — session log: what ran, errors, what was written
-```
-
-Key rules:
-- **2-operation rule**: after every 2 search/read operations → write findings to `findings.md`
-- **Propose before writing**: show diff, wait for user confirmation, then write
-- **3-strike protocol**: attempt 1 (diagnose) → attempt 2 (different approach) → attempt 3 (rethink) → escalate
-
-See the `planning` skill for the full discipline.
+Do not add protocol to this file. If a rule is missing, it belongs in the `agents` skill.
 
 ## Key Config Files
 
 | File | Purpose |
 |---|---|
+| [`skills/agents/SKILL.md`](skills/agents/SKILL.md) | Operating rules — Turn-1 protocol, invariants, routing (single source) |
+| [`skills/hermes-memory/SKILL.md`](skills/hermes-memory/SKILL.md) | Hermes-only depth — Mnemosyne, ADR, Kanban, empirical lab |
 | [`hermes/config.yaml`](hermes/config.yaml) | System prompt, model providers, skills, knowledgebase |
-| [`docker-compose.yaml`](docker-compose.yaml) | All service definitions, mounts, resource limits (profiles: gateway, hermes, terrain, dsh, design) |
-| [`hermes/plugins/pai_tools/`](hermes/plugins/pai_tools/) | Native Hermes tools: `pai_notebook_ops`, `pai_adr_ops`, `pai_ops_design_ops` |
-| [`hermes/plugins/pai_terrain_ops/`](hermes/plugins/pai_terrain_ops/) | Code-intel tool: `pai_terrain_ops` → terrain service |
+| [`docker-compose.yaml`](docker-compose.yaml) | All service definitions, mounts, limits (profiles: gateway, hermes, terrain, dsh, design) |
+| [`hermes/plugins/pai_terrain_ops/`](hermes/plugins/pai_terrain_ops/) | Code-intel tool → terrain service |
 | [`terrain/`](terrain/) | Terrain multi-stage image + HTTP/MCP shim |
-| [`skills/`](skills/) | Bundled SKILL.md files (one per skill, mounted into Hermes) |
-| [`skills/agents/SKILL.md`](skills/agents/SKILL.md) | Ground rules injected into Hermes context |
+| [`docs/architecture.md`](docs/architecture.md) | Living Mermaid diagram + process model |
 | [`.env.example`](.env.example) | Template for `WORKSPACE_DIR`, LLM config, API keys |
 
-## Quick Start for Agents
+### Quick start for an agent
 
-1. Read this file (`AGENTS.md` at repo root)
-2. Read [`skills/agents/SKILL.md`](skills/agents/SKILL.md) for operational ground rules
-3. Read [`hermes/config.yaml`](hermes/config.yaml) for the full system prompt
-4. Check [`docker-compose.yaml`](docker-compose.yaml) for current mount paths and port bindings
-5. For code questions: prefer `pai_terrain_ops(action="search"|"source")` if the repo is indexed; otherwise `grep`, then read only the files that match.
-
-
+1. `skill_view(name="agents")` — everything above, in one call.
+2. `skills_list()` — discover what's available.
+3. Read [`docs/architecture.md`](docs/architecture.md) for *why* the stack looks like this.
 ## System Architecture Maintenance Protocol
 
 **CRITICAL RULE:** This project relies on a living, highly accurate Mermaid system design diagram located in `docs/architecture.md` to onboard users and track data flow. 

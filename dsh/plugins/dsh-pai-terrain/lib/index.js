@@ -5,7 +5,8 @@
  * - index, refresh, search, read, overview, projects, unregister, source, init, ask
  *
  * Connects to Terrain service (TERRAIN_URL, default http://terrain:7878).
- * Indexing (index, refresh) is free — no LLM calls. Only init/ask use LLM (requires TERRAIN_ALLOW_LLM=1).
+ * Indexing (index, refresh) is free — no LLM calls. Only init/ask use LLM (enabled by
+ * default; gated only when TERRAIN_ALLOW_LLM=0), on keyless Zen models, not llm-gateway.
  * Each scan writes .terrain/ inside the repo (gitignored, per-host).
  * Paths are resolved inside WORKSPACE_DIR (/opt/data/workspace).
  */
@@ -86,7 +87,7 @@ export function apply(ctx, config) {
 
   const terrainTool = defineTool({
     name: "pai_terrain_ops",
-    description: "Code intelligence over the Terrain index service. Terrain scans a project repo into .terrain/ (Markdown knowledge docs + agent context); this tool triggers those scans and reads the result. Check action='projects' first: if the repo is indexed, this is far more precise than grep; if it is not, fall back to grep + targeted reads. Indexing ('index', 'refresh') makes NO LLM call and costs nothing. Only 'ask' and 'init' use an LLM — Terrain's keyless Zen models, not the llm-gateway — and the service refuses them unless TERRAIN_ALLOW_LLM=1. Write scope: each scan writes .terrain/ inside the repo you pass. Paths are resolved inside /opt/data/workspace; other paths are rejected. Allowed actions: index, refresh, search, read, overview, projects, unregister, source, init, ask.",
+    description: "Code intelligence over the Terrain index service. Terrain scans a project repo into .terrain/ (Markdown knowledge docs + agent context); this tool triggers those scans and reads the result. Check action='projects' first: if the repo is indexed, this is far more precise than grep; if it is not, fall back to grep + targeted reads. Indexing ('index', 'refresh') makes NO LLM call and costs nothing. Only 'ask' and 'init' use an LLM — Terrain's keyless Zen models, not the llm-gateway — and they are enabled by default; the service refuses them only when TERRAIN_ALLOW_LLM is set to 0. Write scope: each scan writes .terrain/ inside the repo you pass. Paths are resolved inside /opt/data/workspace; other paths are rejected. Allowed actions: index, refresh, search, read, overview, projects, unregister, source, init, ask.",
     parameters: {
       action: {
         type: "string",
@@ -112,7 +113,11 @@ export function apply(ctx, config) {
       },
       file: {
         type: "string",
-        description: "Repo-relative file path ('source' only)."
+        description:
+        "File to read ('source' only). WORKSPACE-relative, not repo-relative: resolved " +
+        "against /opt/data/workspace, so it must be '<project-dir>/<path-inside-project>' " +
+        "(e.g. 'github.com/ayedaemon/pai-stack/README.md'), NOT 'README.md'. This differs " +
+        "from 'path', which IS repo-relative.",
       },
       limit: {
         type: "integer",

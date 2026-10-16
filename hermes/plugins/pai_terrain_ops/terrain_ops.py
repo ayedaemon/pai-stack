@@ -11,9 +11,10 @@ Design notes:
   the whole 27k-file workspace in every agent's heap.
 - Indexing is FREE. `scan` and `refresh` make no LLM call; `refresh` explicitly
   skips Litho, terrain's LLM doc generator. Only `ask` and `init` invoke an
-  LLM, and the service refuses them unless TERRAIN_ALLOW_LLM=1. That LLM is
-  NOT the llm-gateway: it is Terrain's own ACP agent on OpenCode's keyless
-  Zen models. Terrain holds no gateway link and no provider key.
+  LLM, via Terrain's own ACP agent on OpenCode's keyless Zen models. They are
+  NOT llm-gateway: terrain holds no gateway link and no provider key. They are
+  enabled by default (TERRAIN_ALLOW_LLM=1); the service refuses them only when
+  it is explicitly set to 0.
 - `.terrain/` is written INSIDE the indexed repo. Pass `path` relative to
   /opt/data/workspace or absolute inside it; anything else is rejected by the
   service (403) and never reaches the terrain binary.
@@ -47,6 +48,10 @@ ALLOWED_ACTIONS = (
     "ask",         # ask    — LLM
 )
 LLM_ACTIONS = ("init", "ask")
+# Documentation only — handle() has no rejection branch. The authoritative gate
+# is service-side (server.mjs guardLlm), which refuses these at
+# TERRAIN_ALLOW_LLM=0 on BOTH /call and /mcp. Do not re-add a client-side
+# refusal here; it would only duplicate the gate and drift from its default.
 
 SCHEMA = {
     "name": "pai_terrain_ops",
@@ -58,8 +63,8 @@ SCHEMA = {
         "not, fall back to grep + targeted reads. "
         "Indexing ('index', 'refresh') makes NO LLM call and costs nothing. "
         "Only 'ask' and 'init' use an LLM — Terrain's keyless Zen models, "
-        "not the llm-gateway — and the service refuses them unless "
-        "TERRAIN_ALLOW_LLM=1. "
+        "not the llm-gateway — and they are enabled by default; the service "
+        "refuses them only when TERRAIN_ALLOW_LLM is set to 0. "
         "Write scope: each scan writes .terrain/ inside the repo you pass. "
         "Paths are resolved inside /opt/data/workspace; other paths are rejected. "
         "Allowed actions: " + ", ".join(ALLOWED_ACTIONS) + "."
@@ -94,7 +99,13 @@ SCHEMA = {
             },
             "file": {
                 "type": "string",
-                "description": "Repo-relative file path ('source' only).",
+                "description": (
+                    "File to read ('source' only). WORKSPACE-relative, not repo-relative: "
+                    "resolved against /opt/data/workspace, so it must be "
+                    "'<project-dir>/<path-inside-project>' (e.g. "
+                    "'github.com/ayedaemon/pai-stack/README.md'), NOT 'README.md'. "
+                    "This differs from 'path', which IS repo-relative."
+                ),
             },
             "limit": {
                 "type": "integer",

@@ -16,7 +16,7 @@ When docs are ambiguous, run a micro-probe in `/opt/data/probes/`:
 Hypothesis → micro-script (Python/shell) → execute (30s / 256MB guardrails) → EVIDENCE: note → Research Brain
 ```
 
-Evidence notes carry status `supported | refuted | inconclusive`, always include `@symbol:` anchors, and store the probe script alongside the result. Full protocol: `autonomous-tech-learner` skill, Hypothesis-Testing section.
+Evidence notes carry status `supported | refuted | inconclusive`, always include `@symbol:` anchors, and store the probe script alongside the result. Full protocol: `hermes-memory` skill, Empirical lab section.
 
 ## Inquiry trees + Living ADRs
 

@@ -104,7 +104,7 @@ flowchart LR
 
     subgraph WSS["host $WORKSPACE_DIR bind mount, rw"]
         SRC["project sources"]
-        IDX[".terrain/ artifacts<br/>knowledge docs, agent context,<br/>repomix pack"]
+        IDX[".terrain/ artifacts<br/>knowledge docs, 6-chapter human corpus,<br/>agent context, freshness ledger, repomix pack"]
     end
 
     ZEN["OpenCode Zen<br/>keyless free models"]
@@ -118,7 +118,7 @@ flowchart LR
     DEL -.->|"keyless"| ZEN
     SHIM -->|"spawn, argv array, serialised per repo"| CLI
     SHIM -.->|"boot: seed, never overwrite"| REG
-    SHIM -.->|"gated by TERRAIN_ALLOW_LLM"| ACP
+    SHIM -.->|"gated by TERRAIN_ALLOW_LLM (default 1)"| ACP
     ACP -.->|"keyless"| ZEN
     CLI -->|"registry read/write"| REG
     SRC -->|"scanned into"| IDX
@@ -140,16 +140,27 @@ flowchart LR
 Three consequences worth stating, because they are design decisions rather than
 accidents:
 
-- **The shim is a security process — on `/call` only.** `token → allowlist → path
-  confinement → LLM gate` run before `spawn()`, with an argv array and never a
-  shell. But the `TERRAIN_ALLOW_LLM` gate is **not implemented on `/mcp`**, so an
-  MCP client can run `ask`/`init` at the default `TERRAIN_ALLOW_LLM=0`, which
-  [terrain.md](terrain.md) claims it cannot. Per-repo serialisation keys on
-  `action|path`, so `index` and `refresh` on one repo are *different* queues and
-  can still interleave writes into `.terrain/`.
-- **State lives where a process can be killed for free.** `.terrain/` in the repo,
-  registry and seeded `opencode.json` on the `terrain_data` volume, Mnemosyne on
-  `hermes-data`, sessions on `dsh_data`. `make terrain-down` costs nothing.
+- **The shim is a security process.** `token → allowlist → path confinement → LLM
+  gate` run before `spawn()`, with an argv array and never a shell. The
+  `TERRAIN_ALLOW_LLM` gate is enforced on **both** transports — in the `/mcp`
+  batch loop and again in `handleRpc`'s `tools/call` — so an MCP client cannot
+  reach `ask`/`init` that `/call` would refuse. It is a *cost* gate, not a secrecy
+  gate: what it protects is Zen latency, since those actions are keyless and carry
+  no provider key. Provider credentials are additionally **deleted from every
+  spawn's environment** (`PROVIDER_KEYS` in `server.mjs`), so `ask`/`init` cannot
+  be broken by a key leaking in from outside; a leaked key is announced at boot
+  rather than failing silently later. Per-repo serialisation keys on `write|path`,
+  so `index`, `refresh` and `init` against one repo share a single queue and
+  cannot interleave writes into `.terrain/`.
+- **State lives where a process can be killed for free — with one seam.**
+  `.terrain/` in the repo, registry and seeded `opencode.json` on the
+  `terrain_data` volume, Mnemosyne on `hermes-data`, sessions on `dsh_data`.
+  `make terrain-down` costs nothing. But the registry and the index are on
+  **different mounts with different lifetimes**: recreating `terrain_data` drops
+  `registry.json` while every index artifact survives on the workspace bind. The
+  symptom is `projects` → `[]` with a full `.terrain/` on disk, which breaks all
+  project-scoped calls. Recovery is one `scan` — see [terrain.md](terrain.md) and
+  the `index-health` skill.
 - **Indexing is free.** `index`/`refresh` make no LLM call and `refresh` skips
   Litho, so an agent can re-index on reflex instead of reasoning about staleness.
 - **`pai_terrain_ops` is baked but not enabled.** `hermes/Dockerfile` copies it

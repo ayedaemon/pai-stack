@@ -107,19 +107,32 @@ Without this, any agent holding the tool could point Terrain at the container im
 | `ask` | yes (DeepWiki Q&A) | keyless Zen — no tokens |
 
 `refresh` explicitly **skips Litho**, Terrain's LLM doc generator, so incremental
-re-indexing is free. LLM actions are refused with `403` unless `TERRAIN_ALLOW_LLM=1`,
-and they do **not** use `llm-gateway` — terrain spawns an ACP agent that runs on
-OpenCode's keyless Zen models, so no provider key exists in this container.
+re-indexing is free. LLM actions are refused with `403` when `TERRAIN_ALLOW_LLM=0`;
+the shipped default is `1`, so they are on out of the box. They do **not** use
+`llm-gateway` — terrain spawns an ACP agent that runs on OpenCode's keyless Zen
+models, so no provider key exists in this container and enabling them costs latency,
+not tokens.
+
+Two consequences of that default being `1`:
+
+- **`init` is the expensive action.** It regenerates a whole corpus through the ACP
+  agent. `index` and `refresh` are free and safe to suggest freely; `init` should be
+  requested rather than run unprompted. Note also that a stale `human_docs` asset
+  survives any number of `refresh` calls — only `init` regenerates that corpus.
+- **Provider credentials leaking into this container is now a live footgun**, because
+  the gate no longer protects against an agent reaching these actions on its own. See
+  below; `server.mjs` now deletes them before every spawn.
 
 ### `init` and `ask` need an ACP agent — and it must NOT see `OPENAI_API_KEY`
 
 `TERRAIN_ALLOW_LLM=1` is necessary but **not sufficient**. Terrain does not write
 its knowledge assets through an OpenAI-compatible endpoint — it **spawns an ACP
-agent subprocess** (`settings check-acp` → `spawn_command: "opencode acp"`). The
-image ships opencode 2.0.16 in `/opt/opencode` with a keyless Zen config seeded
+agent subprocess** (`settings check-acp` → `spawn_command: "opencode acp"`).
+The image ships opencode 2.0.16 in `/opt/opencode` with a keyless Zen config seeded
 onto the volume at boot.
 
-**`init` and `ask` work only while `OPENAI_API_KEY` is unset in this container.**
+**Prohibition: `OPENAI_API_KEY` (and any other provider credential) must never be
+present in this container.** `init` and `ask` work only while it is absent.
 That is counter-intuitive, because the key looks harmless — but it is the single
 thing that breaks them:
 
@@ -140,7 +153,18 @@ thing that breaks them:
 
 So the fix is **subtractive**: delete `OPENAI_BASE_URL` and `OPENAI_API_KEY` from the `terrain` service in `docker-compose.yaml` (there is no `depends_on` on `llm-gateway` either). Terrain then has no link to the gateway at all, and its LLM work runs on OpenCode's keyless Zen models — the same exception `opencode-delegate` already makes in hermes.
 
-Verified working end to end after the change: `init` → 13 human docs +
+**This is now enforced, not just documented.** The terrain service declares an explicit
+`environment:` map with no `env_file:` and no `- VAR` passthrough, so nothing in `.env`
+reaches the container in the first place. On top of that, `server.mjs` deletes
+`PROVIDER_KEYS` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`,
+`NVIDIA_API_KEY`) from every spawned child's environment, and logs a boot warning naming
+any that were present in the shim's own env. The keys are **deleted, not blanked** —
+`ENV FOO=""` leaves `FOO` defined, and provider selection branches on presence rather than
+truthiness, so blanking would trade a guaranteed-absent variable for an ambiguous one. Do
+not add an `ENV`/`ARG` for this in `terrain/Dockerfile`: a build arg only persists into
+image history, which is a downgrade.
+
+Verified end to end after the change: `init` → 13 human docs +
 agent context, `litho_ran: true`, status `partial` → `ready` (~6 min);
 `ask` → answered with real file:line citations (~49 s).
 
@@ -173,8 +197,16 @@ From inside Hermes, via `pai_terrain_ops`:
 {"action": "projects"}                                        // what is indexed?
 {"action": "index",  "path": "github.com/ayedaemon/pai-stack"} // index (free)
 {"action": "search", "query": "workspace mount", "project": "pai-stack"}
-{"action": "source", "file": "hermes/plugins/pai_tools/adr_ops.py"}
+// `source` takes TWO paths with DIFFERENT bases — this is the single easiest
+// thing to get wrong. `path` is repo-relative; `file` is resolved against
+// /opt/data/workspace, so it must repeat the project directory.
+{"action": "source", "path": "github.com/ayedaemon/pai-stack",
+                   "file": "github.com/ayedaemon/pai-stack/hermes/plugins/pai_terrain_ops/terrain_ops.py"}
 ```
+
+A bare `{"action": "source", "file": "README.md"}` fails with
+`no such file: /opt/data/workspace/README.md` — the shim confines `file` against the
+workspace root, not against the repo.
 
 ## From DSH
 
@@ -218,13 +250,37 @@ regenerated locally:
 | `TERRAIN_IMAGE` | `pai-stack-terrain:latest` | built image tag |
 | `TERRAIN_PORT` | `7878` | host bind port |
 | `TERRAIN_BIND_IP` | `127.0.0.1` | host bind address |
-| `TERRAIN_ALLOW_LLM` | `0` | `1` enables `ask` / `init`, which run on OpenCode's keyless Zen models — **not** the gateway (see above) |
+| `TERRAIN_ALLOW_LLM` | `1` | enables `ask` / `init`, which run on OpenCode's keyless Zen models — **not** the gateway (see above). Set `0` to fail closed; both actions then return 403 |
 | `TERRAIN_TOKEN` | *(unset)* | if set, callers must send `x-terrain-token` — see the caveat below |
 | `TERRAIN_MEM_LIMIT` | `2g` | memory ceiling |
 
 The project registry lives in the `terrain_data` volume at
 `/var/lib/terrain/.terrain/registry.json` — deliberately **not** on the workspace
 bind, since it is host state rather than repo content.
+
+### The registry and the index have different lifetimes
+
+Those two paths are on **different mounts**, so they can survive or die independently:
+the registry is in the `terrain_data` Docker volume; `.terrain/` is inside the indexed
+repo on the workspace bind mount. Recreating the volume — `docker compose down -v`,
+a renamed project, a manual `docker volume rm` — silently drops `registry.json` while
+every index artifact survives intact on disk.
+
+The symptom is `pai_terrain_ops(action="projects")` returning `[]` while
+`<repo>/.terrain/` is fully populated. That breaks everything project-scoped:
+`overview`, `search --project`, and `ask --project` all have no target. It reads like
+"terrain lost my index" but the index is fine — only its address book is gone.
+
+**Recovery:**
+
+```bash
+make terrain-index d=/opt/data/workspace/<project>     # = terrain scan; free, no LLM
+```
+
+`scan` re-registers the project and reuses the index already on disk. Do **not** reach
+for a different verb to "fix" this: there is nothing to rebuild, and re-scanning is
+cheaper than any repair. The `index-health` skill detects this state automatically and
+names the command without running it.
 
 ## Degradation — this is the designed default, not a failure
 
