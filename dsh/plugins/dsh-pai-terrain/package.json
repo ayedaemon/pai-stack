@@ -1,7 +1,7 @@
 {
   "name": "dsh-pai-terrain",
   "version": "0.2.0",
-  "description": "DSH plugin for code intelligence via Terrain service. Provides `pai_terrain_ops` tool with actions: index, refresh, search, read, overview, projects, unregister, source, init, ask. Connects to Terrain service (port 7878) for code indexing and queries. Indexing is free (no LLM); ask/init run on keyless Zen models and are enabled by default (gated only when TERRAIN_ALLOW_LLM=0).",
+  "description": "DSH plugin for code intelligence via Terrain service. Provides `pai_terrain_ops` tool with actions: index, refresh, search, read, overview, projects, unregister, source, init, ask. Connects to Terrain service (port 7878) for code indexing and queries. Indexing is free (no LLM); ask/init run inside the terrain container on keyless Zen free models via the opencode binary.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

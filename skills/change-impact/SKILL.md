@@ -49,7 +49,7 @@ pai_terrain_ops(action="source", file="<candidate>", project="<slug>")
 **Never report a dependent you have not read.** A search hit is a lead, not a finding.
 
 For changes that cross a service boundary, read the compose file directly — the index will
-not tell you that `TERRAIN_ALLOW_LLM` is read by `server.mjs` in a different container.
+not tell you that `TERRAIN_TOKEN` is read by `server.mjs` in a different container.
 
 ## Step 3 — Cross-check ADR drift
 

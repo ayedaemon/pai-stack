@@ -6,7 +6,7 @@ description: Delegate coding tasks (bug fixes, small features, multi-file refact
 # OpenCode Delegate — keyless background delegation
 
 > Hermes delegates implementation to OpenCode v2 (pinned in image, `opencode --version`).
-> Model is ALWAYS a keyless free model (default `opencode/muse-spark-1.3-contributor-free`).
+> Model is ALWAYS a keyless free model (default `opencode/space-bunny-free`).
 > No credentials exist anywhere in this path — no `auth login`, no API keys, no exceptions.
 
 ## Preflight (every delegation session, once)

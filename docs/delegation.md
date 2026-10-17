@@ -1,6 +1,6 @@
 # Delegation (OpenCode, keyless)
 
-Hermes supervises; OpenCode v2 (pinned in the `hermes` image) implements headless in-container. Delegates use **only keyless free models** (default `opencode/muse-spark-1.3-contributor-free`) — no login, no keys to rotate.
+Hermes supervises; OpenCode v2 (pinned in the `hermes` image) implements headless in-container. Delegates use **only keyless free models** (default `opencode/space-bunny-free`) — no login, no keys to rotate.
 
 ```
 Hermes (supervise) ──opencode-delegate run──→ opencode --standalone (background)

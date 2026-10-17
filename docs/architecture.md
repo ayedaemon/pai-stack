@@ -23,8 +23,9 @@ hermes ──→ in-process: pai_* tools, skills, Mnemosyne (SQLite + ONNX)
 open-design (profile: design) ──→ shares $WORKSPACE_DIR at /opt/data/workspace
 dsh (profile: dsh) ──→ shares $WORKSPACE_DIR at /opt/data/workspace, models via llm-gateway:4000
 terrain (profile: terrain) ──→ writes .terrain/ inside each indexed repo (only writer)
-hermes ──HTTP /call──┐
-dsh ──MCP /mcp───────┴──→ terrain:7878
+hermes ─┐
+        ├──HTTP POST /call──→ terrain:7878
+dsh     ┘
 terrain ──→ opencode acp ──→ OpenCode Zen free models (keyless; NO llm-gateway link)
 ```
 
@@ -47,9 +48,9 @@ flowchart LR
     DSH -->|"claim/done"| PB
     WS -->|"source code"| TR
     H -->|"HTTP /call"| TR
-    DSH -->|"MCP /mcp"| TR
+    DSH -->|"HTTP /call"| TR
     TR -->|"writes .terrain/"| WS
-    TR -.->|"ACP, gated"| ZEN
+    TR -.->|"ACP"| ZEN
     H --> G
     DSH --> G
     click H "hermes.md"
@@ -74,7 +75,7 @@ boot, session, request — and one rule that explains the rest:
 | boot → exec | `hermes-entrypoint.sh` → `gateway run`; `dsh-entrypoint` → `setpriv --reuid=1000` re-exec → `dsh web` + socat |
 | session-long | hermes, dsh, LiteLLM proxy, `node server.mjs` — **none of these hold an index** |
 | request-scoped | `terrain argv` — one process per tool call, killed at the 10-minute cap |
-| spawned lineage | `opencode acp` (terrain, LLM-gated), `opencode --standalone` (hermes delegate) |
+| spawned lineage | `opencode acp` (terrain), `opencode --standalone` (hermes delegate) |
 
 ```mermaid
 flowchart LR
@@ -99,7 +100,7 @@ flowchart LR
     end
 
     subgraph VOL["terrain_data volume"]
-        REG["registry.json +<br/>seeded opencode.json"]
+        REG["registry.json<br/>opencode.json symlink"]
     end
 
     subgraph WSS["host $WORKSPACE_DIR bind mount, rw"]
@@ -111,14 +112,14 @@ flowchart LR
 
     H -->|"in-process"| MEM
     H -->|"POST /call"| SHIM
-    DH -->|"MCP JSON-RPC /mcp"| SHIM
+    DH -->|"POST /call"| SHIM
     H -->|"completions"| GW
     DH -->|"completions"| GW
     H -->|"spawn background"| DEL
     DEL -.->|"keyless"| ZEN
     SHIM -->|"spawn, argv array, serialised per repo"| CLI
-    SHIM -.->|"boot: seed, never overwrite"| REG
-    SHIM -.->|"gated by TERRAIN_ALLOW_LLM (default 1)"| ACP
+    SHIM -.->|"boot: symlink config"| REG
+    SHIM -.->|"spawn, no credential in env"| ACP
     ACP -.->|"keyless"| ZEN
     CLI -->|"registry read/write"| REG
     SRC -->|"scanned into"| IDX
@@ -140,21 +141,21 @@ flowchart LR
 Three consequences worth stating, because they are design decisions rather than
 accidents:
 
-- **The shim is a security process.** `token → allowlist → path confinement → LLM
-  gate` run before `spawn()`, with an argv array and never a shell. The
-  `TERRAIN_ALLOW_LLM` gate is enforced on **both** transports — in the `/mcp`
-  batch loop and again in `handleRpc`'s `tools/call` — so an MCP client cannot
-  reach `ask`/`init` that `/call` would refuse. It is a *cost* gate, not a secrecy
-  gate: what it protects is Zen latency, since those actions are keyless and carry
-  no provider key. Provider credentials are additionally **deleted from every
-  spawn's environment** (`PROVIDER_KEYS` in `server.mjs`), so `ask`/`init` cannot
-  be broken by a key leaking in from outside; a leaked key is announced at boot
-  rather than failing silently later. Per-repo serialisation keys on `write|path`,
-  so `index`, `refresh` and `init` against one repo share a single queue and
-  cannot interleave writes into `.terrain/`.
+- **The shim is a security process.** `token → allowlist → path confinement` run
+  before `spawn()`, with an argv array and never a shell. There is no LLM gate:
+  `ask`/`init` are always reachable, because they run on keyless Zen models and
+  cost latency rather than tokens. What protects them instead is that provider
+  credentials are **deleted from every spawn's environment** (`PROVIDER_KEYS` in
+  `server.mjs`) — opencode picks a provider by the *presence* of a credential, so
+  a key leaking in from outside would make `ask`/`init` resolve to a catalog model
+  and fail. A leaked key is announced at boot rather than failing silently later.
+  Per-repo serialisation keys on `write|path`, so `index`, `refresh` and `init`
+  against one repo share a single queue and cannot interleave writes into
+  `.terrain/`.
 - **State lives where a process can be killed for free — with one seam.**
-  `.terrain/` in the repo, registry and seeded `opencode.json` on the
-  `terrain_data` volume, Mnemosyne on `hermes-data`, sessions on `dsh_data`.
+  `.terrain/` in the repo, registry on the `terrain_data` volume (the ACP config
+  is a *symlink* into the image, not state — editing the image copy is enough),
+  Mnemosyne on `hermes-data`, sessions on `dsh_data`.
   `make terrain-down` costs nothing. But the registry and the index are on
   **different mounts with different lifetimes**: recreating `terrain_data` drops
   `registry.json` while every index artifact survives on the workspace bind. The
@@ -163,10 +164,11 @@ accidents:
   the `index-health` skill.
 - **Indexing is free.** `index`/`refresh` make no LLM call and `refresh` skips
   Litho, so an agent can re-index on reflex instead of reasoning about staleness.
-- **`pai_terrain_ops` is baked but not enabled.** `hermes/Dockerfile` copies it
-  into the image, and it is the only baked plugin absent from `plugins.enabled` in
-  `hermes/config.yaml` — so the Terrain story in AGENTS.md cannot work at runtime
-  until that line lands.
+- **`pai_terrain_ops` is enabled and self-hiding.** It is baked into the Hermes
+  image and listed in `plugins.enabled`, but its `check_fn` probes terrain's
+  `/healthz` and removes the tool from the catalogue when the `terrain` profile is
+  not running. Enabled-and-hidden is the intended state, not a half-wired one —
+  an agent never sees a tool that would fail.
 
 ## Permissions & trust boundaries
 

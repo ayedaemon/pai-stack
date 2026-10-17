@@ -178,18 +178,15 @@ services:
     profiles:
       - terrain
     # No depends_on: terrain has NO link to llm-gateway. The ACP agent it spawns
-    # for `init`/`ask` talks to OpenCode's own Zen endpoint, the same keyless path
-    # hermes' opencode-delegate uses. Terrain's own OpenAI-compatible settings are
-    # left empty for the same reason, so nothing here can silently route back
-    # through the gateway.
+    # for `init`/`ask` talks to OpenCode's own keyless Zen models, the same
+    # keyless path hermes' opencode-delegate uses. Terrain's OpenAI-compatible
+    # settings are left unset for the same reason, so nothing here can silently
+    # route back through the gateway — and a provider credential would make
+    # opencode resolve the ACP session to a catalog model instead of keyless Zen,
+    # breaking both actions. The shim strips them again per-spawn.
     environment:
       TERRAIN_PORT: "7878"
       TERRAIN_WORKSPACE: /opt/data/workspace
-      # LLM-backed actions (init/ask). ON by default: they run on OpenCode's
-      # keyless Zen models, so enabling them costs latency, not tokens, and no
-      # provider key exists in this container. Indexing never reads this flag.
-      # Set 0 to restore the fail-closed gate; ask/init then return 403.
-      TERRAIN_ALLOW_LLM: ${TERRAIN_ALLOW_LLM:-1}
       # Optional shared secret. When set, callers must send x-terrain-token.
       TERRAIN_TOKEN: ${TERRAIN_TOKEN:-}
     ports:

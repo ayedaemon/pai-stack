@@ -23,9 +23,9 @@ what we did not want. Terrain inverts it: **one container owns the index**, agen
 trigger jobs and read the result.
 
 ```
-hermes ──HTTP POST /call──┐
-                         ├──→ terrain:7878 ──→ <repo>/.terrain/
-dsh    ──MCP JSON-RPC────┘      (one writer)
+hermes ─┐
+        ├──→ POST /call ──→ terrain:7878 ──→ <repo>/.terrain/
+dsh     ┘                     (one writer)
 ```
 
 That inversion is a process decision, not a packaging one — the shim is stateless
@@ -51,9 +51,8 @@ stable, so re-check both when bumping the toolchain tag rather than assuming the
 tag implies a distro.
 
 The runtime also needs `nodejs`: the ENTRYPOINT is `node /opt/terrain/server.mjs`
-even though the terrain binary itself is Rust. The shim uses plain JSON-RPC with
-no npm dependencies, so the distro package suffices — no install stage, no
-version to drift.
+even though the terrain binary itself is Rust. The shim uses only Node's stdlib, so
+the distro package suffices — no install stage, no version to drift.
 
 `src-tauri` is a cargo workspace member, but `terrain-cli` does not depend on it, so
 the webkit/GTK chain never enters the image. `rust-toolchain.toml` pins stable;
@@ -69,17 +68,20 @@ in-process access to the binary, and Hermes reaches it through
 `pai_terrain_ops` rather than the socket. Without a network endpoint neither
 would get anything.
 
-[`terrain/server.mjs`](../terrain/server.mjs) fronts the binary on one port with two
-protocols:
+[`terrain/server.mjs`](../terrain/server.mjs) fronts the binary on one port:
 
 | Endpoint | Consumer | Protocol |
 |---|---|---|
-| `GET /healthz` | compose healthcheck, `check_fn` probe | plain HTTP |
-| `POST /call` | Hermes (`pai_terrain_ops`) | JSON |
-| `POST /mcp` | DSH (`dsh-mcp-client`) | MCP JSON-RPC 2.0 |
+| `GET /healthz` | compose healthcheck, both clients' availability probe | plain HTTP |
+| `POST /call` | Hermes (`pai_terrain_ops`), DSH (`dsh-pai-terrain`) | JSON |
 
-MCP is hand-rolled JSON-RPC rather than an SDK dependency, so the image needs no npm
-install stage and there is no SDK version to drift.
+**One transport, two consumers.** Both plugins speak `POST /call`. An earlier
+revision also exposed `POST /mcp` (hand-rolled JSON-RPC) on the theory that DSH
+would reach terrain through `@deepseek-ai/dsh-mcp-client`; that never happened —
+DSH ships a native TypeScript plugin against `/call` instead. The MCP endpoint had
+zero consumers, so it was removed rather than left as unexercised surface. The
+lesson: the transport a plugin *would* use is not the transport it *does* use.
+Check the shipped plugin, not the design doc.
 
 ## Two safety invariants
 
@@ -107,29 +109,27 @@ Without this, any agent holding the tool could point Terrain at the container im
 | `ask` | yes (DeepWiki Q&A) | keyless Zen — no tokens |
 
 `refresh` explicitly **skips Litho**, Terrain's LLM doc generator, so incremental
-re-indexing is free. LLM actions are refused with `403` when `TERRAIN_ALLOW_LLM=0`;
-the shipped default is `1`, so they are on out of the box. They do **not** use
-`llm-gateway` — terrain spawns an ACP agent that runs on OpenCode's keyless Zen
-models, so no provider key exists in this container and enabling them costs latency,
-not tokens.
+re-indexing is free. `init` and `ask` are always available — there is no feature
+flag. They do **not** use `llm-gateway` — terrain spawns an ACP agent that runs on
+OpenCode's keyless Zen models, so no provider key exists in this container and they
+cost latency, not tokens.
 
-Two consequences of that default being `1`:
+Two consequences:
 
 - **`init` is the expensive action.** It regenerates a whole corpus through the ACP
   agent. `index` and `refresh` are free and safe to suggest freely; `init` should be
   requested rather than run unprompted. Note also that a stale `human_docs` asset
   survives any number of `refresh` calls — only `init` regenerates that corpus.
-- **Provider credentials leaking into this container is now a live footgun**, because
-  the gate no longer protects against an agent reaching these actions on its own. See
-  below; `server.mjs` now deletes them before every spawn.
+- **Provider credentials leaking into this container is a live footgun**, because
+  nothing gates these actions any more. See below; `server.mjs` deletes them before
+  every spawn.
 
 ### `init` and `ask` need an ACP agent — and it must NOT see `OPENAI_API_KEY`
 
-`TERRAIN_ALLOW_LLM=1` is necessary but **not sufficient**. Terrain does not write
-its knowledge assets through an OpenAI-compatible endpoint — it **spawns an ACP
-agent subprocess** (`settings check-acp` → `spawn_command: "opencode acp"`).
-The image ships opencode 2.0.16 in `/opt/opencode` with a keyless Zen config seeded
-onto the volume at boot.
+Terrain does not write its knowledge assets through an OpenAI-compatible endpoint —
+it **spawns an ACP agent subprocess** (`settings check-acp` →
+`spawn_command: "opencode acp"`). The image ships opencode 2.0.16 in `/opt/opencode`
+with a keyless Zen config symlinked into `$XDG_CONFIG_HOME` at boot.
 
 **Prohibition: `OPENAI_API_KEY` (and any other provider credential) must never be
 present in this container.** `init` and `ask` work only while it is absent.
@@ -166,14 +166,72 @@ image history, which is a downgrade.
 
 Verified end to end after the change: `init` → 13 human docs +
 agent context, `litho_ran: true`, status `partial` → `ready` (~6 min);
-`ask` → answered with real file:line citations (~49 s).
+`ask` → answered with real file:line citations (~60 s).
+
+### When a Zen model is retired
+
+The keyless Zen slugs are **not stable**. They get dropped upstream with no
+deprecation here, and the failure is quiet in a specific way:
+
+```
+docker exec terrain opencode run --model opencode/<old-slug> 'reply OK'
+# Error: Model unavailable: opencode/<old-slug>
+```
+
+`terrain settings check-acp` still reports `{"available": true}` throughout,
+because that only proves the **binary** exists — not the model.
+
+**The shim now catches this at boot.** It runs `opencode models` (~50 ms) and
+compares the pinned model against the live keyless pool, so a retired slug is a
+banner line rather than a 10-minute hang:
+
+```
+[terrain] ACP model opencode/space-bunny-free verified against 10 keyless model(s)
+```
+
+and when it fails:
+
+```
+[terrain] ERROR: ACP model opencode/<old> is NOT available keylessly — init and ask WILL FAIL.
+           Retired upstream; nothing in this container changed. Live alternatives:
+             opencode/space-bunny-free
+             ...
+           Fix: edit "model" in terrain/opencode.json, then make terrain-build && make terrain-up.
+```
+
+It is never fatal: `scan`, `search`, `read`, `source` and `projects` are offline
+and keep working. Only `init` and `ask` are affected.
+
+#### Which models are actually available
+
+`opencode models` is the **only** source of truth. models.dev is a catalog that
+disagreed with reality for weeks — it still listed `muse-spark-1.3-contributor-free`
+at `cost: 0` long after the keyless pool dropped it, and it advertises ~50 "free"
+models where only ~10 are keyless. Do not rebuild a model list from the catalog.
+
+[`scripts/opencode-free-models.py`](../scripts/opencode-free-models.py) keeps the
+two straight: availability comes from the CLI, and models.dev is used only to
+enrich context/output windows. It also flags upstream `status: deprecated`, vision
+input, and the `big-pickle` alias (whose backing model can change without the slug
+changing — a poor choice for a knowledge corpus).
+
+```bash
+make free-models              # ranked table of what is live, largest context first
+make free-models --min-context 500000
+make free-models-check        # is the model pinned in terrain/opencode.json still keyless?
+make free-models-allowlist    # emit ids for a shell allowlist
+```
+
+Then edit `"model"` in [`terrain/opencode.json`](../terrain/opencode.json) and
+rebuild (`make terrain-build && make terrain-up`). The file is symlinked into
+`$XDG_CONFIG_HOME` at boot, so the image copy is the single source of truth — no
+volume cleanup needed.
+
+The shim prints the pinned model in its boot banner and returns it from
+`/healthz` as `acpModel` so this is visible without spelunking the container.
 
 Two related traps:
 
-- **The seed never overwrites.** `server.mjs` copies `/opt/terrain/opencode.json`
-  to the volume only when absent, so an edited config survives restarts — and a
-  *stale* one also survives a config change. Delete
-  `/var/lib/terrain/.config/opencode/opencode.json` and restart after editing.
 - **`terrain settings set <file.json>` replaces the whole file with no
   validation.** A partial JSON silently drops `base_url`. Always write the full
   `provider`/`model`/`api_key`/`base_url` block.
@@ -188,7 +246,8 @@ make terrain-index d=/opt/data/workspace/github.com/ayedaemon/pai-stack
 make terrain-build                   # rebuild after bumping TERRAIN_REF
 make terrain-config                  # validate compose config with terrain profile
 make terrain-down                    # stop; workspace and volume untouched
-make terrain-ask q="where is auth enforced?"   # needs TERRAIN_ALLOW_LLM=1
+make terrain-ask q="where is auth enforced?"   # keyless Zen, no tokens
+make free-models-check             # is the pinned ACP model still keyless?
 ```
 
 From inside Hermes, via `pai_terrain_ops`:
@@ -210,23 +269,21 @@ workspace root, not against the repo.
 
 ## From DSH
 
-DSH already ships `@deepseek-ai/dsh-mcp-client` plus
-`@modelcontextprotocol/{client,core}` v2.0.0, so no DSH plugin work is needed —
-register the shim as an MCP server:
+DSH reaches terrain through a native plugin,
+[`dsh/plugins/dsh-pai-terrain`](../dsh/plugins/dsh-pai-terrain), which calls the same
+`POST /call` endpoint Hermes uses and exposes the same `pai_terrain_ops` tool with
+the same ten actions.
 
-```jsonc
-{ "mcpServers": { "terrain": { "url": "http://terrain:7878/mcp" } } }
-```
+It is enabled by default via
+[`cordis.patch.yml`](../dsh/plugins/dsh-pai-terrain/cordis.patch.yml) and gated only
+by the overall `DSH_WITH_PAI_PLUGINS` build flag. It also ships `paiTerrainHealth`,
+a provided service wrapping the `/healthz` probe.
 
-Tools appear as `pai_terrain_index`, `pai_terrain_refresh`, `pai_terrain_search`,
-and so on — the `pai_` namespace holds even though MCP fans one tool out per
-action ([naming.md](naming.md) rule 1). The legacy `terrain_` spelling is
-still accepted on the wire.
-
-> **Unverified:** the exact transport DSH's MCP client expects (stdio vs SSE vs
-> Streamable HTTP) has not been confirmed against a running DSH. The shim speaks
-> Streamable HTTP. If DSH rejects it, the fallback is a `dsh-pai-terrain` TypeScript
-> plugin per `docs/dsh.md` Phase 2 — Hermes is unaffected either way.
+> **Not MCP.** An earlier revision of this doc claimed DSH connected through
+> `@deepseek-ai/dsh-mcp-client` to `POST /mcp`, and the shim implemented a
+> hand-rolled JSON-RPC endpoint to match. In practice DSH uses the TypeScript
+> plugin above, the MCP endpoint had no consumers, and it has been removed. There
+> is no `mcpServers` config anywhere in this repo.
 
 ## `.terrain/` is gitignored
 
@@ -250,9 +307,13 @@ regenerated locally:
 | `TERRAIN_IMAGE` | `pai-stack-terrain:latest` | built image tag |
 | `TERRAIN_PORT` | `7878` | host bind port |
 | `TERRAIN_BIND_IP` | `127.0.0.1` | host bind address |
-| `TERRAIN_ALLOW_LLM` | `1` | enables `ask` / `init`, which run on OpenCode's keyless Zen models — **not** the gateway (see above). Set `0` to fail closed; both actions then return 403 |
 | `TERRAIN_TOKEN` | *(unset)* | if set, callers must send `x-terrain-token` — see the caveat below |
 | `TERRAIN_MEM_LIMIT` | `2g` | memory ceiling |
+
+There is no flag for `ask` / `init`. They are always on, because they cost latency
+rather than tokens — see [Token cost](#token-cost). The model itself is not a
+variable either: it is pinned in [`terrain/opencode.json`](../terrain/opencode.json)
+and edited there.
 
 The project registry lives in the `terrain_data` volume at
 `/var/lib/terrain/.terrain/registry.json` — deliberately **not** on the workspace
@@ -300,21 +361,31 @@ rm -rf <repo>/.terrain/    # gitignored artifacts, safe to delete
 
 Nothing in the core stack references it.
 
-## `TERRAIN_TOKEN` — currently unused, deliberately open
+## `TERRAIN_TOKEN` — off by design
 
-The shim accepts an optional shared secret (`x-terrain-token`) so that a future deployment
-which exposes terrain beyond loopback has a gate available. **Today it protects nothing,
-and setting it breaks Hermes:** `docker-compose.yaml` passes no `TERRAIN_*` variable to the
-hermes container, so `terrain_ops.py` sends an empty token and the shim answers **401 on
-every call**.
+The shim accepts an optional shared secret (`x-terrain-token`). Both clients send it
+when set — compose passes `TERRAIN_TOKEN` into the hermes service — but the shipped
+configuration leaves it **empty on purpose**.
 
-It is left unset and open on purpose. If you set it, you must also add to the hermes
-service's `environment:`:
+Terrain is a **shared LAN service**: Hermes, DSH, and any other agent on the network
+are all meant to reach `terrain:7878` and use the one shared index. Requiring a token
+would mean every agent on the LAN needs the secret before it can read code
+intelligence, which trades a deliberate sharing boundary for a secret-distribution
+problem on a trusted home network.
 
-```yaml
-- TERRAIN_URL=http://terrain:7878
-- TERRAIN_TOKEN=${TERRAIN_TOKEN:-}
-```
+What actually constrains an open `/call`:
 
-Status: **kept, unwired, documented.** Not an oversight — a token is only meaningful once
-the bind address stops being `127.0.0.1`.
+- a **closed action allowlist** — ten actions; `env`, `sdd`, `settings`, `usage` and
+  the raw `tools` surface are unreachable and rejected by name;
+- **path confinement** — every path parameter must resolve inside
+  `/opt/data/workspace`, checked twice (lexically and via `realpathSync`) before the
+  binary runs;
+- **argv arrays, never a shell**, so parameters cannot inject;
+- **no credential in the container**, so the ACP agent cannot reach a paid backend.
+
+That is a containment boundary, not an authorization boundary. It assumes the network
+is trusted — do not expose this port to the public internet, and if you ever need to,
+set `TERRAIN_TOKEN` (it is wired on both sides; nothing else changes).
+
+`/healthz` is unauthenticated either way — it returns only the commit ref, workspace
+path, and pinned ACP model.

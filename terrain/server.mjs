@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 /**
- * Terrain service shim — HTTP + MCP front end for the `terrain` CLI.
+ * Terrain service shim — HTTP front end for the `terrain` CLI.
  *
  * Terrain ships as a CLI only (no serve/daemon subcommand). pai-stack agents
- * need a network endpoint, so this process owns the binary and exposes it two
- * ways on one port:
+ * need a network endpoint, so this process owns the binary and exposes it:
  *
- *   HTTP  POST /call   { action, params }   → Hermes (Python tool)
- *   MCP   POST /mcp    JSON-RPC 2.0        → DSH (@deepseek-ai/dsh-mcp-client)
- *   GET   /healthz                         → compose healthcheck
+ *   POST /call   { action, params }   → Hermes (pai_terrain_ops), DSH (dsh-pai-terrain)
+ *   GET  /healthz                    → compose healthcheck + both clients' probes
  *
- * MCP is implemented as plain JSON-RPC rather than via the SDK so the image
- * needs no npm install stage and there is no SDK version to drift. See
- * .planning/2026-10-04-terrain-service/findings.md §4.
+ * One transport, two consumers. Both plugins already speak POST /call.
  *
- * SAFETY — two invariants this file exists to enforce:
+ * LLM PATH — `init` and `ask` do NOT use llm-gateway. Terrain spawns
+ * `opencode acp` as a subprocess, and opencode runs on its own keyless Zen
+ * models (see terrain/opencode.json). This container therefore holds no gateway
+ * link and no provider credential. See PROVIDER_KEYS below for why that is
+ * enforced rather than assumed.
+ *
+ * SAFETY — three invariants this file exists to enforce:
  *   1. Subcommand allowlist. `terrain env apply` rewrites AGENTS.md and installs
  *      preset skills from `.agents/skills`, overwriting files pai-stack owns, so
  *      the whole `env` tree is unreachable. Same for `sdd`, `settings`, `usage`
@@ -22,41 +24,137 @@
  *   2. Path confinement. Index targets must resolve inside TERRAIN_WORKSPACE.
  *      Without this, any agent holding this tool could ask terrain to walk
  *      /var/lib/terrain or the container image itself.
+ *   3. Credential stripping. See PROVIDER_KEYS.
  */
 
 import { createServer } from 'node:http'
-import { spawn } from 'node:child_process'
-import { realpathSync, existsSync } from 'node:fs'
-import { readFileSync, mkdirSync, copyFileSync } from 'node:fs'
+import { spawn, execFile } from 'node:child_process'
+import { realpathSync, existsSync, lstatSync, readlinkSync, unlinkSync, symlinkSync } from 'node:fs'
+import { readFileSync, mkdirSync } from 'node:fs'
 import { resolve, join, dirname, isAbsolute } from 'node:path'
 
 const PORT = Number(process.env.TERRAIN_PORT ?? 7878)
 const WORKSPACE = resolve(process.env.TERRAIN_WORKSPACE ?? '/opt/data/workspace')
-const BIN = process.env.TERRAIN_BIN ?? 'terrain'
 const TOKEN = process.env.TERRAIN_TOKEN || null
 
+/** The ACP agent's config, as shipped in the image. Linked into XDG at boot. */
+const ACP_CONFIG_SRC = '/opt/terrain/opencode.json'
+
 /**
- * Seed the ACP agent's config from the pristine image copy onto the volume.
- * XDG_CONFIG_HOME has to be writable — opencode mkdirs `$XDG_CONFIG_HOME/opencode/`
+ * Point opencode's config at the image copy of terrain/opencode.json.
+ *
+ * XDG_CONFIG_HOME has to be writable: opencode mkdirs `$XDG_CONFIG_HOME/opencode/`
  * on startup, which fails under this container's `read_only: true` if it points
- * into the image layer. So the real copy lives on the terrain_data volume and is
- * restored from the image on every boot. Never overwrites an existing file, so a
- * hand-edited config survives restarts. Failure is non-fatal: terrain still
- * indexes and searches; only init/ask lose their agent.
+ * into the image layer. So the DIRECTORY lives on the terrain_data volume.
+ *
+ * The FILE is a symlink back to the image rather than a copy. A copy has to be
+ * refreshed on every boot, and "refresh only if absent" silently pins a stale
+ * config forever — a hand-edited copy outlives the image it came from, so
+ * bumping TERRAIN_REF stops changing the model and nobody notices until an LLM
+ * action fails. The symlink makes /opt/terrain/opencode.json the single source
+ * of truth: edit it, rebuild, done. Any pre-existing regular file here (from the
+ * old copy-based seed) is replaced.
+ *
+ * Failure is non-fatal: terrain still indexes and searches; only init/ask lose
+ * their agent.
  */
-function seedAcpConfig() {
-  const src = '/opt/terrain/opencode.json'
+function linkAcpConfig() {
   const xdg = process.env.XDG_CONFIG_HOME
-  if (!xdg || !existsSync(src)) return
+  if (!xdg || !existsSync(ACP_CONFIG_SRC)) return
+  const dir = join(xdg, 'opencode')
+  const dst = join(dir, 'opencode.json')
   try {
-    const dst = join(xdg, 'opencode', 'opencode.json')
-    if (existsSync(dst)) return
-    mkdirSync(dirname(dst), { recursive: true })
-    copyFileSync(src, dst)
-    console.error(`[terrain] seeded ACP agent config -> ${dst}`)
+    mkdirSync(dir, { recursive: true })
+    // existsSync follows symlinks, so a BROKEN link reads as absent — test
+    // lstat too, or symlinkSync throws EEXIST on it.
+    let st = null
+    try { st = lstatSync(dst) } catch { /* nothing there */ }
+    if (st?.isSymbolicLink()) {
+      // Compare the RAW target, not realpathSync: normalising would defeat the
+      // comparison whenever either side traverses a symlink (/tmp -> /private/tmp
+      // on macOS, a symlinked /opt, ...) and re-link on every boot.
+      try { if (readlinkSync(dst) === ACP_CONFIG_SRC) return } catch { /* unreadable */ }
+      unlinkSync(dst)
+    } else if (st) {
+      unlinkSync(dst) // a regular file left by the old copy-based seed
+    }
+    symlinkSync(ACP_CONFIG_SRC, dst)
+    console.error(`[terrain] ACP agent config -> ${dst} -> ${ACP_CONFIG_SRC}`)
   } catch (e) {
-    console.error(`[terrain] could not seed ACP config: ${e.message} (init/ask may be unavailable)`)
+    console.error(`[terrain] could not link ACP config: ${e.message} (init/ask may be unavailable)`)
   }
+}
+
+/**
+ * Read the model the ACP agent will use, for the boot banner.
+ *
+ * Worth logging because these keyless Zen models get retired upstream with no
+ * deprecation here: a retired model makes `init`/`ask` fail while
+ * `terrain settings check-acp` still reports `available: true`, because that
+ * only proves the BINARY exists. The banner is the one place that shows which
+ * model is actually wired up.
+ */
+function acpModel() {
+  try {
+    return JSON.parse(readFileSync(ACP_CONFIG_SRC, 'utf8')).model ?? 'unset'
+  } catch {
+    return 'unreadable'
+  }
+}
+
+/**
+ * Verify the pinned ACP model is still reachable keylessly, and say so loudly if
+ * not. Costs ~50ms warm.
+ *
+ * This exists because the failure is otherwise invisible. When
+ * muse-spark-1.3-contributor-free was retired upstream, `terrain settings
+ * check-acp` kept reporting {"available": true} — it only proves the BINARY
+ * exists — so `ask` and `init` just hung until the 10-minute spawn timeout, with
+ * no error anywhere pointing at the model. One `opencode models` call at boot
+ * turns that into a line in the banner.
+ *
+ * `opencode models` is ITSELF unreliable cold: it exits 0 with EMPTY stdout while
+ * its background server (opencode.db + WAL) is still coming up, then works. So an
+ * empty answer is INCONCLUSIVE, not a verdict — retry, and if it never resolves,
+ * say "unverified" rather than screaming that the model is dead. Reporting a
+ * false alarm here would be worse than not checking: the next reader learns to
+ * ignore the line that is supposed to matter.
+ *
+ * Never fatal: scan/search/read/source are all offline and must keep working
+ * when the model is gone. Failure here only means init/ask will not.
+ */
+function verifyAcpModel(attempt = 1) {
+  const want = acpModel()
+  const ATTEMPTS = 3
+  execFile('opencode', ['models'], { timeout: 15000, env: process.env }, (err, stdout) => {
+    const live = (stdout || '').split('\n').map((l) => l.trim()).filter(Boolean)
+
+    if (err || live.length === 0) {
+      if (attempt < ATTEMPTS) {
+        setTimeout(() => verifyAcpModel(attempt + 1), 1500)
+        return
+      }
+      console.error(
+        `[terrain] could not verify ACP model ${want}: ` +
+        `${err ? err.message : '`opencode models` returned nothing'} ` +
+        `(init/ask unverified — this says nothing about whether the model works)`
+      )
+      return
+    }
+
+    if (live.includes(want)) {
+      console.error(`[terrain] ACP model ${want} verified against ${live.length} keyless model(s)`)
+      return
+    }
+
+    console.error(
+      `[terrain] ERROR: ACP model ${want} is NOT available keylessly — init and ask WILL FAIL.\n` +
+      `           Retired upstream; nothing in this container changed. Live alternatives:\n` +
+      live.slice(0, 5).map((m) => `             ${m}`).join('\n') +
+      `\n           Fix: edit "model" in terrain/opencode.json, then make terrain-build && make terrain-up.\n` +
+      `           Confirm with: make free-models-check`
+    )
+  })
 }
 
 /** Actions exposed to agents. Anything not listed here is unreachable. */
@@ -87,48 +185,24 @@ const PROVIDER_KEYS = [
   'NVIDIA_API_KEY',
 ]
 
-/** action → { bin: [argv prefix], llm: boolean, hint?: string } */
+/** action → { bin: [argv prefix], repoFlag?: boolean } */
 const ACTIONS = {
-  index: { bin: ['scan'], llm: false },
-  init: { bin: ['init'], llm: true },
-  refresh: { bin: ['refresh'], llm: false },
-  search: { bin: ['search'], llm: false },
-  read: { bin: ['read'], llm: false },
-  overview: { bin: ['project', 'overview'], llm: false },
-  projects: { bin: ['project', 'list'], llm: false },
-  unregister: { bin: ['project', 'remove'], llm: false },
-  source: {
-    bin: ['source', 'read'],
-    llm: false,
-    repoFlag: true,
-    // The two path params have DIFFERENT bases, and both clients got this
-    // wrong independently. `path` → --repo-path, repo-relative (confine()
-    // resolves a relative path against WORKSPACE too, but the binary then
-    // treats it as the repo root). `file` → --file, confined against WORKSPACE
-    // directly, so a bare "README.md" becomes /opt/data/workspace/README.md
-    // and fails. Ship the distinction in the tool description rather than
-    // hoping every client documents it.
-    hint: "`path` is REPO-relative (the repo to read from); `file` is WORKSPACE-relative " +
-          "and must repeat the project directory, e.g. " +
-          "file='github.com/ayedaemon/pai-stack/README.md' — a bare 'README.md' fails.",
-  },
-  ask: { bin: ['ask', 'query'], llm: true },
+  index: { bin: ['scan'] },
+  init: { bin: ['init'] },
+  refresh: { bin: ['refresh'] },
+  search: { bin: ['search'] },
+  read: { bin: ['read'] },
+  overview: { bin: ['project', 'overview'] },
+  projects: { bin: ['project', 'list'] },
+  unregister: { bin: ['project', 'remove'] },
+  // `source` is the one action whose two path params have DIFFERENT bases, and
+  // both clients got this wrong independently. `path` → --repo-path,
+  // repo-relative; `file` → --file, workspace-relative, so a bare "README.md"
+  // resolves to /opt/data/workspace/README.md and fails. repoFlag switches
+  // buildArgv to the --repo-path convention.
+  source: { bin: ['source', 'read'], repoFlag: true },
+  ask: { bin: ['ask', 'query'] },
 }
-
-const SCHEMAS = {
-  index: { path: 'string?', slug: 'string?' },
-  init: { path: 'string?', slug: 'string?' },
-  refresh: { path: 'string?', slug: 'string?' },
-  search: { query: 'string', project: 'string?', limit: 'int?' },
-  read: { path: 'string' },
-  overview: { project: 'string' },
-  projects: {},
-  unregister: { project: 'string' },
-  source: { file: 'string?', project: 'string?', start_line: 'int?', end_line: 'int?' },
-  ask: { query: 'string', project: 'string?' },
-}
-
-const LLM_ACTIONS = Object.entries(ACTIONS).filter(([, v]) => v.llm).map(([k]) => k)
 
 // ── per-repo serialisation ───────────────────────────────────────────────────
 // Two concurrent mutating runs against one repo interleave writes into .terrain/
@@ -183,8 +257,7 @@ function buildArgv(action, params = {}) {
     const rp = params.repo_path ?? params.path
     if (rp) argv.push('--repo-path', confine(rp))
   } else {
-    const pathKeys = ['path', 'repo_path']
-    for (const k of pathKeys) {
+    for (const k of ['path', 'repo_path']) {
       if (params[k]) argv.push(confine(params[k]))
     }
   }
@@ -240,7 +313,7 @@ function run(action, params) {
   childEnv.GIT_CONFIG_VALUE_0 = '*'
 
   return serialise(key, () => new Promise((res) => {
-    const child = spawn(BIN, argv, {
+    const child = spawn('terrain', argv, {
       cwd: WORKSPACE,
       env: childEnv,
       timeout: 10 * 60 * 1000,
@@ -256,74 +329,7 @@ function run(action, params) {
   }))
 }
 
-// ── MCP tool listing ─────────────────────────────────────────────────────────
-// Tool names keep the `pai_` namespace even though MCP fans one tool out
-// per action — see docs/naming.md rule 1. The prefix identifies the
-// capability owner, never the transport.
-function mcpTools() {
-  return Object.entries(ACTIONS).map(([name, v]) => ({
-    name: `pai_terrain_${name}`,
-    description:
-      `Terrain ${name} — ${v.llm ? 'uses an LLM (keyless Zen models)' : 'offline, no LLM call'}. ` +
-      `Params: ${Object.keys(SCHEMAS[name]).join(', ') || 'none'}. ` +
-      `Writes .terrain/ into the indexed repo. ` +
-      (v.hint ?? ''),
-    inputSchema: {
-      type: 'object',
-      properties: Object.fromEntries(
-        Object.entries(SCHEMAS[name]).map(([k, t]) => [k, { type: t.replace('?', '') }]),
-      ),
-    },
-    annotations: { readOnlyHint: !['index', 'init', 'refresh', 'unregister'].includes(name) },
-  }))
-}
-
-const MCP_TOOLS = new Map(mcpTools().map((t) => [t.name.replace('pai_terrain_', ''), t]))
-
-// ── MCP JSON-RPC ─────────────────────────────────────────────────────────────
-const PROTOCOL_VERSION = '2025-06-18'
-
-async function handleRpc(msg, sessions) {
-  const { id, method, params } = msg
-  const reply = (result) => ({ jsonrpc: '2.0', id, result })
-  const fail = (code, message) => ({ jsonrpc: '2.0', id, error: { code, message } })
-
-  switch (method) {
-    case 'initialize':
-      return reply({
-        protocolVersion: PROTOCOL_VERSION,
-        capabilities: { tools: {} },
-        serverInfo: { name: 'pai-terrain', version: '0.1.0' },
-      })
-    case 'notifications/initialized':
-      return null
-    case 'ping':
-      return reply({})
-    case 'tools/list':
-      return reply({ tools: mcpTools() })
-    case 'tools/call': {
-      // Accept both the legacy and the namespaced spelling so an
-      // existing client does not break on upgrade; the registry is
-      // keyed by the bare action either way.
-      const raw = String(params?.name ?? '')
-      const action = raw.replace(/^pai_terrain_/, '').replace(/^terrain_/, '')
-      if (!MCP_TOOLS.has(action)) return fail(-32602, `unknown tool: ${params?.name}`)
-      const gated = guardLlm(action)
-      if (gated) return fail(-32603, gated)
-      const r = await run(action, params?.arguments ?? {})
-      return reply({
-        content: [{ type: 'text', text: r.ok ? r.output : `ERROR: ${r.error}` }],
-        isError: !r.ok,
-      })
-    }
-    default:
-      return id == null ? null : fail(-32601, `method not found: ${method}`)
-  }
-}
-
 // ── HTTP ─────────────────────────────────────────────────────────────────────
-const sessions = new Set()
-
 function json(res, status, body, extra = {}) {
   const s = JSON.stringify(body)
   res.writeHead(status, {
@@ -350,63 +356,24 @@ function commitRef() {
   try { return readFileSync('/etc/terrain-commit', 'utf8').trim().slice(0, 12) } catch { return 'unknown' }
 }
 
-// ── LLM gate ─────────────────────────────────────────────────────────
-// `ask` and `init` invoke an LLM. They are refused unless the operator
-// has explicitly opted in. Applies to BOTH protocols — this is a
-// permission, so it must hold no matter how the request arrives.
-function guardLlm(action) {
-  if (!LLM_ACTIONS.includes(action)) return null
-  if (process.env.TERRAIN_ALLOW_LLM === '1') return null
-  return `action "${action}" needs an LLM; set TERRAIN_ALLOW_LLM=1 to enable`
-}
-
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
 
   try {
     if (url.pathname === '/healthz') {
-      return json(res, 200, { ok: true, terrain: commitRef(), workspace: WORKSPACE, llmActions: LLM_ACTIONS })
+      return json(res, 200, { ok: true, terrain: commitRef(), workspace: WORKSPACE, acpModel: acpModel() })
     }
     if (TOKEN && req.headers['x-terrain-token'] !== TOKEN) {
       return json(res, 401, { error: 'bad or missing x-terrain-token' })
     }
 
-    if (url.pathname === '/mcp' && req.method === 'POST') {
-      const body = await readBody(req)
-      if (!body) return res.writeHead(202).end()
-      const batch = Array.isArray(body) ? body : [body]
-      const out = []
-      for (const msg of batch) {
-        if (msg.method === 'initialize' && !req.headers['mcp-session-id']) {
-          const sid = `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-          sessions.add(sid)
-          var extraHeaders = { 'mcp-session-id': sid }
-        }
-        // Apply LLM gate check for MCP tool calls
-        if (msg.method === 'tools/call') {
-          const action = String(msg.params?.name ?? '').replace(/^pai_terrain_/, '').replace(/^terrain_/, '')
-          const gated = guardLlm(action)
-          if (gated) {
-            out.push({ jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: gated } })
-            continue
-          }
-        }
-        const r = await handleRpc(msg, sessions)
-        if (r) out.push(r)
-      }
-      if (!out.length) return res.writeHead(202).end()
-      return json(res, 200, out.length === 1 ? out[0] : out, extraHeaders ?? {})
-    }
-
     if (url.pathname === '/call' && req.method === 'POST') {
       const body = await readBody(req)
       if (!body?.action) throw Object.assign(new Error('missing "action"'), { status: 400 })
-      const gated = guardLlm(body.action)
-      if (gated) throw Object.assign(new Error(gated), { status: 403 })
       return json(res, 200, await run(body.action, body.params ?? {}))
     }
 
-    return json(res, 404, { error: 'not found', routes: ['/healthz', '/call', '/mcp'] })
+    return json(res, 404, { error: 'not found', routes: ['/healthz', '/call'] })
   } catch (e) {
     return json(res, e.status ?? 500, { error: e.message })
   }
@@ -414,16 +381,9 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.error(`[terrain] listening on ${PORT} · workspace=${WORKSPACE} · ref=${commitRef()}`)
-  seedAcpConfig()
-  // Report the gate's ACTUAL state. This printed "gated OFF" unconditionally,
-  // so a container running with TERRAIN_ALLOW_LLM=1 still announced the opposite
-  // of the truth in its only startup banner. The per-request check below was
-  // always correct — this was a lie in the logs, not a broken gate.
-  if (process.env.TERRAIN_ALLOW_LLM === '1') {
-    console.error(`[terrain] llm actions ENABLED: ${LLM_ACTIONS.join(', ')} (keyless Zen models via opencode acp — NOT llm-gateway)`)
-  } else {
-    console.error(`[terrain] llm actions gated OFF: ${LLM_ACTIONS.join(', ')} (TERRAIN_ALLOW_LLM=1 to enable)`)
-  }
+  linkAcpConfig()
+  console.error(`[terrain] LLM actions (init, ask): opencode acp · model=${acpModel()} · keyless Zen, NOT llm-gateway`)
+  verifyAcpModel()
   // A leaked key is stripped before every spawn, so init/ask keep working — but
   // say so loudly rather than letting a stray credential sit in the env until
   // someone debugs a mysterious provider-billing line. The source is the bug.

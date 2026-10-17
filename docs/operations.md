@@ -58,7 +58,7 @@ The other three images were current at the time of writing (`dsh` ~4h, `terrain`
 | `DSH_TELEGRAM_*` | Separate DSH bot token + allowlists; empty = disabled |
 | `OPEN_DESIGN_IMAGE`, `OPEN_DESIGN_PORT`, `OD_API_TOKEN` | Design profile (see [opendesign.md](opendesign.md)) |
 | `DSH_IMAGE`, `DSH_PORT`, `DSH_BIND_IP`, `DEEPSEEK_API_KEY`, `DSH_ADMIN_PASSWORD`, `DSH_SETUP_REMOTE`, `DSH_TRUSTED_HOSTS` | DSH profile (see [dsh.md](dsh.md)) |
-| `TERRAIN_REF`, `TERRAIN_IMAGE`, `TERRAIN_PORT`, `TERRAIN_BIND_IP`, `TERRAIN_TOKEN`, `TERRAIN_ALLOW_LLM`, `TERRAIN_MEM_LIMIT` | Terrain profile (see [terrain.md](terrain.md)) |
+| `TERRAIN_REF`, `TERRAIN_IMAGE`, `TERRAIN_PORT`, `TERRAIN_BIND_IP`, `TERRAIN_TOKEN`, `TERRAIN_MEM_LIMIT` | Terrain profile (see [terrain.md](terrain.md)) |
 
 Template with generation hints: [.env.example](../.env.example)
 
@@ -84,7 +84,7 @@ Template with generation hints: [.env.example](../.env.example)
 | `llm-gateway/config.yaml` + `scripts/sync-models.py` | Routes + model sync |
 | `opendesign/Dockerfile` | Local open-design build |
 | `dsh/Dockerfile` | Local dsh build (bundled mnemon CLI) |
-| `terrain/` | Terrain multi-stage image + HTTP/MCP shim |
+| `terrain/` | Terrain multi-stage image + HTTP shim |
 
 ## Current Stack State (2026-10-11)
 

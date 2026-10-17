@@ -5,8 +5,9 @@
  * - index, refresh, search, read, overview, projects, unregister, source, init, ask
  *
  * Connects to Terrain service (TERRAIN_URL, default http://terrain:7878).
- * Indexing (index, refresh) is free — no LLM calls. Only init/ask use LLM (enabled by
- * default; gated only when TERRAIN_ALLOW_LLM=0), on keyless Zen models, not llm-gateway.
+ * Indexing (index, refresh) is free — no LLM calls. Only init/ask use an LLM, run
+ * by the opencode binary inside the terrain container on keyless Zen free models,
+ * not llm-gateway.
  * Each scan writes .terrain/ inside the repo (gitignored, per-host).
  * Paths are resolved inside WORKSPACE_DIR (/opt/data/workspace).
  */
@@ -23,14 +24,15 @@ export const Config = z.object({
 
 const SERVICE = process.env.TERRAIN_URL || "http://terrain:7878";
 const TOKEN = process.env.TERRAIN_TOKEN || "";
-const TIMEOUT = parseInt(process.env.TERRAIN_TIMEOUT || "600", 10);
 const WORKSPACE = process.env.TERRAIN_WORKSPACE || "/opt/data/workspace";
+
+// Matches the service-side spawn timeout; `init` runs Litho over a whole repo.
+const TIMEOUT = 600;
 
 const ALLOWED_ACTIONS = [
   "index", "refresh", "search", "read", "overview", 
   "projects", "unregister", "source", "init", "ask"
 ];
-const LLM_ACTIONS = ["init", "ask"];
 
 function headers() {
   const h = { "content-type": "application/json" };
@@ -87,7 +89,7 @@ export function apply(ctx, config) {
 
   const terrainTool = defineTool({
     name: "pai_terrain_ops",
-    description: "Code intelligence over the Terrain index service. Terrain scans a project repo into .terrain/ (Markdown knowledge docs + agent context); this tool triggers those scans and reads the result. Check action='projects' first: if the repo is indexed, this is far more precise than grep; if it is not, fall back to grep + targeted reads. Indexing ('index', 'refresh') makes NO LLM call and costs nothing. Only 'ask' and 'init' use an LLM — Terrain's keyless Zen models, not the llm-gateway — and they are enabled by default; the service refuses them only when TERRAIN_ALLOW_LLM is set to 0. Write scope: each scan writes .terrain/ inside the repo you pass. Paths are resolved inside /opt/data/workspace; other paths are rejected. Allowed actions: index, refresh, search, read, overview, projects, unregister, source, init, ask.",
+    description: "Code intelligence over the Terrain index service. Terrain scans a project repo into .terrain/ (Markdown knowledge docs + agent context); this tool triggers those scans and reads the result. Check action='projects' first: if the repo is indexed, this is far more precise than grep; if it is not, fall back to grep + targeted reads. Indexing ('index', 'refresh') makes NO LLM call and costs nothing. Only 'ask' and 'init' use an LLM — Terrain's keyless Zen free models, run by the opencode binary inside the terrain container, not the llm-gateway. Both are always available. Write scope: each scan writes .terrain/ inside the repo you pass. Paths are resolved inside /opt/data/workspace; other paths are rejected. Allowed actions: index, refresh, search, read, overview, projects, unregister, source, init, ask.",
     parameters: {
       action: {
         type: "string",

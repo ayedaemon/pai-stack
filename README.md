@@ -87,7 +87,7 @@ Every service has explicit targets — run `make help` for the full list.
 | `make dsh-up` | DSH agent — [docs/dsh.md](docs/dsh.md) |
 | `make terrain-up` | Terrain code-intel — [docs/terrain.md](docs/terrain.md) |
 | `make terrain-index d=/opt/data/workspace/<project>` | Index a repo (free, no LLM) |
-| `make terrain-ask q="<question>"` | Ask an indexed repo (keyless Zen; gated only if `TERRAIN_ALLOW_LLM=0`) |
+| `make terrain-ask q="<question>"` | Ask an indexed repo (keyless Zen free models, no tokens) |
 | `make design-import d=/opt/data/workspace/<dir>` | Import a folder into OpenDesign |
 
 Full reference: [docs/operations.md](docs/operations.md)

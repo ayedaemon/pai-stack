@@ -9,7 +9,8 @@
 	all-up all-down all-clean \
 	design-up design-down design-logs design-config design-build design-perms design-import \
 	dsh-up dsh-down dsh-logs dsh-config dsh-build dsh-perms dsh-sync-models dsh-ensure-web dsh-password dsh-clean dsh-versions-check \
-	terrain-up terrain-down terrain-logs terrain-config terrain-build terrain-perms terrain-index terrain-ask \
+	terrain-up terrain-down terrain-clean terrain-logs terrain-config terrain-build terrain-perms terrain-index terrain-ask \
+	free-models free-models-check free-models-allowlist \
 	sync sync-dry
 
 # ── Environment & Variables ──
@@ -18,6 +19,15 @@
 ext_env = $(shell grep -E '^$1=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")
 
 WORKSPACE_DIR ?= $(call ext_env,WORKSPACE_DIR)
+
+# Fail with a useful message instead of a raw `docker exec` error when the
+# terrain container is not running — these targets all need `opencode` from
+# inside that image.
+define require_container
+@if ! docker ps --format '{{.Names}}' | grep -qx '$(1)'; then \
+	echo "container '$(1)' is not running — start it with: make terrain-up"; exit 1; \
+fi
+endef
 # Expand a leading ~ using shell tilde expansion on the host environment
 WORKSPACE_DIR := $(shell echo $(WORKSPACE_DIR))
 export WORKSPACE_DIR
@@ -259,18 +269,36 @@ terrain-perms: ## Create volume + fix ownership to container's terrain user (100
 	docker volume create --label com.docker.compose.project=$(COMPOSE_PROJECT_NAME) --label com.docker.compose.volume=terrain_data $(TERRAIN_DATA_VOLUME) >/dev/null
 	docker run --rm -v $(TERRAIN_DATA_VOLUME):/data alpine chown -R 1000:1000 /data
 
-terrain-index: ## Index a project: make terrain-index d=/opt/data/workspace/<dir> [n=<slug>]
+terrain-index: ## Index a project: make terrain-index d=/opt/data/workspace/<dir> [n=<slug>] — free, no LLM
 	@if [ -z "$(d)" ]; then echo "Usage: make terrain-index d=/opt/data/workspace/<folder> [n=<slug>]"; exit 1; fi
 	@SLUG=""; if [ -n "$(n)" ]; then SLUG="--slug $(n)"; fi; \
 	docker exec terrain terrain scan "$(d)" $$SLUG
 
-terrain-ask: ## Knowledge Q&A: make terrain-ask q="<question>" [n=<slug>] — keyless Zen, gated only if TERRAIN_ALLOW_LLM=0
+terrain-ask: ## Knowledge Q&A: make terrain-ask q="<question>" [n=<slug>] — keyless Zen free models, no tokens
 	@if [ -z "$(q)" ]; then echo "Usage: make terrain-ask q=\"<question>\" [n=<slug>]"; exit 1; fi
 	@SLUG=""; if [ -n "$(n)" ]; then SLUG="--project $(n)"; fi; \
 	docker exec terrain terrain ask query "$(q)" $$SLUG
 
 terrain-config: ## Validate compose configuration with terrain profile
 	$(COMPOSE) $(PROFILE_TERRAIN) config
+
+# ── Keyless model discovery ──
+# `opencode models` is the only source of truth for what the Zen keyless pool
+# actually serves; models.dev still lists retired slugs at cost 0. These targets
+# pipe the CLI output through the discovery script so availability comes from
+# opencode and only context/output sizes come from the catalog.
+
+free-models: ## List keyless Zen models with context windows (live, from opencode)
+	@$(call require_container,terrain); docker exec terrain opencode models | python3 scripts/opencode-free-models.py
+
+free-models-check: ## Verify the model pinned in terrain/opencode.json is still keyless
+	@$(call require_container,terrain); \
+	PIN=$$(python3 -c "import json;print(json.load(open('terrain/opencode.json'))['model'])"); \
+	echo "pinned: $$PIN"; \
+	docker exec terrain opencode models | python3 scripts/opencode-free-models.py check "$$PIN"
+
+free-models-allowlist: ## Print the live keyless allowlist for hermes' opencode-delegate
+	@$(call require_container,terrain); docker exec terrain opencode models | python3 scripts/opencode-free-models.py allowlist
 
 # ── Models & Sync ──
 

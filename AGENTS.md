@@ -52,7 +52,7 @@ OpenDesign's daemon state stays in the `open_design_data` volume at `/app/.od` �
 hermes ──→ [Mnemosyne: SQLite]  local persistent memory (working/episodic memory, knowledge graph)
 hermes ──→ [pai_tools plugin]   native tools: pai_notebook_ops, pai_adr_ops, pai_ops_design_ops (Docker is native CLI via the `docker` skill, not a tool)
 hermes ──→ [pai_terrain_ops]    code intelligence → terrain:7878/call  (HTTP)
-dsh    ──→ [dsh-mcp-client]     code intelligence → terrain:7878/mcp   (MCP)
+dsh    ──→ [dsh-pai-terrain]    code intelligence → terrain:7878/call  (HTTP)
 hermes ←─→ [pair/ blackboard] ←─→ dsh   peer queue: pair/queue → claim.py → worktree → done.py; wake via poke.py (docker exec headless)
 hermes ──→ [skills: /opt/pai/skills]  native procedural skills via skills_list / skill_view
 hermes ──→ llm-gateway:4000     ONLY gateway for LLM completions & reasoning
@@ -61,7 +61,7 @@ hermes (ask_notebook) ──→ llm-gateway:4000 (synthesis)
 dsh    ──→ llm-gateway:4000     LLM completions & reasoning
 open-design ──→ llm-gateway:4000  LLM completions (BYOK or gateway)
 terrain ──→ <repo>/.terrain/    the ONLY writer of index artifacts
-terrain ──→ opencode acp (ACP)  ask/init — enabled by default (TERRAIN_ALLOW_LLM=1)
+terrain ──→ opencode acp (ACP)  ask/init — always on, no feature flag
          └─ NOT llm-gateway. Terrain holds no gateway link and no provider key:
             its ACP agent runs OpenCode's keyless Zen models. Do NOT re-add
             OPENAI_API_KEY — it makes opencode pin the ACP session to a catalog
@@ -114,9 +114,9 @@ agent ──→ terrain:7878 ──→ terrain CLI ──→ <repo>/.terrain/
   indexes, which structurally enforces the `EXECUTION_DIR` boundary below.
 - **Indexing is free.** `index`/`refresh` make no LLM call. `refresh` explicitly skips
   Litho, Terrain's LLM doc generator. Only `ask` and `init` invoke an LLM — via
-  Terrain's own ACP agent on keyless Zen models, not the gateway — and they are
-  **enabled by default**; the service refuses them only at `TERRAIN_ALLOW_LLM=0`.
-  Because they are keyless, enabling them costs latency, not tokens. `init` is the
+  Terrain's own ACP agent on keyless Zen models, not the gateway. There is no
+  feature flag: they are always on, because keyless means they cost latency, not
+  tokens. `init` is the
   expensive one: it regenerates the whole `human/` corpus, so request it rather than
   running it unprompted — and note a stale corpus survives any number of `refresh`
   calls, since only `init` runs Litho.
@@ -188,7 +188,7 @@ Do not add protocol to this file. If a rule is missing, it belongs in the `agent
 | [`hermes/config.yaml`](hermes/config.yaml) | System prompt, model providers, skills, knowledgebase |
 | [`docker-compose.yaml`](docker-compose.yaml) | All service definitions, mounts, limits (profiles: gateway, hermes, terrain, dsh, design) |
 | [`hermes/plugins/pai_terrain_ops/`](hermes/plugins/pai_terrain_ops/) | Code-intel tool → terrain service |
-| [`terrain/`](terrain/) | Terrain multi-stage image + HTTP/MCP shim |
+| [`terrain/`](terrain/) | Terrain multi-stage image + HTTP shim |
 | [`docs/architecture.md`](docs/architecture.md) | Living Mermaid diagram + process model |
 | [`.env.example`](.env.example) | Template for `WORKSPACE_DIR`, LLM config, API keys |
 

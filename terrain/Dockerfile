@@ -94,7 +94,8 @@ COPY --from=build /terrain-commit /etc/terrain-commit
 # that exact path.
 COPY --from=build /src/preset_skills /src/preset_skills
 COPY server.mjs /opt/terrain/server.mjs
-# The ACP agent's config, seeded onto the volume at boot.
+# The ACP agent's config. Stays here in the image; the shim symlinks it into
+# $XDG_CONFIG_HOME at boot.
 COPY opencode.json /opt/terrain/opencode.json
 
 # COPY preserves the build context's file mode, so whatever umask the author had
@@ -147,18 +148,35 @@ RUN mkdir -p /src/crates/terrain-core \
 # hermes runs as root; terrain cannot. The build-time gate below runs as root too,
 # so it did not catch this — the ACP agent must be verified AS the runtime uid.
 #
-# Agent is reachable and runs as the uid this image uses; see the opencode
-# section for why it is pointed at the gateway.
+# Agent is reachable and runs as the uid this image uses.
 #
-# The agent talks to llm-gateway, NOT OpenCode's Zen free models. Two reasons.
-# AGENTS.md makes the gateway the only sanctioned inference path for terrain
-# ("terrain ──→ llm-gateway:4000 only when TERRAIN_ALLOW_LLM=1"), so routing the
-# ACP agent elsewhere would add a second, undocumented backend. And `opencode acp`
-# has no --model flag and will not resolve a keyless Zen model: asked for one it
-# dies at session creation with "ACP protocol error: Authentication required:
-# provider authentication required", even though plain `opencode run` resolves
-# that same model fine. OPENAI_BASE_URL/OPENAI_API_KEY are already exported for
-# terrain's own routing, so the `openai` provider needs no extra configuration.
+# The agent talks to OpenCode's KEYLESS ZEN models, NOT llm-gateway. This is
+# deliberate and load-bearing:
+#
+#   * No `depends_on: llm-gateway`, no OPENAI_BASE_URL, no OPENAI_API_KEY in the
+#     compose block. Terrain holds no link to the gateway at all.
+#   * opencode selects a provider by the PRESENCE of a credential, not its
+#     value. Export OPENAI_API_KEY (even "not-needed") and opencode reports
+#     OpenAI as authenticated, then `opencode acp` IGNORES the model in
+#     /opt/terrain/opencode.json, pins the session to a catalog OpenAI model, and
+#     dies at session creation with "ACP protocol error: Authentication
+#     required". Plain `opencode run` still resolves keyless Zen fine, which is
+#     what makes this so confusing to debug.
+#   * server.mjs deletes the four provider keys from every spawn as a second
+#     layer, and logs a boot warning naming any that leaked in.
+#
+# DO NOT re-add OPENAI_API_KEY or OPENAI_BASE_URL to this service. Either one
+# silently breaks `init` and `ask`. Verified working: `init` regenerates the
+# human/ corpus (status partial -> ready), `ask` returns in ~60s.
+#
+# The model itself is pinned in /opt/terrain/opencode.json, symlinked into
+# $XDG_CONFIG_HOME at boot. Those Zen slugs DO get retired upstream — when one
+# does, both LLM actions fail while `terrain settings check-acp` still reports
+# "available: true", because that only proves the binary exists. Recover with:
+#   docker exec terrain opencode models          # list what is live now
+#   docker exec terrain opencode run --model <id> 'reply OK'   # confirm keyless
+# then edit the "model" field above and rebuild. The shim prints the pinned model
+# in its boot banner and in /healthz for exactly this reason.
 ARG OPENCODE_VERSION=2.0.16
 RUN curl -fsSL https://opencode.ai/v2/install | bash -s -- --no-modify-path -v ${OPENCODE_VERSION} \
  && /root/.opencode/bin/opencode --version \
@@ -181,9 +199,14 @@ RUN curl -fsSL https://opencode.ai/v2/install | bash -s -- --no-modify-path -v $
 # appends its own `opencode/` under it and mkdirs on startup — verified: with
 # XDG_CONFIG_HOME=/etc/opencode even `opencode acp --help` dies with
 # `EACCES: permission denied, mkdir '/etc/opencode/opencode'`, which would also
-# fail at runtime under read_only:true. So it lives on the volume and the shim
-# seeds it from the pristine copy in the image on boot (same pattern dsh's and
-# hermes's entrypoints use for config-on-volume).
+# fail at runtime under read_only:true. So the DIRECTORY lives on the volume.
+#
+# The FILE inside it is a symlink to /opt/terrain/opencode.json, created by the
+# shim at boot. Symlink rather than copy: a copy is either stale-by-default (if
+# only written when absent, a hand-edited copy outlives the image it came from
+# and bumping TERRAIN_REF stops changing the model) or re-copied on every boot.
+# The symlink makes the image copy the single source of truth.
+#
 # XDG_DATA_HOME is opencode's cache/session state — the other writable path.
 ENV HOME=/var/lib/terrain \
     XDG_CONFIG_HOME=/var/lib/terrain/.config \
@@ -192,7 +215,8 @@ ENV HOME=/var/lib/terrain \
     TERRAIN_WORKSPACE=/opt/data/workspace \
     NODE_ENV=production
 
-# Pristine source for the seed; the writable copy lives on the volume above.
+# Writable homes for opencode on the volume. The config FILE itself is the
+# symlink created at boot, not a copy made here.
 RUN mkdir -p /var/lib/terrain /var/lib/terrain/.config /opt/data/workspace \
  && chown -R terrain:terrain /var/lib/terrain /opt/data/workspace
 

@@ -20,11 +20,19 @@
         apiKeyEnv: OPENAI_API_KEY
         models:
           - id: default   # full fallback chain — always works, even if stale
+          - id: kilo/cohere/north-mini-code:free
           - id: kilo/dots-studio/dots-3-note-preview:free
           - id: kilo/kilo-auto/free
           - id: kilo/liquid/lfm-2.5-2.6b:free
+          - id: kilo/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+          - id: kilo/nvidia/nemotron-3-super-120b-a12b:free
           - id: kilo/nvidia/nemotron-3-ultra-550b-a55b:free
-          - id: kilo/nvidia/nemotron-3.5-lightning:free
+          - id: kilo/nvidia/nemotron-3.5-content-safety:free
+          - id: kilo/openrouter/free
+          - id: kilo/poolside/laguna-s-2.1:free
+          - id: kilo/poolside/laguna-xs-2.1:free
+          - id: kilo/reflection/beam-free
+          - id: kilo/xingchen-agi/xing4.0-29b-a4b:free
           - id: mistral/codestral-2508
           - id: mistral/codestral-latest
           - id: mistral/ministral-14b-2512
@@ -37,16 +45,6 @@
           - id: mistral/mistral-code-latest
           - id: mistral/voxtral-small-2507
           - id: mistral/voxtral-small-latest
-          - id: openrouter/cohere/north-mini-code:free
-          - id: openrouter/dots-studio/dots-3-note-preview:free
-          - id: openrouter/free
-          - id: openrouter/liquid/lfm-2.5-2.6b:free
-          - id: openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
-          - id: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          - id: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
-          - id: openrouter/nvidia/nemotron-3.5-content-safety:free
-          - id: openrouter/nvidia/nemotron-3.5-lightning:free
-          - id: openrouter/poolside/laguna-xs-2.1:free
           - id: qwen3.8-27b-uncensored
           - id: spark-x2.5-4b-uncensored
 
