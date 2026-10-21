@@ -60,9 +60,6 @@ services:
         aliases:
           - litellm
 
-  # ──────────────────────────────────────────────────────────────
-  # Profile: hermes — AI Agent Gateway + Dashboard
-  # ──────────────────────────────────────────────────────────────
   hermes:
     build:
       context: ./hermes
@@ -189,6 +186,11 @@ services:
       TERRAIN_WORKSPACE: /opt/data/workspace
       # Optional shared secret. When set, callers must send x-terrain-token.
       TERRAIN_TOKEN: ${TERRAIN_TOKEN:-}
+      # Optional hard pin for the ACP agent's model. Default (unset): the shim
+      # resolves the largest-context keyless Zen model at every boot. Pin only
+      # if boot-time selection is unwanted; an unavailable pin falls back to
+      # the template in terrain/opencode.json (init/ask off until fixed).
+      TERRAIN_ACP_MODEL: ${TERRAIN_ACP_MODEL:-}
     ports:
       - "${TERRAIN_BIND_IP:-127.0.0.1}:${TERRAIN_PORT:-7878}:7878"
     volumes:
@@ -247,11 +249,40 @@ services:
         WITH_MNEMON_PLUGIN: ${DSH_WITH_MNEMON_PLUGIN:-true}
         MNEMON_PLUGIN_VERSION: ${DSH_MNEMON_PLUGIN_VERSION:-0.5.24}
         MNEMON_PLUGIN_NAME: ${DSH_MNEMON_PLUGIN_NAME:-dsh-mnemon}
-        # Durable automation plugin (@michengai/dsh-automation) — resolved
-        # into the single joint seed tree in the final image stage
-        WITH_AUTOMATION_PLUGIN: ${DSH_WITH_AUTOMATION_PLUGIN:-true}
+        # Durable automation (@michengai/dsh-automation) — RETIRED, default off.
+        # Superseded by the stock @deepseek-ai/dsh-experimental-schedule-bundle
+        # (DSH_WITH_SCHEDULE below), which ships inside the dsh package and
+        # exposes schedule_create/list/update/delete. The build args are kept so
+        # flipping DSH_WITH_AUTOMATION_PLUGIN=true restores it, but the plugin is
+        # no longer installed by default and its UI renders in the browser's
+        # Accept-Language (we could not force it to English from the server).
+        WITH_AUTOMATION_PLUGIN: ${DSH_WITH_AUTOMATION_PLUGIN:-false}
         AUTOMATION_PLUGIN_VERSION: ${DSH_AUTOMATION_PLUGIN_VERSION:-0.1.54}
         AUTOMATION_PLUGIN_NAME: ${DSH_AUTOMATION_PLUGIN_NAME:-@michengai/dsh-automation}
+        # Conversation rewind (registry: dsh-rewind-plugin) — in-window /rewind
+        # with optional workspace file restore. Third-party (sirilee/dsh-rewind,
+        # MIT). 0.15.x is peer-compatible with DSH 0.2.0-rc.2; 0.16+ needs DSH 0.2.1.
+        WITH_REWIND_PLUGIN: ${DSH_WITH_REWIND_PLUGIN:-true}
+        REWIND_PLUGIN_VERSION: ${DSH_REWIND_PLUGIN_VERSION:-0.15.3}
+        REWIND_PLUGIN_NAME: ${DSH_REWIND_PLUGIN_NAME:-dsh-rewind-plugin}
+        # Auto-continue (registry: dsh-client-auto-continue) — auto-sends
+        # "continue" to resume non-human-interrupted requests. Third-party
+        # (hsiangnianian/dsh-auto-continue, MIT, DSH 0.2.0-rc.2 tested).
+        WITH_AUTOCONTINUE_PLUGIN: ${DSH_WITH_AUTOCONTINUE_PLUGIN:-true}
+        AUTOCONTINUE_PLUGIN_VERSION: ${DSH_AUTOCONTINUE_PLUGIN_VERSION:-0.15.0}
+        AUTOCONTINUE_PLUGIN_NAME: ${DSH_AUTOCONTINUE_PLUGIN_NAME:-dsh-client-auto-continue}
+        # Suggest-prompt (registry: @studyzy/dsh-suggest-prompt) — next-prompt
+        # prediction with Tab accept. Third-party (studyzy/dsh-suggest-prompt,
+        # MIT, DSH ^0.2.0-rc.2 peers exact).
+        WITH_SUGGEST_PROMPT_PLUGIN: ${DSH_WITH_SUGGEST_PROMPT_PLUGIN:-true}
+        SUGGEST_PROMPT_PLUGIN_VERSION: ${DSH_SUGGEST_PROMPT_PLUGIN_VERSION:-1.2.2}
+        SUGGEST_PROMPT_PLUGIN_NAME: ${DSH_SUGGEST_PROMPT_PLUGIN_NAME:-@studyzy/dsh-suggest-prompt}
+        # Prompt library (registry: @sunjuntao/dsh-prompt-library) — reusable
+        # prompt snippets, `#` quick-pick, AI polish, personas. Third-party
+        # (master1Sun/dsh-prompt-library, MIT).
+        WITH_PROMPT_LIBRARY_PLUGIN: ${DSH_WITH_PROMPT_LIBRARY_PLUGIN:-true}
+        PROMPT_LIBRARY_PLUGIN_VERSION: ${DSH_PROMPT_LIBRARY_PLUGIN_VERSION:-0.17.1}
+        PROMPT_LIBRARY_PLUGIN_NAME: ${DSH_PROMPT_LIBRARY_PLUGIN_NAME:-@sunjuntao/dsh-prompt-library}
         # First-party Telegram plugin (in-repo plugins/dsh-pai-telegram,
         # copied into the single joint seed tree in final; no registry, no version to pin)
         WITH_TELEGRAM_PLUGIN: ${DSH_WITH_TELEGRAM_PLUGIN:-true}
@@ -289,17 +320,16 @@ services:
       DSH_SETUP_REMOTE: ${DSH_SETUP_REMOTE:-on}
       # Automation tasks: official experimental schedule bundle (ships in the
       # image, enabled by appending it to the web profile bundles — no install).
-      # "false" leaves the shipped composition untouched. Default: off (use @michengai/dsh-automation instead).
-      DSH_WITH_SCHEDULE: ${DSH_WITH_SCHEDULE:-false}
-      # Durable automation (cron that fires with no chat open). "false" drops
-      # it from the manifest (code stays on disk, unloaded — single joint tree).
-      DSH_WITH_AUTOMATION: ${DSH_WITH_AUTOMATION:-true}
+      # Registers time-context + dsh-schedule (schedule_create/list/update/delete)
+      # + ui-schedule (task page). Default: ON — this is the automation backend.
+      DSH_WITH_SCHEDULE: ${DSH_WITH_SCHEDULE:-true}
+      # Durable automation (@michengai/dsh-automation) — RETIRED, default off.
+      # "false" drops it from the manifest (code stays on disk, unloaded).
+      # Set both this and DSH_WITH_AUTOMATION_PLUGIN=true to restore it.
+      DSH_WITH_AUTOMATION: ${DSH_WITH_AUTOMATION:-false}
       # First-party Telegram poller (dsh-pai-telegram). "false" drops it
       # from the manifest (code stays on disk, unloaded — single joint tree).
       DSH_WITH_TELEGRAM: ${DSH_WITH_TELEGRAM:-true}
-      # Pre-seed locale preference to English (dsh-automation has Chinese prompts).
-      # "false" skips seeding the locale preference.
-      DSH_SEED_LOCALE: ${DSH_SEED_LOCALE:-true}
       # Plugin seeds: one runtime gate each ("false" drops the plugin from
       # the manifest — code stays on disk, unloaded — and never removes an
       # installed seed's files). Build-time WITH_* only controls what the
@@ -308,6 +338,20 @@ services:
       DSH_WITH_AUTH: ${DSH_WITH_AUTH:-true}
       DSH_WITH_MNEMON: ${DSH_WITH_MNEMON:-true}
       DSH_WITH_PAI_PLUGINS: ${DSH_WITH_PAI_PLUGINS:-true}
+      # Conversation rewind (dsh-rewind-plugin). "false" drops it from the
+      # manifest (code stays on disk, unloaded — single joint tree).
+      DSH_WITH_REWIND: ${DSH_WITH_REWIND:-true}
+      # Auto-continue (dsh-client-auto-continue). "false" drops it from the
+      # manifest (code stays on disk, unloaded — single joint tree).
+      DSH_WITH_AUTOCONTINUE: ${DSH_WITH_AUTOCONTINUE:-true}
+      # Suggest-prompt + prompt-library. "false" drops them from the manifest
+      # (code stays on disk, unloaded — single joint tree).
+      DSH_WITH_SUGGEST_PROMPT: ${DSH_WITH_SUGGEST_PROMPT:-true}
+      DSH_WITH_PROMPT_LIBRARY: ${DSH_WITH_PROMPT_LIBRARY:-true}
+      # Rewrite the prompt-library plugin's hardcoded Chinese first-run seed
+      # (welcome prompt, tag, starters, default persona) to English at boot.
+      # Only rows still matching the exact seed text are touched.
+      DSH_PROMPT_LIBRARY_ENGLISH: ${DSH_PROMPT_LIBRARY_ENGLISH:-true}
       # DeepSeek-hosted web search off by default (entrypoint overlay:
       # tool-web.search:false + web-search-deepseek.disabled). DSH surfs
       # with local Playwright/Chromium (dsh-pai-web) + web-fetch-http +

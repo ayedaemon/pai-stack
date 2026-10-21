@@ -8,13 +8,13 @@ description: Hermes-only depth - Mnemosyne persistent memory (recall, remember, 
 > Everything here depends on tools that exist in **Hermes only** — `mnemosyne_*`,
 > `kanban.workers` from `hermes/config.yaml`. Other agents in the stack do not have them.
 > **If you lack these tools, skip this skill** — the shared rules are in `agents`.
-> Shared operating rules (`agents`): `EXECUTION_DIR`, Turn-1, propose-before-write.
+> Shared operating rules (`agents`): the session workspace, Turn-1, propose-before-write.
 
 ## The two brains
 
 | Brain | Store | Tools |
 |---|---|---|
-| Research Brain | `<EXECUTION_DIR>/.project/research/` | `pai_notebook_ops` (file vault, grounded RAG via `ask_notebook`) |
+| Research Brain | `<workspace>/.project/research/` | `pai_notebook_ops` (Markdown wiki, grounded synthesis via `ask`) |
 | Memory Brain | `/opt/hermes/data/mnemosyne/` (SQLite) | `mnemosyne_recall`, `_remember`, `_sleep`, `_stats`, `_triple_add`, `_triple_query` |
 
 Code intelligence is Terrain (see `agents`). You have three systems; **synthesise across them,
@@ -59,7 +59,7 @@ When docs conflict or are ambiguous, do not pick the one that reads best.
 2. Write a probe in `/opt/data/probes/<slug>/` (Python or shell).
 3. Run it under guardrails: `timeout 30`, `ulimit -v 262144` (256 MB).
 4. Ingest the result as an `EVIDENCE:` note with `@symbol:` anchors —
-   `pai_notebook_ops(action="add_note", ...)`, stating **supported / refuted / inconclusive**.
+   `pai_notebook_ops(action="write_page", section="queries", ...)`, stating **supported / refuted / inconclusive**.
 
 ## Dialectical inquiry — four mandatory perspectives
 
@@ -76,7 +76,7 @@ counterargument as a `COUNTERPOINT:` entry in `findings.md`.
 
 ## Living ADRs
 
-Stored at `<EXECUTION_DIR>/.project/planning/research/ADR-XXX.md` with YAML frontmatter
+Stored at `<workspace>/.project/planning/research/ADR-XXX.md` with YAML frontmatter
 (`status`, `symbols`, supersession chain), SHA-256 symbol hashes for drift detection, the
 dialectical record, validation probes, and review triggers.
 
@@ -97,7 +97,7 @@ Configured under `kanban.workers` in `hermes/config.yaml`.
 | `adr_author` | draft the L-ADR with symbol hashes (16k tok) |
 
 Patterns: `deep_research`, `quick_fact_check`, `empirical_validation`.
-Handoff context: `notebook_id`, `execution_dir`, `anchor_symbols`, `inquiry_question`,
+Handoff context: `page_refs`, `section`, `anchor_symbols`, `inquiry_question`,
 `required_artifacts`, `result_summary`, `evidence_note_ids`, `open_questions`.
 
 Delegate complex research to a swarm rather than grinding through it solo.

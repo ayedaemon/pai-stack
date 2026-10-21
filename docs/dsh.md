@@ -64,14 +64,14 @@ Don't try to relocate the caches to dodge this — each alternative is worse:
 ```bash
 # Python — uv-managed interpreters, not the system one
 uv python install 3.13            # lands in UV_PYTHON_INSTALL_DIR (the volume)
-cd "$EXECUTION_DIR" && uv sync && uv run pytest
+cd <attached workspace> && uv sync && uv run pytest
 
 # Go — build cache and module cache are already pointed at the volume
-cd "$EXECUTION_DIR" && go test ./...
+cd <attached workspace> && go test ./...
 
 # Rust — the rustup proxies in /usr/local/cargo/bin dispatch via RUSTUP_HOME,
 # so overriding CARGO_HOME at runtime costs nothing
-cd "$EXECUTION_DIR" && cargo test
+cd <attached workspace> && cargo test
 ```
 
 ### Caveats
@@ -97,6 +97,8 @@ Edit the ARGs at the top of [`dsh/Dockerfile`](../dsh/Dockerfile) and `make dsh-
 
 After any bump, run `make dsh-versions-check` — it asserts every pin agrees across `.env.example`, compose defaults, Dockerfile defaults, and plugin manifests, that all six `dsh-pai-*` plugins share one version (the entrypoint upgrade gate keys the whole tree off `dsh-pai-notebook`), and that every `DSH_WITH_*` gate the entrypoint reads is wired and documented.
 
+It also compares the **live `.env`** against `.env.example`. Compose resolves `${VAR:-default}` against `.env` first, so the `.env` value is the one that reaches the container — editing the compose default and `.env.example` alone changes nothing while the check still passes. A `.env` whose *pins* differ from the template **fails**; a `.env` that overrides a *gate* is a legitimate per-machine choice and only **warns**. Run `python3 scripts/check-dsh-versions.py --strict` to fail on gate overrides too.
+
 The image verifies every toolchain at the end of the build (`go version`, `cargo fmt --version`, …). A missing tool fails the build rather than surfacing mid-test-run.
 
 ## Core DSH Plugins (bundled in image)
@@ -105,6 +107,10 @@ The image verifies every toolchain at the end of the build (`go version`, `cargo
 |---|---|---|
 | `dsh-mnemon` | `mnemon_*` | Core memory engine (20+ tools) |
 | `@michengai/dsh-automation` | `automation_*` | Scheduled coding tasks (cron/interval, run-once) |
+| `dsh-rewind-plugin` | — | Conversation rewind (`/rewind`) — in-window rollback to any earlier user message, optional workspace file restore from pre-write backups (third-party, [sirilee/dsh-rewind](https://github.com/SiriLee/dsh-rewind), MIT) |
+| `dsh-client-auto-continue` | — | Auto-continue — resends "continue" when a request dies to a non-human cause; error classification, adaptive backoff, idempotency + loop guards, settings card (third-party, [hsiangnianian/dsh-auto-continue](https://github.com/HsiangNianian/dsh-auto-continue), MIT) |
+| `@studyzy/dsh-suggest-prompt` | — | Suggest prompt — predicts your next prompt after each completed turn (one bounded auxiliary LLM call, session route inherited, secrets redacted); ghost placeholder accepted with Tab, configurable (third-party, [studyzy/dsh-suggest-prompt](https://github.com/studyzy/dsh-suggest-prompt), MIT) |
+| `@sunjuntao/dsh-prompt-library` | — | Prompt library — reusable prompt snippets (`#` quick-pick, insert/overwrite/send), AI polish, personas, skill generation from prompts; state under the data volume (`$HOME/.dsh/prompt-library`) (third-party, [master1Sun/dsh-prompt-library](https://github.com/master1Sun/dsh-prompt-library), MIT) |
 | `dsh-pai-telegram` | — | Telegram bot for DSH |
 | `dsh-pai-notebook` | `pai_notebook_ops` | Research vault per project |
 | `dsh-pai-adr` | `pai_adr_ops` | Living ADRs + drift detection |
@@ -158,7 +164,23 @@ Memory: **Mnemosyne** (embedded in Hermes) — native `mnemosyne_*` tools.
 
 - `pai_terrain_ops`: `limit` validated manually in `execute()` (1–200); `minimum`/`maximum` are not used in tool schemas (unsupported by the schemastery DSL)
 - `pai_web_ops`: `max_results` (1–50) and `recency_days` (1–365) validated manually in `execute()` for the same reason
-- Official experimental schedule bundle is off by default (`DSH_WITH_SCHEDULE=false`); scheduled tasks run via `@michengai/dsh-automation`
+- Automation runs on the official experimental schedule bundle (`DSH_WITH_SCHEDULE=true`, the default): `schedule_create/list/update/delete` plus a task page. `@michengai/dsh-automation` is retired (`DSH_WITH_AUTOMATION=false`, `DSH_WITH_AUTOMATION_PLUGIN=false`) — its UI followed the browser's `Accept-Language` and rendered Chinese, and that could not be forced from the server
+
+## Locale (2026-10-20)
+
+- **UI language is per-browser and cannot be forced from the container.** The
+  locale `preference` lives in the *Host user-settings document* persisted by
+  `dsh-client-store` — i.e. the browser's `localStorage` (`dsh-client-locale`
+  schema: `locale.preference`, absent ⇒ delegate to the browser's
+  `Accept-Language`). Set it once via **Settings → General → Language →
+  English**; this also steers every plugin that follows `ctx.locale`
+  (auto-continue, suggest-prompt, prompt-library AI-Polish). There is no env or
+  config flag host-side — the old `SEED_LOCALE`-style `locale.json` on the
+  server is never read by DSH.
+- **Seed data is the only server-side surface.** The prompt-library plugin
+  hardcodes a Chinese first-run seed regardless of locale; the entrypoint's
+  `ensure_prompt_library_english()` (gated by `DSH_PROMPT_LIBRARY_ENGLISH`)
+  rewrites just those rows — see the plugin table above.
 
 ## Key DSH Plugins
 
@@ -198,12 +220,17 @@ log `skipping` / `in sync`). Per-engine `sync_plugin_tree` logs plus
 | Gate | Default | Effect when `false` |
 |---|---|---|
 | `DSH_WITH_AUTH` / `DSH_WITH_MNEMON` | `true` | Login / memory plugin unloaded |
-| `DSH_WITH_AUTOMATION` | `true` | Cron plugin unloaded (use `DSH_WITH_SCHEDULE` for the stock bundle instead) |
+| `DSH_WITH_AUTOMATION` | `false` | Retired `@michengai/dsh-automation`; it is superseded by the stock schedule bundle |
 | `DSH_WITH_TELEGRAM` | `true` | Telegram plugin unloaded |
+| `DSH_WITH_REWIND` | `true` | Conversation-rewind plugin (`dsh-rewind-plugin`) unloaded — pin stays `0.15.x` until the DSH bump (0.16+ targets DSH `^0.2.1-rc.1`) |
+| `DSH_WITH_AUTOCONTINUE` | `true` | Auto-continue plugin (`dsh-client-auto-continue`) unloaded |
+| `DSH_WITH_SUGGEST_PROMPT` | `true` | Suggest-prompt plugin (`@studyzy/dsh-suggest-prompt`) unloaded |
+| `DSH_WITH_PROMPT_LIBRARY` | `true` | Prompt-library plugin (`@sunjuntao/dsh-prompt-library`) unloaded |
+| `DSH_PROMPT_LIBRARY_ENGLISH` | `true` | Keep the plugin's hardcoded Chinese first-run seed (welcome prompt, tag, starters, default persona) — rows are rewritten to English only while they still match the exact seed text |
 | `DSH_WITH_PAI_PLUGINS` | `true` | All `dsh-pai-*` plugins unloaded (incl. the sound plugin) |
 | `DSH_DISABLE_WEB_SEARCH` | `true` | Keeps upstream DeepSeek search (see above) |
 
-`make dsh-versions-check` asserts every pin and gate is wired consistently.
+`make dsh-versions-check` asserts every pin and gate is wired consistently, including the live `.env` (`--strict` also fails on gate overrides).
 
 ## Docker Socket
 

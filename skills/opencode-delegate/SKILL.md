@@ -15,7 +15,7 @@ If the binary is missing → report degraded (image predates delegation), do NOT
 
 ## Launch (background + poll — shell caps apply, never foreground-run)
 ```
-opencode-delegate run <EXECUTION_DIR> <slug-YYYY-MM-DD> "<task prompt>"
+opencode-delegate run <workspace> <slug-YYYY-MM-DD> "<task prompt>"
 ```
 - `<slug>` is unique per task (idempotency guard refuses reuse).
 - Wrapper validates: dir under `/opt/data`, model in free allowlist, creates
@@ -44,7 +44,7 @@ kills your own shell).
 
 ## Review → merge (propose-before-write survives delegation)
 1. Delegate commits on its task branch (enforced in its system prompt); review with
-   `git -C <EXECUTION_DIR> diff --stat <base>..<branch>` (fall back to worktree
+   `git -C <workspace> diff --stat <base>..<branch>` (fall back to worktree
    `git diff --stat` if the branch tip equals base, then commit it yourself on the branch).
 2. Re-run the delegate's test command yourself if cheap.
 3. Show the user the diff summary; merge only on explicit confirmation.

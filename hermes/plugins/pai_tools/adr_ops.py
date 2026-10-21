@@ -4,26 +4,26 @@ adr_ops.py — Native Living Architecture Decision Record (L-ADR) & Drift Detect
 (Hermes plugin).
 
 Handles:
-  - create_adr: Scaffolds a Living ADR in <EXECUTION_DIR>/.project/planning/research/ADR-XXX-<title>.md
+  - create_adr: Scaffolds a Living ADR in <workspace>/.project/planning/research/ADR-XXX-<title>.md
     with SHA-256 symbol hashes from workspace code.
   - check_drift: Inspects all ADRs, recomputes symbol hashes against current workspace files,
     flags drift, and logs warnings into findings.md.
   - list_adrs: Lists all ADRs and their status.
+
+Paths resolve against the workspace attached to the current session (see
+session_workspace.py), not a module-level constant.
 """
 
 import hashlib
 import json
-import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-
-WORKSPACE_DIR = Path(
-    os.environ.get("WORKSPACE_PATH")
-    or os.environ.get("WORKSPACE_DIR")
-    or os.environ.get("HERMES_DATA_DIR", "/opt/data/workspace")
+from plugins.pai_tools.session_workspace import (
+    WorkspaceUnresolved,
+    session_workspace,
 )
 
 SCHEMA = {
@@ -58,9 +58,9 @@ SCHEMA = {
                 "items": {"type": "string"},
                 "description": "List of symbol references to anchor and hash, formatted as '@symbol:path/to/file.ext:SymbolName' (for create_adr).",
             },
-            "execution_dir": {
+            "workspace": {
                 "type": "string",
-                "description": "Optional project execution directory path (e.g. /opt/data/workspace/my-project). Defaults to finding .project/planning directory under workspace.",
+                "description": "Optional workspace override path (e.g. /opt/data/workspace/my-project). Defaults to the workspace attached to this session.",
             },
         },
         "required": ["action"],
@@ -85,70 +85,49 @@ def compute_file_hash(file_path: Path) -> Optional[str]:
         return None
 
 
-def resolve_planning_dir(execution_dir_str: Optional[str] = None, create: bool = False) -> Optional[Path]:
-    """Find or create the .project/planning directory for the project."""
-    if execution_dir_str:
-        exec_dir = Path(execution_dir_str)
-        planning = exec_dir / ".project" / "planning"
+def resolve_planning_dir(workspace_override: Optional[str] = None, create: bool = False) -> Optional[Path]:
+    """Find or create `<workspace>/.project/planning` for the current session.
+
+    `workspace_override` is an escape hatch for cross-workspace work; the
+    default is the workspace attached to this session. Nothing is created
+    unless `create` is set.
+    """
+    if workspace_override:
+        planning = Path(workspace_override).expanduser() / ".project" / "planning"
         if create:
-            try:
-                planning.mkdir(parents=True, exist_ok=True)
-            except Exception:
-                pass
+            planning.mkdir(parents=True, exist_ok=True)
         return planning
 
-    # Check if WORKSPACE_DIR has a .project/planning directory
-    if WORKSPACE_DIR.exists():
-        # Direct check
-        direct = WORKSPACE_DIR / ".project" / "planning"
-        if direct.is_dir():
-            return direct
-        # Search subdirectories up to depth 4
-        try:
-            for p in WORKSPACE_DIR.glob("**/.project/planning"):
-                if p.is_dir():
-                    return p
-        except Exception:
-            pass
+    try:
+        planning = session_workspace() / ".project" / "planning"
+    except WorkspaceUnresolved:
+        return None
 
-    # Check current directory
-    cwd_planning = Path.cwd() / ".project" / "planning"
-    if cwd_planning.is_dir():
-        return cwd_planning
+    if planning.is_dir():
+        return planning
 
-    # If creation is requested, try WORKSPACE_DIR, then cwd
     if create:
-        if WORKSPACE_DIR.exists():
-            target = WORKSPACE_DIR / ".project" / "planning"
-        else:
-            target = Path.cwd() / ".project" / "planning"
-        target.mkdir(parents=True, exist_ok=True)
-        return target
+        planning.mkdir(parents=True, exist_ok=True)
+        return planning
 
     return None
 
 
 def resolve_file_path(rel_path: str, planning_dir: Optional[Path]) -> Path:
-    """Resolve relative file path against execution directory or workspace."""
-    # First check execution dir (parent of .project/planning) if available
+    """Resolve a relative path against the session workspace."""
+    try:
+        workspace = session_workspace()
+    except WorkspaceUnresolved:
+        workspace = planning_dir.parent.parent.parent if planning_dir else Path.cwd()
+
+    candidate = workspace / rel_path
+    if candidate.exists():
+        return candidate
     if planning_dir:
-        project_root = planning_dir.parent
-        candidate = project_root / rel_path
-        if candidate.exists():
-            return candidate
-
-    # Then check WORKSPACE_DIR if it exists
-    if WORKSPACE_DIR.exists():
-        candidate = WORKSPACE_DIR / rel_path
-        if candidate.exists():
-            return candidate
-
-    # Then check current working directory
-    cwd_candidate = Path.cwd() / rel_path
-    if cwd_candidate.exists():
-        return cwd_candidate
-
-    return (planning_dir.parent if planning_dir else Path.cwd()) / rel_path
+        scoped = planning_dir.parent.parent / rel_path
+        if scoped.exists():
+            return scoped
+    return candidate
 
 
 # ── Action Handlers ──────────────────────────────────────────────────────────
@@ -166,9 +145,9 @@ def action_create_adr(inp: Dict[str, Any]) -> str:
     adr_num = adr_num_raw.zfill(3)
     context = (inp.get("context") or "Describe the architectural context and problem here.").strip()
     decision = (inp.get("decision") or "Describe the chosen architecture decision here.").strip()
-    execution_dir = inp.get("execution_dir")
+    workspace = inp.get("workspace")
 
-    planning_dir = resolve_planning_dir(execution_dir, create=True)
+    planning_dir = resolve_planning_dir(workspace, create=True)
     if not planning_dir:
         return json.dumps({"error": "Could not determine or create .project/planning directory"})
 
@@ -276,8 +255,8 @@ superseded_by: null
 
 
 def action_check_drift(inp: Dict[str, Any]) -> str:
-    execution_dir = inp.get("execution_dir")
-    planning_dir = resolve_planning_dir(execution_dir, create=False)
+    workspace = inp.get("workspace")
+    planning_dir = resolve_planning_dir(workspace, create=False)
     if not planning_dir:
         return json.dumps(
             {
@@ -385,8 +364,8 @@ def action_check_drift(inp: Dict[str, Any]) -> str:
 
 
 def action_list_adrs(inp: Dict[str, Any]) -> str:
-    execution_dir = inp.get("execution_dir")
-    planning_dir = resolve_planning_dir(execution_dir, create=False)
+    workspace = inp.get("workspace")
+    planning_dir = resolve_planning_dir(workspace, create=False)
     if not planning_dir:
         return json.dumps([])
 
@@ -455,6 +434,13 @@ def handle(args, **kwargs) -> str:
         )
 
     try:
+        session_workspace()
+    except WorkspaceUnresolved as e:
+        return json.dumps({"error": str(e), "action": action})
+
+    try:
         return handler(args)
+    except WorkspaceUnresolved as e:
+        return json.dumps({"error": str(e), "action": action})
     except Exception as e:
         return json.dumps({"error": f"Execution error in {action}: {e}"})

@@ -9,11 +9,16 @@
  * by the opencode binary inside the terrain container on keyless Zen free models,
  * not llm-gateway.
  * Each scan writes .terrain/ inside the repo (gitignored, per-host).
- * Paths are resolved inside WORKSPACE_DIR (/opt/data/workspace).
+ * Paths are given relative to the workspace attached to this session and
+ * translated to workspace-relative before they reach the service, which
+ * resolves them against its own root (/opt/data/workspace).
  */
 
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
+import { isAbsolute, relative, resolve } from "node:path";
+
+import { WorkspaceUnresolved, sessionWorkspace } from "./session-workspace.js";
 
 export const name = "pai-terrain";
 export const inject = ["tools"];
@@ -24,7 +29,9 @@ export const Config = z.object({
 
 const SERVICE = process.env.TERRAIN_URL || "http://terrain:7878";
 const TOKEN = process.env.TERRAIN_TOKEN || "";
-const WORKSPACE = process.env.TERRAIN_WORKSPACE || "/opt/data/workspace";
+// The terrain container mounts the same workspace root this plugin resolves
+// against, so a session-relative path must be rebased onto it.
+const SERVICE_ROOT = process.env.TERRAIN_WORKSPACE || "/opt/data/workspace";
 
 // Matches the service-side spawn timeout; `init` runs Litho over a whole repo.
 const TIMEOUT = 600;
@@ -83,13 +90,33 @@ async function checkAvailable() {
   }
 }
 
+/**
+ * Translate a path written relative to the session workspace into one the
+ * service can resolve against its own root. Already-correct
+ * workspace-relative paths pass through; anything escaping the attached
+ * workspace is refused rather than indexed.
+ */
+function rebaseOntoServiceRoot(exec, raw) {
+  const workspace = sessionWorkspace(exec);
+  const absolute = isAbsolute(raw) ? resolve(raw) : resolve(workspace, raw);
+  const rel = relative(workspace, absolute);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    return { error: `path '${raw}' resolves outside this session's workspace (${workspace}). Attach the right workspace or pass a path inside it.` };
+  }
+  const rebased = relative(SERVICE_ROOT, absolute);
+  if (rebased.startsWith("..") || isAbsolute(rebased)) {
+    return { error: `path '${raw}' is outside the terrain service root (${SERVICE_ROOT}).` };
+  }
+  return { path: rebased };
+}
+
 export function apply(ctx, config) {
   const cfg = { enabled: true, ...(config ?? {}) };
   if (!cfg.enabled) return;
 
   const terrainTool = defineTool({
     name: "pai_terrain_ops",
-    description: "Code intelligence over the Terrain index service. Terrain scans a project repo into .terrain/ (Markdown knowledge docs + agent context); this tool triggers those scans and reads the result. Check action='projects' first: if the repo is indexed, this is far more precise than grep; if it is not, fall back to grep + targeted reads. Indexing ('index', 'refresh') makes NO LLM call and costs nothing. Only 'ask' and 'init' use an LLM — Terrain's keyless Zen free models, run by the opencode binary inside the terrain container, not the llm-gateway. Both are always available. Write scope: each scan writes .terrain/ inside the repo you pass. Paths are resolved inside /opt/data/workspace; other paths are rejected. Allowed actions: index, refresh, search, read, overview, projects, unregister, source, init, ask.",
+    description: "Code intelligence over the Terrain index service. Terrain scans a project repo into .terrain/ (Markdown knowledge docs + agent context); this tool triggers those scans and reads the result. Check action='projects' first: if the repo is indexed, this is far more precise than grep; if it is not, fall back to grep + targeted reads. Indexing ('index', 'refresh') makes NO LLM call and costs nothing. Only 'ask' and 'init' use an LLM — Terrain's keyless Zen free models, run by the opencode binary inside the terrain container, not the llm-gateway. Both are always available. Write scope: each scan writes .terrain/ inside the repo you pass. Paths are resolved relative to the workspace attached to this session and must stay inside it; other paths are rejected. Allowed actions: index, refresh, search, read, overview, projects, unregister, source, init, ask.",
     parameters: {
       action: {
         type: "string",
@@ -99,7 +126,11 @@ export function apply(ctx, config) {
       },
       path: {
         type: "string",
-        description: "Repo directory to index, relative to /opt/data/workspace or absolute within it (e.g. 'github.com/ayedaemon/pai-stack'). Required for 'index', 'refresh', 'init'. Optional for 'source'."
+        description:
+        "Repo directory to index, relative to the workspace attached to this session " +
+        "or absolute inside it (e.g. 'pai-stack' when that repo is the attached " +
+        "workspace, or 'github.com/ayedaemon/pai-stack' when the workspace root is). " +
+        "Required for 'index', 'refresh', 'init'. Optional for 'source'."
       },
       slug: {
         type: "string",
@@ -116,10 +147,10 @@ export function apply(ctx, config) {
       file: {
         type: "string",
         description:
-        "File to read ('source' only). WORKSPACE-relative, not repo-relative: resolved " +
-        "against /opt/data/workspace, so it must be '<project-dir>/<path-inside-project>' " +
-        "(e.g. 'github.com/ayedaemon/pai-stack/README.md'), NOT 'README.md'. This differs " +
-        "from 'path', which IS repo-relative.",
+        "File to read ('source' only). Workspace-relative, not repo-relative: resolved " +
+        "against the session workspace then rebased onto " + SERVICE_ROOT + ", so when a " +
+        "project is attached it is simply 'README.md' (e.g. " +
+        "'github.com/ayedaemon/pai-stack/README.md' when the workspace root is attached).",
       },
       limit: {
         type: "integer",
@@ -131,17 +162,17 @@ export function apply(ctx, config) {
       schema: { type: "json" },
       render: (_args, value) => [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }]
     },
-    async execute(args) {
+    async execute(args, exec) {
       const action = args.action;
       const start = Date.now();
-      
+
       try {
         if (!ALLOWED_ACTIONS.includes(action)) {
           return { error: `Unknown action: ${action}. Allowed: ${ALLOWED_ACTIONS.join(", ")}` };
         }
-        
+
         if (["index", "refresh", "init"].includes(action) && !args.path) {
-          return { error: `path is required for '${action}'. Pass the repo directory, e.g. path='github.com/ayedaemon/pai-stack' (resolved inside ${WORKSPACE}).` };
+          return { error: `path is required for '${action}'. Pass the repo directory relative to this session's workspace, e.g. path='pai-stack'.` };
         }
         if (["search", "ask"].includes(action) && !args.query) {
           return { error: `query is required for '${action}'` };
@@ -149,10 +180,19 @@ export function apply(ctx, config) {
         if (action === "overview" && !args.project) {
           return { error: "project is required for 'overview'" };
         }
-        
+
         const params = {};
         for (const key of ["path", "slug", "query", "project", "file", "limit"]) {
           if (args[key] !== undefined) params[key] = args[key];
+        }
+
+        // Rebase session-relative paths onto the root the service resolves
+        // against, and refuse anything that escapes the attached workspace.
+        for (const key of ["path", "file"]) {
+          if (params[key] === undefined) continue;
+          const rebased = rebaseOntoServiceRoot(exec, params[key]);
+          if (rebased.error) return rebased;
+          params[key] = rebased.path;
         }
 
         // Validate limit if provided
@@ -174,6 +214,7 @@ export function apply(ctx, config) {
         }
         return parsed;
       } catch (err) {
+        if (err instanceof WorkspaceUnresolved) return { error: err.message, action };
         return { error: `${action}: ${err.message}` };
       }
     },

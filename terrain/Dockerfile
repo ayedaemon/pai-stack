@@ -94,8 +94,9 @@ COPY --from=build /terrain-commit /etc/terrain-commit
 # that exact path.
 COPY --from=build /src/preset_skills /src/preset_skills
 COPY server.mjs /opt/terrain/server.mjs
-# The ACP agent's config. Stays here in the image; the shim symlinks it into
-# $XDG_CONFIG_HOME at boot.
+# The ACP agent's config TEMPLATE. Stays in the image; the shim resolves the
+# best live keyless model at boot (see server.mjs) and writes the resolved
+# config onto the terrain_data volume.
 COPY opencode.json /opt/terrain/opencode.json
 
 # COPY preserves the build context's file mode, so whatever umask the author had
@@ -169,14 +170,12 @@ RUN mkdir -p /src/crates/terrain-core \
 # silently breaks `init` and `ask`. Verified working: `init` regenerates the
 # human/ corpus (status partial -> ready), `ask` returns in ~60s.
 #
-# The model itself is pinned in /opt/terrain/opencode.json, symlinked into
-# $XDG_CONFIG_HOME at boot. Those Zen slugs DO get retired upstream — when one
-# does, both LLM actions fail while `terrain settings check-acp` still reports
-# "available: true", because that only proves the binary exists. Recover with:
-#   docker exec terrain opencode models          # list what is live now
-#   docker exec terrain opencode run --model <id> 'reply OK'   # confirm keyless
-# then edit the "model" field above and rebuild. The shim prints the pinned model
-# in its boot banner and in /healthz for exactly this reason.
+# The model in /opt/terrain/opencode.json is only the template FALLBACK. At
+# boot the shim lists the live keyless pool (`opencode models`) and, when
+# models.dev is reachable, rewrites the config on the volume with the
+# largest-context model — see server.mjs. TERRAIN_ACP_MODEL pins the choice.
+# Verify what got picked with: docker exec terrain cat
+#   /var/lib/terrain/.config/opencode/opencode.json   (or /healthz acpModel)
 ARG OPENCODE_VERSION=2.0.16
 RUN curl -fsSL https://opencode.ai/v2/install | bash -s -- --no-modify-path -v ${OPENCODE_VERSION} \
  && /root/.opencode/bin/opencode --version \
@@ -201,11 +200,12 @@ RUN curl -fsSL https://opencode.ai/v2/install | bash -s -- --no-modify-path -v $
 # `EACCES: permission denied, mkdir '/etc/opencode/opencode'`, which would also
 # fail at runtime under read_only:true. So the DIRECTORY lives on the volume.
 #
-# The FILE inside it is a symlink to /opt/terrain/opencode.json, created by the
-# shim at boot. Symlink rather than copy: a copy is either stale-by-default (if
-# only written when absent, a hand-edited copy outlives the image it came from
-# and bumping TERRAIN_REF stops changing the model) or re-copied on every boot.
-# The symlink makes the image copy the single source of truth.
+# The FILE inside it is written by the shim at boot, EVERY boot, from the
+# image template with the model resolved against the live keyless pool.
+# "Write only if absent" is how a hand-edited or stale copy outlives the image
+# and pins a retired slug forever — derive it from the template each boot
+# instead. The image copy remains the single source of truth for everything
+# else in the config (agent definition, permissions).
 #
 # XDG_DATA_HOME is opencode's cache/session state — the other writable path.
 ENV HOME=/var/lib/terrain \
@@ -216,7 +216,7 @@ ENV HOME=/var/lib/terrain \
     NODE_ENV=production
 
 # Writable homes for opencode on the volume. The config FILE itself is the
-# symlink created at boot, not a copy made here.
+# resolved copy the shim writes at boot, not a build artifact.
 RUN mkdir -p /var/lib/terrain /var/lib/terrain/.config /opt/data/workspace \
  && chown -R terrain:terrain /var/lib/terrain /opt/data/workspace
 

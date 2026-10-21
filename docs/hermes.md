@@ -12,20 +12,18 @@ You are operating inside the pai-stack Docker Compose environment. Execute your 
 1. Read ground rules: skill_view(name='agents'), then skills_list().
 2. Parallel: `docker ps` (pai-stack label filter, see `docker` skill) + mnemosyne_recall(query='workspace projects structure boundaries').
 3. List /opt/data/workspace (depth 1), check for root markers (.git/, manifests) in root AND subdirectories.
-4. Determine EXECUTION_DIR:
-   - Single-project mode: root has markers, no subdir markers → EXECUTION_DIR = /opt/data/workspace
-   - Multi-project mode: subdirs have markers → EXECUTION_DIR = /opt/data/workspace/<project>
-5. IFF research task OR <EXECUTION_DIR>/.project/research/SCHEMA.md exists: skill_view(name='research'), then read .project/research/{SCHEMA.md,index.md,log.md} tail-20 only.
-6. Report EXECUTION_DIR, active services, ready tools, available skills.
+4. Confirm the attached workspace: `pai_notebook_ops(action='list_pages')` reports the vault path, or read the cwd the terminal already runs in. Do NOT scan the workspace root to pick a project — the attachment is the boundary, and the user chose it. If the workspace holds several projects and no attachment was made, say so and ask which one to attach.
+5. IFF research task OR <workspace>/.project/research/SCHEMA.md exists: skill_view(name='research'), then read .project/research/{SCHEMA.md,index.md,log.md} tail-20 only.
+6. Report the attached workspace, active services, ready tools, available skills.
 ```
 
-What this accomplishes: pins Hermes to one `EXECUTION_DIR` (never treat the multi-project workspace root as one repo), re-hydrates memory, unlocks research mode. Full invariant in [AGENTS.md](../AGENTS.md) and `skills/agents/SKILL.md`.
+What this accomplishes: confirms the one workspace this session is attached to, re-hydrates memory, unlocks research mode. Full invariant in [AGENTS.md](../AGENTS.md) and `skills/agents/SKILL.md`.
 
 ## Tools (`pai_tools` plugin)
 
 | Tool | Purpose | Actions |
 |---|---|---|
-| `pai_notebook_ops` | Research vault ops on `.project/research/` | `list_notebooks`, `create_notebook`, `search`, `add_note`, `add_source_url`, `poll_source_status`, `get_source`, `add_source_file`, `ask_notebook`, `get_notebook` |
+| `pai_notebook_ops` | Research wiki ops on `<workspace>/.project/research/` | `init_wiki`, `list_pages`, `get_page`, `write_page`, `search`, `ingest_url`, `ingest_file`, `get_source`, `ask` |
 | `pai_adr_ops` | Living ADRs + symbol drift detection | `create_adr`, `check_drift`, `list_adrs` |
 | `pai_ops_design_ops` | OpenDesign visual generation / mockups bridge | (see `opendesign-integration` skill) |
 | `pai_terrain_ops` | Code intelligence via Terrain service (`terrain:7878/call`) | `index`, `refresh`, `search`, `read`, `overview`, `projects`, `unregister`, `source`, `init`, `ask` |
@@ -53,8 +51,8 @@ Local-first, embedded in Hermes: SQLite (`hermes-data` volume) + ONNX fastembed.
 
 | What | Where |
 |---|---|
-| Code changes | `<EXECUTION_DIR>/<file>` (after diff confirmation) |
-| Planning files | `<EXECUTION_DIR>/.project/planning/<YYYY-MM-DD-slug>/` (`task_plan.md`, `findings.md`, `progress.md`) |
+| Code changes | `<workspace>/<file>` (after diff confirmation) |
+| Planning files | `<workspace>/.project/planning/<YYYY-MM-DD-slug>/` (`task_plan.md`, `findings.md`, `progress.md`) |
 | Scratch tools | `/opt/data/<tool_name>` |
 | Memory / state | `hermes-data` volume (never in workspace) |
 

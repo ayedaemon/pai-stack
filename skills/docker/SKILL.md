@@ -54,9 +54,9 @@ docker logs --tail=50 llm-gateway
 docker logs --tail=50 --since 10m hermes
 
 # compose inside a project: validate, then scoped status
-cd <EXECUTION_DIR> && docker compose -p <project> config --quiet   # syntax + var resolution
-cd <EXECUTION_DIR> && docker compose -p <project> ps --format json | jq '[.[] | {Name, Service, State}]'
-cd <EXECUTION_DIR> && docker compose -p <project> logs --tail=50 <service>
+cd <workspace> && docker compose -p <project> config --quiet   # syntax + var resolution
+cd <workspace> && docker compose -p <project> ps --format json | jq '[.[] | {Name, Service, State}]'
+cd <workspace> && docker compose -p <project> logs --tail=50 <service>
 ```
 
 Discovery pattern for any new query: `<cmd> --help | grep -i format`,
@@ -65,10 +65,10 @@ then pick `table` for eyes, `json` for pipes.
 ## Scope — which cluster are you touching?
 
 ```
-Does EXECUTION_DIR contain a compose file?
+Does the attached workspace contain a compose file?
 (docker-compose*.yaml OR compose.yaml)
 │
-├── YES → `cd <EXECUTION_DIR> && docker compose -p <project> ...` ONLY
+├── YES → `cd <workspace> && docker compose -p <project> ...` ONLY
 │         NEVER bare `docker run` / `docker create` here.
 │
 └── NO  → pai-stack services (hermes, llm-gateway, terrain, dsh, open-design)?
@@ -80,13 +80,13 @@ Does EXECUTION_DIR contain a compose file?
 - NEVER run `docker compose` without `-p <project>` — hermes exports
   `COMPOSE_PROJECT_NAME=pai-stack`, which hijacks bare compose into the
   pai-stack cluster.
-- NEVER run compose from outside `EXECUTION_DIR`. Compose v2 only
+- NEVER run compose from outside the attached workspace. Compose v2 only
   (`docker compose`, no hyphen).
 - NEVER add a foreign container to the pai-stack cluster, and NEVER add
   `--privileged`, host network, or `/var/run/docker.sock` mounts to project stacks.
 
 Project name: `name:` field in the project's compose file, else basename of
-`EXECUTION_DIR`. Confirm with `docker compose ls` before mutating.
+the attached workspace. Confirm with `docker compose ls` before mutating.
 
 ## Lifecycle (read-only freely; mutating only after propose → confirm)
 
@@ -96,11 +96,11 @@ docker logs --tail=50 <service>                 # read-only
 docker inspect <service> --format '{{json .State}}' | jq .
 docker restart|start|stop <service>             # mutating: propose first
 docker exec <service> sh -c '<cmd>'             # mutating-ish: prefer running locally; exec only for container-local state
-cd <EXECUTION_DIR> && docker compose -p <project> up -d --build   # mutating: propose first, config --quiet first
-cd <EXECUTION_DIR> && docker compose -p <project> down            # mutating: propose first, confirm volumes kept
+cd <workspace> && docker compose -p <project> up -d --build   # mutating: propose first, config --quiet first
+cd <workspace> && docker compose -p <project> down            # mutating: propose first, confirm volumes kept
 ```
 
-Env & secrets: compose reads `<EXECUTION_DIR>/.env` — verify vars before `up`;
+Env & secrets: compose reads `<workspace>/.env` — verify vars before `up`;
 `${VAR:-default}` substitution; never commit `.env`; flag raw secrets.
 
 ## Discover (validate cheaply: `config --quiet` before `up --build`)

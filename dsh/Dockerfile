@@ -221,6 +221,45 @@ ARG MNEMON_PLUGIN_NAME=dsh-mnemon
 ARG WITH_AUTOMATION_PLUGIN=true
 ARG AUTOMATION_PLUGIN_VERSION=0.1.54
 ARG AUTOMATION_PLUGIN_NAME=@michengai/dsh-automation
+# Conversation rewind (registry: dsh-rewind-plugin) — third-party
+# (github.com/SiriLee/dsh-rewind, MIT). In-window /rewind with optional
+# workspace file restore. 0.15.x is the line peers-pinned to DSH ^0.2.0-rc.1;
+# 0.16+/0.17 target DSH ^0.2.1 and need a DSH_VERSION bump first. Its
+# `prepare` script runs a TS build, but --ignore-scripts skips it and the
+# tarball ships prebuilt lib/ + cordis.patch.yml.
+ARG WITH_REWIND_PLUGIN=true
+ARG REWIND_PLUGIN_VERSION=0.15.3
+ARG REWIND_PLUGIN_NAME=dsh-rewind-plugin
+# Auto-continue (registry: dsh-client-auto-continue) — third-party
+# (github.com/HsiangNianian/dsh-auto-continue, MIT). Auto-sends "continue" to
+# resume requests interrupted by a non-human cause (error classification,
+# adaptive backoff, idempotency + loop guards). Peer-pinned only to cordis
+# ^4.0.1 (satisfied by the tree); the plugin's own suite covers DSH
+# 0.2.0-rc.2 explicitly. `prepack` runs a build, but --ignore-scripts skips
+# it and the tarball ships prebuilt lib/.
+ARG WITH_AUTOCONTINUE_PLUGIN=true
+ARG AUTOCONTINUE_PLUGIN_VERSION=0.15.0
+ARG AUTOCONTINUE_PLUGIN_NAME=dsh-client-auto-continue
+# Suggest-prompt (registry: @studyzy/dsh-suggest-prompt) — third-party
+# (github.com/studyzy/dsh-suggest-prompt, MIT). Predicts the next prompt after
+# each completed turn and shows it as ghost placeholder (Tab accepts). One
+# bounded auxiliary LLM call per turn — inherits the session route (our DSH
+# routes it via the gateway). Peer-pinned to DSH ^0.2.0-rc.2 exactly. Its
+# `prepare` runs a build, but --ignore-scripts skips it and the tarball ships
+# prebuilt lib/.
+ARG WITH_SUGGEST_PROMPT_PLUGIN=true
+ARG SUGGEST_PROMPT_PLUGIN_VERSION=1.2.2
+ARG SUGGEST_PROMPT_PLUGIN_NAME=@studyzy/dsh-suggest-prompt
+# Prompt library (registry: @sunjuntao/dsh-prompt-library) — third-party
+# (github.com/master1Sun/dsh-prompt-library, MIT). Reusable prompt snippets in
+# the composer toolbar, `#` quick-pick, AI polish + personas (node:sqlite,
+# Node 24 native). Host state writes live under $HOME/.dsh/prompt-library (the
+# data volume). Peers mirror dsh-mnemon's proven shape (cordis ✓, react
+# host-provided). `prepublishOnly` runs a build but the tarball ships prebuilt
+# lib/.
+ARG WITH_PROMPT_LIBRARY_PLUGIN=true
+ARG PROMPT_LIBRARY_PLUGIN_VERSION=0.17.1
+ARG PROMPT_LIBRARY_PLUGIN_NAME=@sunjuntao/dsh-prompt-library
 # First-party Telegram plugin (in-repo plugins/dsh-pai-telegram).
 # Host-only (inject:[]) so it cannot red-screen the web UI.
 ARG WITH_TELEGRAM_PLUGIN=true
@@ -250,6 +289,9 @@ COPY plugins/dsh-pai-design /tmp/dsh-pai-design-src
 COPY plugins/dsh-pai-terrain /tmp/dsh-pai-terrain-src
 COPY plugins/dsh-pai-git /tmp/dsh-pai-git-src
 COPY plugins/dsh-pai-web /tmp/dsh-pai-web-src
+# Single source of truth for session-workspace resolution, fanned into each
+# pai plugin that needs it (see the seed loop below).
+COPY plugins/shared /tmp/pai-shared-src
 RUN set -eux; \
     . /usr/local/bin/dsh-seed-lib.sh; \
     seed_begin /opt/dsh-seed /tmp/seed-profile dsh-seed; \
@@ -272,6 +314,31 @@ RUN set -eux; \
         MANIFEST="${MANIFEST} ${AUTOMATION_PLUGIN_NAME}:${AUTOMATION_PLUGIN_VERSION}"; \
         REGISTRY="${REGISTRY} ${AUTOMATION_PLUGIN_NAME}"; \
     fi; \
+    if [ "${WITH_REWIND_PLUGIN}" = "true" ] && [ -n "${REWIND_PLUGIN_VERSION}" ]; then \
+        echo "[seed] Resolving ${REWIND_PLUGIN_NAME}@${REWIND_PLUGIN_VERSION} via pnpm"; \
+        seed_pnpm_add /tmp/seed-profile "${REWIND_PLUGIN_NAME}@${REWIND_PLUGIN_VERSION}"; \
+        _ver="$(node -p "require('/tmp/seed-profile/node_modules/${REWIND_PLUGIN_NAME}/package.json').version")"; \
+        MANIFEST="${MANIFEST} ${REWIND_PLUGIN_NAME}:${_ver}"; \
+        REGISTRY="${REGISTRY} ${REWIND_PLUGIN_NAME}"; \
+    fi; \
+    if [ "${WITH_AUTOCONTINUE_PLUGIN}" = "true" ] && [ -n "${AUTOCONTINUE_PLUGIN_VERSION}" ]; then \
+        echo "[seed] Resolving ${AUTOCONTINUE_PLUGIN_NAME}@${AUTOCONTINUE_PLUGIN_VERSION} via pnpm"; \
+        seed_pnpm_add /tmp/seed-profile "${AUTOCONTINUE_PLUGIN_NAME}@${AUTOCONTINUE_PLUGIN_VERSION}"; \
+        MANIFEST="${MANIFEST} ${AUTOCONTINUE_PLUGIN_NAME}:${AUTOCONTINUE_PLUGIN_VERSION}"; \
+        REGISTRY="${REGISTRY} ${AUTOCONTINUE_PLUGIN_NAME}"; \
+    fi; \
+    if [ "${WITH_SUGGEST_PROMPT_PLUGIN}" = "true" ] && [ -n "${SUGGEST_PROMPT_PLUGIN_VERSION}" ]; then \
+        echo "[seed] Resolving ${SUGGEST_PROMPT_PLUGIN_NAME}@${SUGGEST_PROMPT_PLUGIN_VERSION} via pnpm"; \
+        seed_pnpm_add /tmp/seed-profile "${SUGGEST_PROMPT_PLUGIN_NAME}@${SUGGEST_PROMPT_PLUGIN_VERSION}"; \
+        MANIFEST="${MANIFEST} ${SUGGEST_PROMPT_PLUGIN_NAME}:${SUGGEST_PROMPT_PLUGIN_VERSION}"; \
+        REGISTRY="${REGISTRY} ${SUGGEST_PROMPT_PLUGIN_NAME}"; \
+    fi; \
+    if [ "${WITH_PROMPT_LIBRARY_PLUGIN}" = "true" ] && [ -n "${PROMPT_LIBRARY_PLUGIN_VERSION}" ]; then \
+        echo "[seed] Resolving ${PROMPT_LIBRARY_PLUGIN_NAME}@${PROMPT_LIBRARY_PLUGIN_VERSION} via pnpm"; \
+        seed_pnpm_add /tmp/seed-profile "${PROMPT_LIBRARY_PLUGIN_NAME}@${PROMPT_LIBRARY_PLUGIN_VERSION}"; \
+        MANIFEST="${MANIFEST} ${PROMPT_LIBRARY_PLUGIN_NAME}:${PROMPT_LIBRARY_PLUGIN_VERSION}"; \
+        REGISTRY="${REGISTRY} ${PROMPT_LIBRARY_PLUGIN_NAME}"; \
+    fi; \
     if [ "${WITH_TELEGRAM_PLUGIN:-true}" = "true" ]; then \
         echo "[seed] Staging dsh-pai-telegram via manual copy"; \
         seed_copy_src /tmp/seed-profile /tmp/dsh-pai-telegram-src "${TELEGRAM_PLUGIN_NAME}"; \
@@ -282,6 +349,9 @@ RUN set -eux; \
     if [ "${WITH_PAI_PLUGINS:-true}" = "true" ]; then \
         echo "[seed] Staging pai-stack plugins via manual copy"; \
         _ver="$(node -p "require('/tmp/dsh-pai-notebook-src/package.json').version")"; \
+        for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-terrain dsh-pai-git; do \
+            cp /tmp/pai-shared-src/session-workspace.js "/tmp/${plugin}-src/lib/"; \
+        done; \
         for plugin in dsh-pai-notebook dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-web; do \
             seed_copy_src /tmp/seed-profile "/tmp/${plugin}-src" "${plugin}"; \
             MANIFEST="${MANIFEST} ${plugin}:${_ver}"; \
@@ -299,15 +369,16 @@ RUN set -eux; \
         /tmp/dsh-pai-design-src \
         /tmp/dsh-pai-terrain-src \
         /tmp/dsh-pai-git-src \
-        /tmp/dsh-pai-web-src; \
+        /tmp/dsh-pai-web-src \
+        /tmp/pai-shared-src; \
     echo '[seed] joint plugin tree staged at /opt/dsh-seed'
 
-# Patch dsh-automation to force English locale (Zg function) at build time
-RUN AUTOMATION_CLIENT="/opt/dsh-seed/node_modules/@michengai/dsh-automation/lib/client.js" && \
-    if [ -f "${AUTOMATION_CLIENT}" ]; then \
-        sed -i 's/function Zg(e){return [^}]*}/function Zg(e){return w3}/g' "${AUTOMATION_CLIENT}" && \
-        echo "[seed] Patched dsh-automation Zg function to force English locale"; \
-    fi
+# NOTE: the former `Zg`→`w3` sed patch that forced English on
+# @michengai/dsh-automation is gone. That plugin is retired
+# (DSH_WITH_AUTOMATION_PLUGIN=false by default) and superseded by the stock
+# schedule bundle below, whose strings are already English. Even with the
+# patch the UI still rendered in the browser's Accept-Language, so patching
+# the plugin's string table never fixed the dialog it actually broke.
 
 # Automation tasks (official experimental schedule bundle). Ships inside the
 # @deepseek-ai/dsh package itself — no seed copy needed, the entrypoint only

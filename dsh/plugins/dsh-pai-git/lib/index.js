@@ -6,14 +6,17 @@
  * - worktree_create, worktree_list, worktree_remove
  * - stash, tag, remote, config
  *
- * Runs git commands safely within the workspace (cwd=WORKSPACE_DIR).
+ * Runs git commands in the workspace attached to the calling session, so a
+ * session scoped to one project never operates on a sibling.
  * Use worktree_* actions for isolated feature branches without disrupting main branch.
  */
 
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { spawn } from "node:child_process";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
+
+import { WorkspaceUnresolved, sessionWorkspace } from "./session-workspace.js";
 
 export const name = "pai-git";
 export const inject = ["tools"];
@@ -44,15 +47,24 @@ function parseWorktreeLine(line) {
   return { path: match[1], hash: match[2], branch: match[3] || null };
 }
 
+/** Resolve `raw` against the session workspace, refusing to escape it. */
+function withinWorkspace(exec, raw) {
+  const workspace = sessionWorkspace(exec);
+  const absolute = isAbsolute(raw) ? resolve(raw) : resolve(workspace, raw);
+  const rel = relative(workspace, absolute);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(`cwd '${raw}' resolves outside this session's workspace (${workspace}).`);
+  }
+  return absolute;
+}
+
 export function apply(ctx, config) {
   const cfg = { enabled: true, ...(config ?? {}) };
   if (!cfg.enabled) return;
 
-  const workspaceRoot = process.env.WORKSPACE_DIR || "/opt/data/workspace";
-
   const gitTool = defineTool({
     name: "pai_git_ops",
-    description: "Git operations with worktree support. All commands run in the execution directory or specified workspace.",
+    description: "Git operations with worktree support. All commands run in the workspace attached to this session unless an explicit in-workspace path is passed.",
     parameters: {
       action: {
         type: "string",
@@ -64,7 +76,7 @@ export function apply(ctx, config) {
         ],
         description: "Git operation to perform"
       },
-      cwd: { type: "string", description: "Working directory (default: execution dir or workspace root)" },
+      cwd: { type: "string", description: "Working directory, relative to or inside this session's workspace (default: the workspace itself)" },
       // status
       short: { type: "boolean", description: "Short format for status" },
       // log
@@ -130,10 +142,18 @@ export function apply(ctx, config) {
       schema: { type: "json" },
       render: (_args, value) => [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }]
     },
-    async execute(args) {
+    async execute(args, exec) {
       const action = args.action;
-      const cwd = args.cwd ? resolve(args.cwd) : workspaceRoot;
-      
+      let workspaceRoot;
+      let cwd;
+      try {
+        workspaceRoot = sessionWorkspace(exec);
+        cwd = args.cwd ? withinWorkspace(exec, args.cwd) : workspaceRoot;
+      } catch (err) {
+        if (err instanceof WorkspaceUnresolved) return { error: err.message, action };
+        return { error: err.message, action };
+      }
+
       try {
         if (action === "status") {
           const gitArgs = ["status"];

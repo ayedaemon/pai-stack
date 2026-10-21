@@ -1,6 +1,6 @@
 ---
 name: research
-description: Per-project persistent wiki (Karpathy llm-wiki pattern) in .project/research/. Create, ingest, query, and lint interlinked Markdown knowledge. Use when user mentions wiki, knowledge base, notes, or starts/queries/lints research.
+description: Persistent wiki for the attached session's workspace, at <workspace>/.project/research/. Create, ingest, query, and lint interlinked Markdown knowledge. Use when user mentions wiki, knowledge base, notes, or starts/queries/lints research.
 ---
 
 # Research — Per-Project Wiki
@@ -8,22 +8,28 @@ description: Per-project persistent wiki (Karpathy llm-wiki pattern) in .project
 > Persistent, compounding knowledge base as interlinked Markdown at `.project/research/` in each project.
 > Based on Karpathy's LLM Wiki pattern (via `llm-wiki` on hermesskins.io), adapted for pai-stack.
 
-## Wiki Location (per-project, derived from EXECUTION_DIR)
+## Wiki Location (the attached session's workspace)
+
+The vault is `.project/research/` **relative to the workspace attached to this session**.
+The runtime resolves that base — never hardcode it and never derive it by scanning.
 
 ```bash
-WIKI="${EXECUTION_DIR}/.project/research"
+# resolved for you by the tool — no path guessing
+pai_notebook_ops(action="list_pages")
 ```
 
-- `EXECUTION_DIR` is set by Hermes on Turn 1 (see `agents` skill).
-- In-container path = `/opt/data/workspace/<project>/.project/research`.
-- Host path = `<WORKSPACE_DIR>/<project>/.project/research`.
-- No global `research/` at workspace root — each project owns its vault.
-- Legacy notebook vaults (`<notebook>/{notes/,sources/,notebook.json}`) are **not** migrated; new knowledge goes in wiki dirs below.
+- In-container: whatever the session is attached to, e.g. `/opt/data/workspace/<project>/.project/research`.
+- Host: `<WORKSPACE_DIR>/<project>/.project/research`.
+- A vault only ever exists inside an attached workspace. There is no global
+  `research/` at the workspace root; if a session is attached to the root, the vault is
+  `<root>/.project/research` and belongs to that root session only.
+- Legacy notebook vaults (`<notebook>/{notes/,sources/,notebook.json}`) are **not** migrated.
+  New knowledge goes in the wiki sections below.
 
-## Architecture: per-project wiki
+## Architecture: per-workspace wiki
 
 ```
-<EXECUTION_DIR>/.project/research/   ← $WIKI
+<attached workspace>/.project/research/   ← $WIKI
 ├── SCHEMA.md                        ← conventions, tag taxonomy, domain
 ├── index.md                         ← sectioned catalog, one-line summaries
 ├── log.md                           ← chronological action log (append-only, rotate at 500)
@@ -48,10 +54,10 @@ Skipping this causes duplicates and missed cross-refs.
 
 ## Init New Wiki (vault empty)
 
-1. Confirm `$WIKI` resolves (echo path; must be under `<EXECUTION_DIR>/.project/research`).
-2. Ask domain (be specific, e.g. "Aurora Postgres tuning").
-3. Write `SCHEMA.md` (template below, customized), `index.md` (section headers, `Total pages: 0`), `log.md` (`create | Wiki initialized`).
-4. Suggest first sources.
+1. `pai_notebook_ops(action="init_wiki")` — creates `SCHEMA.md`, `index.md`, `log.md` and logs the init.
+2. Edit `SCHEMA.md` to set the domain and the tag taxonomy (specific, e.g. "Aurora Postgres tuning").
+   Everything else it writes is a starting point; the schema is yours to specialize.
+3. Suggest first sources.
 
 ### SCHEMA.md (adapt to domain)
 
@@ -65,34 +71,60 @@ Skipping this causes duplicates and missed cross-refs.
 
 ## Ingest (URL, file, paste)
 
-1. Capture raw → `raw/<articles|papers|...>/<slug>.md` with frontmatter. Re-ingest: recompute sha, skip if same, flag drift if different. Never modify `raw/` afterwards.
+1. Capture raw → `pai_notebook_ops(action="ingest_url"|"ingest_file")`. The tool writes
+   `raw/<category>/<slug>.md` with `source_url`, `ingested`, `sha256` frontmatter. Re-ingesting
+   an unchanged body returns `status: "unchanged"`; a changed body returns `"ingested"` and
+   refreshes the hash. Never modify `raw/` by hand afterwards.
 2. Check existing: `index.md` + `pai_notebook_ops(action="search")` for mentioned entities.
-3. Write/update Layer-2 pages per thresholds. Cross-ref ≥2 `[[wikilinks]]` (both directions). Tags from taxonomy. Append `^[raw/...]` provenance on 3+-source syntheses. Set `confidence` honestly.
-4. Update `index.md` (alphabetical, count, date) + append `log.md` (`ingest | Title — files created/updated`).
+3. Write/update Layer-2 pages with `pai_notebook_ops(action="write_page", section=...)`.
+   Cross-ref ≥2 `[[wikilinks]]` (both directions). Tags from taxonomy. Cite `raw/...` refs in
+   `sources` on 3+-source syntheses. The tool returns `broken_links` and `warnings` — resolve
+   a forward reference by writing the target page, not by dropping the link.
+4. `index.md` and `log.md` are maintained by the tool. Do not hand-edit them; a write that
+   skips the tool is a write the index never learns about.
 5. Report files changed. If 10+ pages touched, confirm scope with user first.
-6. Hermes glue (mandatory): embed `@symbol:path/to/file.ext:Symbol` anchors for code claims; `mnemosyne_triple_add(subject="notebook:<nb>:note:<id>", predicate="anchors_symbol", object="@symbol:...")`; reverse-lookup via `mnemosyne_triple_query` before creating.
+6. Memory glue (mandatory): embed `@symbol:path/to/file.ext:Symbol` anchors for code claims —
+   `write_page` extracts them into frontmatter. `mnemosyne_triple_add(subject="research:<page_ref>", predicate="anchors_symbol", object="@symbol:...")`; reverse-lookup via `mnemosyne_triple_query` before creating.
 
-Tool mapping: `add_source_url`/`add_source_file` → raw capture; `add_note` → Layer-2 page body; `search` → duplicate check; `ask_notebook` → grounded draft.
+Tool mapping: `ingest_url`/`ingest_file` → raw capture; `write_page` → Layer-2 page body;
+`search` → duplicate check; `ask` → grounded draft; `get_page`/`get_source` → read back.
 
 ## Query
 
 1. `index.md` → relevant pages (+ `pai_notebook_ops(action="search")` for 100+ pages).
-2. Read top-3 pages max (never bulk-read).
+2. Read top-3 pages max via `pai_notebook_ops(action="get_page")` (never bulk-read).
 3. Synthesize with citations (`[[page]]`, `@symbol:` for code).
-4. File back substantial novel synthesis to `queries/` or `comparisons/` (skip trivial lookups).
-5. Append `log.md` (`query | question — filed? y/n`).
+4. File back substantial novel synthesis to `queries/` or `comparisons/` via `write_page`
+   (skip trivial lookups). The tool logs the write.
+5. `pai_notebook_ops(action="ask")` when the answer should come from the gateway rather than
+   your own reading — it grounds on search hits only.
 
 ## Lint (health-check)
 
-Check and report grouped by severity (broken links > orphans > drift > contested > stale > style), then append `log.md` (`lint | N issues`): orphans (0 inbound links), broken `[[links]]`, index completeness (fs vs index), frontmatter validity + taxonomy, stale (`updated` >90d behind newest source), `contested:true` / `contradictions:` / `confidence:low` / single-source-no-confidence, raw `sha256` drift, pages >200 lines, tag sprawl, log rotation (>500 → `log-YYYY.md`).
+Read the vault and report grouped by severity (broken links > orphans > drift > contested >
+stale > style). `write_page` already reports `broken_links` on every write, so this pass is
+about what accumulates between writes: orphans (0 inbound links), broken `[[links]]`, index
+completeness (fs vs index), frontmatter validity + taxonomy, stale (`updated` >90d behind
+newest source), `contested:true` / `contradictions:` / `confidence:low`, raw `sha256` drift
+(re-ingest each `raw/` source and look for `status: "ingested"`), pages >200 lines, tag
+sprawl, log rotation (>500 entries → `log-YYYY.md`, which the tool does automatically).
 
-## Hermes Integration
+## Agent Integration
 
 - Vault is plain Markdown on the mounted workspace — new pages are immediately searchable with `grep`.
-- Planning files (`task_plan/findings/progress.md`) stay in `<EXECUTION_DIR>/.project/planning/`; research conclusions graduate to wiki + Living ADRs (`.project/planning/research/ADR-XXX.md` via `pai_adr_ops`).
-- Probes: `/opt/data/probes/<slug>/` scripts; results ingested as `EVIDENCE:` notes with `@symbol:` anchors.
-- Turn 1: load this skill only when research task or `<EXECUTION_DIR>/.project/research/SCHEMA.md` exists; orient reads are SCHEMA + index + log-tail-20 only.
+- Both hermes and dsh write the same layout at the same path, resolved against their own
+  attached session workspace. Sharing a workspace shares a vault.
+- Planning files (`task_plan/findings/progress.md`) stay in `<workspace>/.project/planning/`;
+  research conclusions graduate to wiki + Living ADRs (`.project/planning/research/ADR-XXX.md`
+  via `pai_adr_ops`).
+- Probes: `/opt/data/probes/<slug>/` scripts; results ingested as evidence pages with `@symbol:` anchors.
+- Turn 1: load this skill only when research is the task or `<workspace>/.project/research/SCHEMA.md`
+  exists; orient reads are SCHEMA + index + log-tail-20 only.
 
 ## Pitfalls
 
-- Never edit `raw/`. Never skip orient/index/log updates. No pages for passing mentions. No isolated pages. Frontmatter required. Tags from taxonomy only. Split >200 lines. Rotate log. Contradictions explicit, never silent overwrite.
+- Never edit `raw/`. Never hand-edit `index.md` or `log.md` — the tool owns both. No pages for
+  passing mentions. No isolated pages. Frontmatter required. Tags from taxonomy only. Split
+  >200 lines. Contradictions explicit, never silent overwrite.
+- Never write research outside the attached workspace. If the task needs another project's
+  research, ask for that project to be attached first.

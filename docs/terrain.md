@@ -168,39 +168,50 @@ Verified end to end after the change: `init` → 13 human docs +
 agent context, `litho_ran: true`, status `partial` → `ready` (~6 min);
 `ask` → answered with real file:line citations (~60 s).
 
-### When a Zen model is retired
+### The model is resolved at boot, not pinned
 
-The keyless Zen slugs are **not stable**. They get dropped upstream with no
-deprecation here, and the failure is quiet in a specific way:
+The keyless Zen slugs are **not stable**. They get dropped upstream and swapped
+for bigger-context ones with no deprecation here. Pinned by hand, a retired slug
+failed quietly in a specific way: `terrain settings check-acp` kept reporting
+`{"available": true}` because that only proves the **binary** exists — not the
+model — so `ask` and `init` hung until the 10-minute spawn timeout.
+
+The shim now resolves the model at **every boot**: it lists the live keyless
+pool (`opencode models`, retried — the CLI starts empty while its background
+server warms up), enriches it with context/output windows from models.dev
+(cached ~6h), and rewrites
+`$XDG_CONFIG_HOME/opencode/opencode.json` with the **largest-context keyless
+model**. That is the same ranking as
+[`scripts/opencode-free-models.py`](../scripts/opencode-free-models.py), which
+stays the host-side tool for inspecting the pool (`make free-models`). The
+ranking picks on a *known* window only, skips upstream-deprecated slugs and the
+`big-pickle` alias while alternatives exist, and ties break alphabetically.
+
+The model in [`terrain/opencode.json`](../terrain/opencode.json) is therefore
+only the **template fallback** — used when `opencode models` cannot be reached
+or models.dev is down (every context unknown, "largest" meaningless). The file
+is re-derived from it every boot, so editing it plus a rebuild still works, just
+as an offline fallback rather than the primary mechanism.
+
+To pin deliberately instead:
+
+```yaml
+# docker-compose / .env
+TERRAIN_ACP_MODEL: opencode/beam-free   # skips selection; still verified live
+```
+
+An unavailable pin falls back to the template and logs the live alternatives —
+never fatal: `scan`, `search`, `read`, `source` and `projects` are offline and
+keep working. Only `init` and `ask` depend on a model.
+
+The shim logs what it resolved, e.g.:
 
 ```
-docker exec terrain opencode run --model opencode/<old-slug> 'reply OK'
-# Error: Model unavailable: opencode/<old-slug>
+[terrain] ACP model auto-selected: opencode/beam-free (context 1,048,576) — template pin opencode/space-bunny-free retired or smaller
 ```
 
-`terrain settings check-acp` still reports `{"available": true}` throughout,
-because that only proves the **binary** exists — not the model.
-
-**The shim now catches this at boot.** It runs `opencode models` (~50 ms) and
-compares the pinned model against the live keyless pool, so a retired slug is a
-banner line rather than a 10-minute hang:
-
-```
-[terrain] ACP model opencode/space-bunny-free verified against 10 keyless model(s)
-```
-
-and when it fails:
-
-```
-[terrain] ERROR: ACP model opencode/<old> is NOT available keylessly — init and ask WILL FAIL.
-           Retired upstream; nothing in this container changed. Live alternatives:
-             opencode/space-bunny-free
-             ...
-           Fix: edit "model" in terrain/opencode.json, then make terrain-build && make terrain-up.
-```
-
-It is never fatal: `scan`, `search`, `read`, `source` and `projects` are offline
-and keep working. Only `init` and `ask` are affected.
+and `/healthz` returns the **resolved** model as `acpModel`, so what actually
+runs is visible without spelunking the container.
 
 #### Which models are actually available
 
@@ -209,26 +220,19 @@ disagreed with reality for weeks — it still listed `muse-spark-1.3-contributor
 at `cost: 0` long after the keyless pool dropped it, and it advertises ~50 "free"
 models where only ~10 are keyless. Do not rebuild a model list from the catalog.
 
-[`scripts/opencode-free-models.py`](../scripts/opencode-free-models.py) keeps the
-two straight: availability comes from the CLI, and models.dev is used only to
-enrich context/output windows. It also flags upstream `status: deprecated`, vision
-input, and the `big-pickle` alias (whose backing model can change without the slug
-changing — a poor choice for a knowledge corpus).
+Both the boot-time resolver (`server.mjs`) and the host-side script keep the two
+straight: availability comes from the CLI, and models.dev is used only to enrich
+context/output windows. The script additionally surfaces upstream
+`status: deprecated`, vision input, and the `big-pickle` alias (whose backing
+model can change without the slug changing — a poor choice for a knowledge
+corpus).
 
 ```bash
 make free-models              # ranked table of what is live, largest context first
 make free-models --min-context 500000
-make free-models-check        # is the model pinned in terrain/opencode.json still keyless?
+make free-models-check        # is the template fallback still keyless?
 make free-models-allowlist    # emit ids for a shell allowlist
 ```
-
-Then edit `"model"` in [`terrain/opencode.json`](../terrain/opencode.json) and
-rebuild (`make terrain-build && make terrain-up`). The file is symlinked into
-`$XDG_CONFIG_HOME` at boot, so the image copy is the single source of truth — no
-volume cleanup needed.
-
-The shim prints the pinned model in its boot banner and returns it from
-`/healthz` as `acpModel` so this is visible without spelunking the container.
 
 Two related traps:
 
@@ -247,7 +251,7 @@ make terrain-build                   # rebuild after bumping TERRAIN_REF
 make terrain-config                  # validate compose config with terrain profile
 make terrain-down                    # stop; workspace and volume untouched
 make terrain-ask q="where is auth enforced?"   # keyless Zen, no tokens
-make free-models-check             # is the pinned ACP model still keyless?
+make free-models-check             # is the template-fallback ACP model still keyless?
 ```
 
 From inside Hermes, via `pai_terrain_ops`:
@@ -309,11 +313,14 @@ regenerated locally:
 | `TERRAIN_BIND_IP` | `127.0.0.1` | host bind address |
 | `TERRAIN_TOKEN` | *(unset)* | if set, callers must send `x-terrain-token` — see the caveat below |
 | `TERRAIN_MEM_LIMIT` | `2g` | memory ceiling |
+| `TERRAIN_ACP_MODEL` | *(unset)* | hard pin for the ACP model; unset = largest keyless context window, resolved each boot |
 
 There is no flag for `ask` / `init`. They are always on, because they cost latency
-rather than tokens — see [Token cost](#token-cost). The model itself is not a
-variable either: it is pinned in [`terrain/opencode.json`](../terrain/opencode.json)
-and edited there.
+rather than tokens — see [Token cost](#token-cost). The model is not a routed
+provider call either: it is resolved each boot against OpenCode's keyless pool
+(above) from the template in
+[`terrain/opencode.json`](../terrain/opencode.json), which is also the offline
+fallback.
 
 The project registry lives in the `terrain_data` volume at
 `/var/lib/terrain/.terrain/registry.json` — deliberately **not** on the workspace
@@ -388,4 +395,4 @@ is trusted — do not expose this port to the public internet, and if you ever n
 set `TERRAIN_TOKEN` (it is wired on both sides; nothing else changes).
 
 `/healthz` is unauthenticated either way — it returns only the commit ref, workspace
-path, and pinned ACP model.
+path, and the resolved ACP model.

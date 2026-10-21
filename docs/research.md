@@ -1,6 +1,6 @@
 # Research
 
-How Hermes does file-based research. Vault lives at `<EXECUTION_DIR>/.project/research/` (per-project, derived from EXECUTION_DIR).
+How the agents do file-based research. The vault lives at `<workspace>/.project/research/`, where `<workspace>` is whatever workspace the session is attached to — resolved by the runtime per call, never declared by the agent.
 
 ## Vault layout
 
@@ -22,7 +22,7 @@ Evidence notes carry status `supported | refuted | inconclusive`, always include
 
 Decompose complex questions into 4 perspectives: Systems Architecture, Security & Threats, Developer Ergonomics, Failure Modes. Actively seek counterpoints (GitHub issues, anti-patterns, version gotchas, incident reports).
 
-Living ADRs live in `<EXECUTION_DIR>/.project/planning/research/ADR-XXX.md`:
+Living ADRs live in `<session workspace>/.project/planning/research/ADR-XXX.md`:
 
 - YAML frontmatter (status, symbols, supersession chain)
 - Symbol hashes for drift detection (`@symbol:path:Symbol#sha256:…`, via `pai_adr_ops check_drift`)
@@ -42,4 +42,4 @@ Configured in `hermes/config.yaml` (`kanban.workers`, `kanban.patterns`).
 
 Patterns: `deep_research` (4-perspective parallel → synthesize → ADR), `quick_fact_check` (question → evidence → answer), `empirical_validation` (hypothesis → probe → note), `build_task` (code handoff).
 
-Handoff context: `notebook_id`, `execution_dir`, `anchor_symbols`, `inquiry_question`, `perspective`; required returns: `evidence_note_ids`, `symbol_anchors`, `confidence`, `unresolved_questions`. Workers are research-only (no code changes).
+Handoff context: `page_refs`, `section`, `anchor_symbols`, `inquiry_question`, `perspective`; required returns: `page_refs`, `symbol_anchors`, `confidence`, `unresolved_questions`. Workers are research-only (no code changes).

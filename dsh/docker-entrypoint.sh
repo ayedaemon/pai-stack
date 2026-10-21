@@ -197,52 +197,14 @@ ensure_no_deepseek_search() {
 EOF
 }
 
-# Force English locale by pre-seeding the locale preference in storages.
-# The dsh-automation plugin ships Chinese prompt fragments; DSH locale
-# otherwise defaults to browser language. This writes the volume-side
-# store (`/data/dsh/storages/locale.json`) — the one mechanism that works
-# under `read_only: true`. The former index.html `sed`/`python3` patch that
-# ran alongside this always failed silently (it targeted the read-only image
-# layer, and upstream ships `<html lang="en">` anyway), so it was removed.
-# Gate with DSH_SEED_LOCALE=false to skip.
-seed_locale_preference() {
-    if [ "${DSH_SEED_LOCALE:-true}" != "true" ]; then
-        elog "[locale-seed] DSH_SEED_LOCALE=false, skipping"
-        return 0
-    fi
-    local store_dir="/data/dsh/storages"
-    local locale_json="${store_dir}/locale.json"
-    if [ -f "${locale_json}" ]; then
-        # Check if already set to English
-        if grep -q '"preference"[[:space:]]*:[[:space:]]*"en"' "${locale_json}" 2>/dev/null; then
-            elog "[locale-seed] locale preference already set to English, skipping"
-            return 0
-        fi
-        elog "[locale-seed] updating locale preference to English"
-    else
-        elog "[locale-seed] pre-seeding locale preference to English"
-    fi
-    mkdir -p "${store_dir}" 2>/dev/null || true
-    cat > "${locale_json}" <<'EOF'
-{
-  "unit": {
-    "name": "locale",
-    "version": 1
-  },
-  "global": {
-    "initialized": true
-  },
-  "tables": {
-    "settings": {
-      "locale": {
-        "preference": "en"
-      }
-    }
-  }
-}
-EOF
-}
-
+# NOTE: seed_locale_preference() (and the DSH_SEED_LOCALE gate) is removed.
+# It wrote /data/dsh/storages/locale.json, but nothing in the DSH server reads
+# that store — DSH resolves UI locale from the request's Accept-Language header
+# and server-side-renders it:
+#     Accept-Language: en-US  ->  <html lang="en">     <title>… · Sign in</title>
+#     Accept-Language: zh-CN  ->  <html lang="zh-CN">  <title>… · 登录</title>
+# So the seed logged success every boot while changing nothing. Set the
+# browser/OS language to English to get an English UI.
 # Read a package.json "version" field without spawning Node (~13ms each).
 # grep/sed are shell builtins with no interpreter startup; this replaces the
 # former `node -p "require(...).version"` probes (10 per boot) in the
@@ -258,9 +220,6 @@ case "${TMPDIR:-/data/dsh/tmp}" in
     /data/dsh/*) mkdir -p "${TMPDIR}" 2>/dev/null || true ;;
 esac
 mkdir -p /data/dsh/home/.docker 2>/dev/null || true
-
-# Force English locale before plugin seeds initialize
-seed_locale_preference
 
 # Plugin seeds: ONE joint tree in the image (/opt/dsh-seed — all plugins
 # resolved together at build time). The entrypoint copies it once and
@@ -326,6 +285,10 @@ sync_plugin_tree() {
 auth|DSH_WITH_AUTH|@xgone/dsh-remote/package.json|@xgone/dsh-remote|
 memory|DSH_WITH_MNEMON|dsh-mnemon/package.json|dsh-mnemon|
 automation|DSH_WITH_AUTOMATION|@michengai/dsh-automation/package.json|@michengai/dsh-automation|
+rewind|DSH_WITH_REWIND|dsh-rewind-plugin/package.json|dsh-rewind-plugin|
+auto-continue|DSH_WITH_AUTOCONTINUE|dsh-client-auto-continue/package.json|dsh-client-auto-continue|
+suggest-prompt|DSH_WITH_SUGGEST_PROMPT|@studyzy/dsh-suggest-prompt/package.json|@studyzy/dsh-suggest-prompt|
+prompt-library|DSH_WITH_PROMPT_LIBRARY|@sunjuntao/dsh-prompt-library/package.json|@sunjuntao/dsh-prompt-library|
 telegram|DSH_WITH_TELEGRAM|dsh-pai-telegram/package.json|dsh-pai-telegram|
 pai|DSH_WITH_PAI_PLUGINS|dsh-pai-notebook/package.json|dsh-pai-notebook|dsh-pai-adr dsh-pai-design dsh-pai-terrain dsh-pai-git dsh-pai-web
 PLUGIN_TABLE
@@ -461,10 +424,140 @@ fi
     fi
 fi
 
+# English seed data for @sunjuntao/dsh-prompt-library. The plugin hardcodes a
+# CHINESE first-run seed (welcome prompt, tag, three starter persona prompts
+# and the default SOUL persona) into its SQLite db — it has no locale switch
+# and seeds regardless of UI language, which reads oddly in an English-only
+# stack (screenshots, Oct-2026). This patch rewrites ONLY rows that still
+# match the exact Chinese seed text; anything the user edited or created is
+# never touched, and translations stay idempotent across plugin updates.
+# Gate with DSH_PROMPT_LIBRARY_ENGLISH=false to keep the upstream seed.
+ensure_prompt_library_english() {
+    if [ "${DSH_PROMPT_LIBRARY_ENGLISH:-true}" != "true" ]; then
+        return 0
+    fi
+    local db="${DSH_HOME:-/data/dsh}/prompt-library/db/prompts.db"
+    if [ ! -f "${db}" ]; then
+        return 0
+    fi
+    local patch="/tmp/pl-english-patch.mjs"
+    cat > "${patch}" <<'PLEOF'
+// Guarded upsert: each UPDATE touches a row only when its body STILL equals
+// the known Chinese seed fragment — user-modified rows fail the WHERE and are
+// left alone. Uses the same node:sqlite the plugin itself runs on (Node 24).
+import { DatabaseSync } from 'node:sqlite';
+const db = new DatabaseSync(process.argv[2] ?? '/data/dsh/prompt-library/db/prompts.db');
+const CH = {
+  welcomeTitle: '欢迎使用词库',
+  welcomeBodyFrag: '这是你保存的第一条提示词',
+  personaKey: 'pl:default-persona-soul',
+};
+const updates = [];
+
+// 1. Welcome prompt (only if seed-intact)
+updates.push(
+  db.prepare(`UPDATE prompts SET title=?, body=?, tags=? WHERE title=? AND body LIKE ?`)
+    .run('Welcome to Prompt Library',
+`This is your first saved prompt and the library's quick-start guide.
+
+Ways to use this plugin:
+- Open Data Management in the Library menu to browse, edit and search the whole library;
+- Use the AI Polish button next to the chat input to refine selected text;
+- Use Import/Export to back up or restore the entire library.
+
+Edit this prompt directly to replace it with your own content, and tag it in settings.`,
+      '["welcome"]',
+      CH.welcomeTitle, `%${CH.welcomeBodyFrag}%`));
+
+// 2. Seed tag (only if untouched)
+updates.push(
+  db.prepare(`UPDATE tags SET name=? WHERE name=? AND NOT EXISTS
+    (SELECT 1 FROM tags WHERE name=?)`).run('welcome', '欢迎', 'welcome'));
+
+// 3. Starter persona prompts (exact-body match each)
+const starts = [
+  ['Programming',
+`You are a senior full-stack engineer versed in mainstream languages, frameworks and engineering practice. When answering programming questions:
+1. Confirm requirements and constraints first, asking clarifying questions where needed;
+2. Give runnable code examples and explain the key implementation idea;
+3. Point out common pitfalls and edge cases, with defensive coding patterns;
+4. When several approaches exist, compare trade-offs and give a clear recommendation.`,
+    '编程', `["编程"]`, `["programming"]`,
+    '你是一名资深全栈工程师'],
+  ['Office writing',
+`You are an experienced office administrator skilled in formal documents, meeting minutes, spreadsheets and daily admin work. For office tasks:
+1. Use formal, precise written style — clear and concise;
+2. Structure content with clear sub-headings and lists;
+3. Provide templates or examples that can be used directly;
+4. Mind formatting, wording and professional conventions.`,
+    '文员', `["文员"]`, `["office"]`,
+    '你是一名经验丰富的办公室文员'],
+  ['Legal review',
+`You are a rigorous professional lawyer skilled in legal advice, document drafting and compliance analysis. For legal questions:
+1. Base analysis on current laws, regulations and judicial interpretations;
+2. Flag potential legal risks and liability boundaries;
+3. Use standard legal drafting conventions or model clauses;
+4. Where individual circumstances matter, state the limits and advise consulting a licensed attorney.`,
+    '律师', `["律师"]`, `["legal"]`,
+    '你是一名严谨专业的律师'],
+];
+for (const [t, body, zhTitle, zhTags, enTags, frag] of starts) {
+  updates.push(
+    db.prepare(`UPDATE session_prompts SET title=?, body=?, tags=? WHERE title=? AND body LIKE ? AND usageCount=0`)
+      .run(t, body, enTags, zhTitle, `%${frag}%`));
+}
+
+// 4. Default persona (drives AI-polish output language). Replaced only while
+// it still IS the Chinese seed — user-maintained personas win.
+const persona = db.prepare('SELECT value FROM meta WHERE key=?').get(CH.personaKey);
+if (persona && persona.value.includes('人格')) {
+  updates.push(
+    db.prepare('UPDATE meta SET value=? WHERE key=? AND value=?').run(
+`# SOUL · Persona
+
+You are the Prompt Library assistant — the user's everyday tool for collecting, organizing, polishing and reusing prompts.
+
+## Identity
+- An expert in prompt writing across writing, coding, office and learning scenarios.
+- Detail-oriented; output that is concise, generic and reusable.
+
+## Working principles
+- Understand the user's real intent before editing; keep the key details of the original text — never rewrite gratuitously.
+- When classifying or distilling, keep prompts clear, compact and directly usable.
+- Extract scenario-dependent content (roles, objects, topics, style) into variable placeholders for reuse.
+- Preserve existing variables and tag structures; never break existing formats.
+
+## Expression style
+- Sincere, clear and organized; the conclusion first, then the necessary explanation.
+- Respect the user's input; suggest only when genuinely needed.
+
+## Language
+- Respond in English by default; mirror the user's language only when they clearly write in another one.`,
+      CH.personaKey, persona.value));
+}
+
+const n = updates.reduce((a, r) => a + r.changes, 0);
+if (n) console.log(`[pl-english] localized ${n} seeded row(s)`);
+else console.log('[pl-english] seed already localized or user-modified, skipping');
+PLEOF
+    local out
+    if out="$(node "${patch}" "${db}" 2>&1)"; then
+        # `node | while read` would eat node's exit status (read returns 1 at
+        # EOF), so capture first and stream after — the `if` must test node.
+        printf '%s\n' "${out}" | while IFS= read -r line; do elog "${line}"; done
+        rm -f "${patch}"
+    else
+        printf '%s\n' "${out}" | while IFS= read -r line; do elog "${line}"; done
+        elog "[pl-english] WARN patch failed (plugin update changed the schema?) — keeping Chinese seed"
+        rm -f "${patch}"
+    fi
+}
+
 retire_default_workspace_plugin
 seed_workspace_registry
 ensure_workspace_controller_row
 ensure_no_deepseek_search
+ensure_prompt_library_english
 
 start_socat
 

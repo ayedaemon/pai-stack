@@ -127,7 +127,7 @@ If you catch yourself asserting a fact they'd have to take on faith — foundati
 
 ## Persistence — .project/teach/
 
-Teaching artifacts persist to `<EXECUTION_DIR>/.project/teach/`:
+Teaching artifacts persist to `<workspace>/.project/teach/`:
 
 ```
 .project/teach/

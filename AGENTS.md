@@ -56,8 +56,11 @@ dsh    ──→ [dsh-pai-terrain]    code intelligence → terrain:7878/call  (
 hermes ←─→ [pair/ blackboard] ←─→ dsh   peer queue: pair/queue → claim.py → worktree → done.py; wake via poke.py (docker exec headless)
 hermes ──→ [skills: /opt/pai/skills]  native procedural skills via skills_list / skill_view
 hermes ──→ llm-gateway:4000     ONLY gateway for LLM completions & reasoning
-hermes (pai_notebook_ops) ──→ <EXECUTION_DIR>/.project/research/ (file vault)
-hermes (ask_notebook) ──→ llm-gateway:4000 (synthesis)
+hermes (pai_notebook_ops) ──→ <session workspace>/.project/research/ (Markdown wiki)
+         └─ workspace = agent.runtime_cwd session cwd, resolved per call
+dsh    (pai_notebook_ops) ──→ <session workspace>/.project/research/ (same wiki)
+         └─ workspace = exec.agent.session.header.cwd, resolved per call
+hermes (pai_notebook_ops ask) ──→ llm-gateway:4000 (synthesis)
 dsh    ──→ llm-gateway:4000     LLM completions & reasoning
 open-design ──→ llm-gateway:4000  LLM completions (BYOK or gateway)
 terrain ──→ <repo>/.terrain/    the ONLY writer of index artifacts
@@ -111,7 +114,7 @@ agent ──→ terrain:7878 ──→ terrain CLI ──→ <repo>/.terrain/
   trigger jobs and read the result — neither keeps a private in-memory index, so the
   DSH heap cap is a non-issue.
 - **Per-repo by construction.** Each scan writes `.terrain/` *inside* the repo it
-  indexes, which structurally enforces the `EXECUTION_DIR` boundary below.
+  indexes, which structurally enforces the session-workspace boundary below.
 - **Indexing is free.** `index`/`refresh` make no LLM call. `refresh` explicitly skips
   Litho, Terrain's LLM doc generator. Only `ask` and `init` invoke an LLM — via
   Terrain's own ACP agent on keyless Zen models, not the gateway. There is no
@@ -156,7 +159,7 @@ using embedded SQLite (`/opt/hermes/data/mnemosyne/data/mnemosyne.db`) and local
 
 | Retrieval System | Scope | Storage | Role |
 |---|---|---|---|
-| **Research Brain** | External knowledge & notes | `<EXECUTION_DIR>/.project/research/` | RFCs, API docs, papers, research notes in Markdown |
+| **Research Brain** | External knowledge & notes | `<session workspace>/.project/research/` | RFCs, API docs, papers, research notes in Markdown |
 | **Mnemosyne** | Agent experience | `/opt/hermes/data/mnemosyne` | Decisions, prior fixes, session continuity, user preferences |
 
 ## Operating Protocol
@@ -165,9 +168,9 @@ using embedded SQLite (`/opt/hermes/data/mnemosyne/data/mnemosyne.db`) and local
 That file is agent-neutral, mounted into every agent in the stack, and is the first thing
 Hermes loads each session. It owns:
 
-- the **Turn-1 startup protocol** (survey workspace → declare `EXECUTION_DIR` → check the
+- the **Turn-1 startup protocol** (confirm the attached workspace → check the
   terrain index → orient on the stack)
-- the **`EXECUTION_DIR` invariant** and project-boundary isolation
+- the **session-workspace invariant** and project-boundary isolation
 - **propose-before-writing** and the confirmation gate for mutating git
 - **planning discipline** and the `.project/planning/` layout
 - **code intelligence** via `pai_terrain_ops`, including the registry-lost recovery case

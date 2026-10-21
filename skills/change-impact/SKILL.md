@@ -18,10 +18,10 @@ presenting any numbers, and offer `refresh` (free) over `init` (LLM) as the fix.
 ## Step 1 — Get the actual change set
 
 ```bash
-cd <EXECUTION_DIR> && git status --porcelain
-cd <EXECUTION_DIR> && git diff --name-only           # unstaged
-cd <EXECUTION_DIR> && git diff --cached --name-only  # staged
-cd <EXECUTION_DIR> && git diff --name-only <base>...HEAD   # branch vs base
+cd <workspace> && git status --porcelain
+cd <workspace> && git diff --name-only           # unstaged
+cd <workspace> && git diff --cached --name-only  # staged
+cd <workspace> && git diff --name-only <base>...HEAD   # branch vs base
 ```
 
 Read the diff, not just the filenames. A rename, a moved constant, and a signature change

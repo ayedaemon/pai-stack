@@ -5,7 +5,7 @@ description: "Maintain a living diagram registry in .project/diagrams/ — diagr
 
 # Visualize — Living Diagram Registry
 
-This skill manages a **persistent, evolving diagram collection** at `<EXECUTION_DIR>/.project/diagrams/`. Diagrams are not throwaway — they accumulate, version, link to research/planning/code, and can drive synchronization checks.
+This skill manages a **persistent, evolving diagram collection** at `<workspace>/.project/diagrams/`. Diagrams are not throwaway — they accumulate, version, link to research/planning/code, and can drive synchronization checks.
 
 You are the **diagram custodian**. You create, update, version, and verify diagrams. The registry persists across sessions and agents.
 

@@ -12,9 +12,10 @@
  *
  * LLM PATH — `init` and `ask` do NOT use llm-gateway. Terrain spawns
  * `opencode acp` as a subprocess, and opencode runs on its own keyless Zen
- * models (see terrain/opencode.json). This container therefore holds no gateway
- * link and no provider credential. See PROVIDER_KEYS below for why that is
- * enforced rather than assumed.
+ * models. The model is RESOLVED AT BOOT (largest keyless context window, see
+ * listKeylessModels) from the template in terrain/opencode.json. This
+ * container therefore holds no gateway link and no provider credential. See
+ * PROVIDER_KEYS below for why that is enforced rather than assumed.
  *
  * SAFETY — three invariants this file exists to enforce:
  *   1. Subcommand allowlist. `terrain env apply` rewrites AGENTS.md and installs
@@ -29,72 +30,62 @@
 
 import { createServer } from 'node:http'
 import { spawn, execFile } from 'node:child_process'
-import { realpathSync, existsSync, lstatSync, readlinkSync, unlinkSync, symlinkSync } from 'node:fs'
-import { readFileSync, mkdirSync } from 'node:fs'
+import { realpathSync, existsSync, lstatSync, unlinkSync } from 'node:fs'
+import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync } from 'node:fs'
 import { resolve, join, dirname, isAbsolute } from 'node:path'
 
 const PORT = Number(process.env.TERRAIN_PORT ?? 7878)
 const WORKSPACE = resolve(process.env.TERRAIN_WORKSPACE ?? '/opt/data/workspace')
 const TOKEN = process.env.TERRAIN_TOKEN || null
 
-/** The ACP agent's config, as shipped in the image. Linked into XDG at boot. */
+/**
+ * The ACP agent's config TEMPLATE, as shipped in the image. The shim resolves
+ * the final model at boot (listKeylessModels / resolveAcpModel) and WRITES the
+ * resolved config into the volume — this image copy stays the source of truth
+ * for everything else in the file (the litho agent definition, permissions)
+ * and the fallback model when live selection is impossible.
+ */
 const ACP_CONFIG_SRC = '/opt/terrain/opencode.json'
 
 /**
- * Point opencode's config at the image copy of terrain/opencode.json.
+ * Boot-time model resolution.
  *
- * XDG_CONFIG_HOME has to be writable: opencode mkdirs `$XDG_CONFIG_HOME/opencode/`
- * on startup, which fails under this container's `read_only: true` if it points
- * into the image layer. So the DIRECTORY lives on the terrain_data volume.
+ * A pinned keyless Zen slug is a liability: the pool changes under us, slugs
+ * get retired upstream with no notice, and `opencode models` is the only
+ * ground truth. So at every boot the shim:
  *
- * The FILE is a symlink back to the image rather than a copy. A copy has to be
- * refreshed on every boot, and "refresh only if absent" silently pins a stale
- * config forever — a hand-edited copy outlives the image it came from, so
- * bumping TERRAIN_REF stops changing the model and nobody notices until an LLM
- * action fails. The symlink makes /opt/terrain/opencode.json the single source
- * of truth: edit it, rebuild, done. Any pre-existing regular file here (from the
- * old copy-based seed) is replaced.
+ *   1. Seeds $XDG_CONFIG_HOME/opencode/opencode.json from the template
+ *      immediately (non-fatal — only init/ask are affected).
+ *   2. In the background, lists the LIVE keyless pool (`opencode models`,
+ *      retried — see below) and, when models.dev is reachable, picks the model
+ *      with the LARGEST context window (Litho has to fit a whole repo) and
+ *      rewrites the config.
  *
- * Failure is non-fatal: terrain still indexes and searches; only init/ask lose
- * their agent.
+ * The ranking is identical to scripts/opencode-free-models.py, which remains
+ * the host-side tool for inspecting the same pool (`make free-models`). The
+ * same two-source rule applies here: availability comes ONLY from
+ * `opencode models`; models.dev is a catalog — it listed retired slugs at
+ * cost 0 for weeks. It is used only for context/output windows, and a model is
+ * picked only on a KNOWN window. When models.dev is unreachable every window
+ * is 0, "largest" is meaningless, and the template fallback is kept rather
+ * than picking alphabetically.
+ *
+ * `TERRAIN_ACP_MODEL` pins the choice explicitly and skips selection (still
+ * verified live; an unverifiable pin only warns — never fatal: scan/search/
+ * read/source are all offline and must keep working when models are gone).
  */
-function linkAcpConfig() {
-  const xdg = process.env.XDG_CONFIG_HOME
-  if (!xdg || !existsSync(ACP_CONFIG_SRC)) return
-  const dir = join(xdg, 'opencode')
-  const dst = join(dir, 'opencode.json')
-  try {
-    mkdirSync(dir, { recursive: true })
-    // existsSync follows symlinks, so a BROKEN link reads as absent — test
-    // lstat too, or symlinkSync throws EEXIST on it.
-    let st = null
-    try { st = lstatSync(dst) } catch { /* nothing there */ }
-    if (st?.isSymbolicLink()) {
-      // Compare the RAW target, not realpathSync: normalising would defeat the
-      // comparison whenever either side traverses a symlink (/tmp -> /private/tmp
-      // on macOS, a symlinked /opt, ...) and re-link on every boot.
-      try { if (readlinkSync(dst) === ACP_CONFIG_SRC) return } catch { /* unreadable */ }
-      unlinkSync(dst)
-    } else if (st) {
-      unlinkSync(dst) // a regular file left by the old copy-based seed
-    }
-    symlinkSync(ACP_CONFIG_SRC, dst)
-    console.error(`[terrain] ACP agent config -> ${dst} -> ${ACP_CONFIG_SRC}`)
-  } catch (e) {
-    console.error(`[terrain] could not link ACP config: ${e.message} (init/ask may be unavailable)`)
-  }
+const ACP_MODEL_OVERRIDE = process.env.TERRAIN_ACP_MODEL || null
+
+/** Alias whose backing model can change without the slug changing (docs/terrain.md). */
+const UNSTABLE_ALIASES = new Set(['big-pickle'])
+
+function acpConfigPath() {
+  return process.env.XDG_CONFIG_HOME
+    ? join(process.env.XDG_CONFIG_HOME, 'opencode', 'opencode.json')
+    : null
 }
 
-/**
- * Read the model the ACP agent will use, for the boot banner.
- *
- * Worth logging because these keyless Zen models get retired upstream with no
- * deprecation here: a retired model makes `init`/`ask` fail while
- * `terrain settings check-acp` still reports `available: true`, because that
- * only proves the BINARY exists. The banner is the one place that shows which
- * model is actually wired up.
- */
-function acpModel() {
+function readTemplateModel() {
   try {
     return JSON.parse(readFileSync(ACP_CONFIG_SRC, 'utf8')).model ?? 'unset'
   } catch {
@@ -103,58 +94,206 @@ function acpModel() {
 }
 
 /**
- * Verify the pinned ACP model is still reachable keylessly, and say so loudly if
- * not. Costs ~50ms warm.
+ * Write opencode's config into XDG with `model` set to what we resolved.
  *
- * This exists because the failure is otherwise invisible. When
- * muse-spark-1.3-contributor-free was retired upstream, `terrain settings
- * check-acp` kept reporting {"available": true} — it only proves the BINARY
- * exists — so `ask` and `init` just hung until the 10-minute spawn timeout, with
- * no error anywhere pointing at the model. One `opencode models` call at boot
- * turns that into a line in the banner.
- *
- * `opencode models` is ITSELF unreliable cold: it exits 0 with EMPTY stdout while
- * its background server (opencode.db + WAL) is still coming up, then works. So an
- * empty answer is INCONCLUSIVE, not a verdict — retry, and if it never resolves,
- * say "unverified" rather than screaming that the model is dead. Reporting a
- * false alarm here would be worse than not checking: the next reader learns to
- * ignore the line that is supposed to matter.
- *
- * Never fatal: scan/search/read/source are all offline and must keep working
- * when the model is gone. Failure here only means init/ask will not.
+ * Rewritten from the template on EVERY boot rather than seeded only when
+ * absent: "write only if missing" is exactly how a hand-edited or stale copy
+ * outlives the image and pins a dead model forever. Atomic write (tmp +
+ * rename) so an `opencode acp` subprocess racing it reads either the old or
+ * the new file, never a partial one.
  */
-function verifyAcpModel(attempt = 1) {
-  const want = acpModel()
+function writeAcpConfig(model = null) {
+  const dst = acpConfigPath()
+  if (!dst || !existsSync(ACP_CONFIG_SRC)) return
+  try {
+    const cfg = JSON.parse(readFileSync(ACP_CONFIG_SRC, 'utf8'))
+    if (model) cfg.model = model
+    const dir = dirname(dst)
+    mkdirSync(dir, { recursive: true })
+    const tmp = join(dir, `.opencode.json.${process.pid}.tmp`)
+    writeFileSync(tmp, JSON.stringify(cfg, null, 2) + '\n')
+    // A boot from the pre-resolution shim left a SYMLINK here (to the image
+    // copy); lstat it deliberately — existsSync follows links, so a broken one
+    // reads as absent and rename would then refuse to replace it.
+    try { if (lstatSync(dst).isSymbolicLink()) unlinkSync(dst) } catch { /* absent */ }
+    renameSync(tmp, dst)
+  } catch (e) {
+    console.error(`[terrain] could not write ACP config: ${e.message} (init/ask may be unavailable)`)
+  }
+}
+
+/**
+ * Read the model the ACP agent will actually use, for the banner and
+ * /healthz — the RESOLVED config first, template as fallback.
+ *
+ * Worth logging because these keyless Zen models get retired upstream with no
+ * deprecation here: a retired model makes `init`/`ask` fail while `terrain
+ * settings check-acp` still reports `available: true`, because that only
+ * proves the BINARY exists. The banner is the one place that shows which
+ * model is actually wired up.
+ */
+function acpModel() {
+  const dst = acpConfigPath()
+  for (const f of [dst, ACP_CONFIG_SRC]) {
+    if (!f) continue
+    try {
+      const m = JSON.parse(readFileSync(f, 'utf8')).model
+      if (m) return m
+    } catch { /* try the next source */ }
+  }
+  return 'unreadable'
+}
+
+const MODELS_DEV = 'https://models.dev/api.json'
+const CATALOG_TTL_MS = 6 * 3600 * 1000
+
+/**
+ * context/output windows from models.dev, cached ~6h (same policy as
+ * scripts/opencode-free-models.py). Returns {} on any failure: a machine with
+ * no network still gets a usable fallback (the template pin), it just loses
+ * the ranking. Advisory only — never authoritative on availability.
+ */
+async function readCatalog() {
+  const cache = process.env.OPENCODE_MODEL_CACHE
+    ? resolve(process.env.OPENCODE_MODEL_CACHE)
+    : join(process.env.HOME ?? '/var/lib/terrain', '.cache', 'opencode-models.json')
+  try {
+    if (Date.now() - statSync(cache).mtimeMs < CATALOG_TTL_MS) {
+      return JSON.parse(readFileSync(cache, 'utf8'))
+    }
+  } catch { /* cache miss */ }
+  try {
+    // models.dev 403s a missing User-Agent; identify honestly.
+    const body = await fetch(MODELS_DEV, {
+      headers: { 'User-Agent': 'pai-stack/terrain-shim' },
+      signal: AbortSignal.timeout(15000),
+    }).then((r) => r.json())
+    const limits = {}
+    for (const [mid, mm] of Object.entries(body?.opencode?.models ?? {})) {
+      // Keys here are BARE model ids (no "opencode/" prefix), even though
+      // `opencode models` prints them prefixed — same normalisation as the
+      // Python sibling script.
+      const id = mid.startsWith('opencode/') ? mid.slice('opencode/'.length) : mid
+      limits[id] = {
+        context: mm?.limit?.context ?? 0,
+        output: mm?.limit?.output ?? 0,
+        status: mm?.status ?? '',
+      }
+    }
+    mkdirSync(dirname(cache), { recursive: true })
+    writeFileSync(cache, JSON.stringify(limits))
+    return limits
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Rank the live pool: context first (Litho has to fit a whole repo), output
+ * second, name last so the choice is stable across boots when the catalog is
+ * unreachable. Mirrors scripts/opencode-free-models.py exactly.
+ */
+function rankModels(live, limits) {
+  return live
+    .map((id) => {
+      const short = id.startsWith('opencode/') ? id.slice('opencode/'.length) : id
+      const lim = limits[short] ?? {}
+      return {
+        id,
+        short,
+        context: lim.context ?? 0,
+        output: lim.output ?? 0,
+        status: lim.status ?? '',
+      }
+    })
+    .sort((a, b) => (b.context - a.context) || (b.output - a.output) || a.short.localeCompare(b.short))
+}
+
+function pickBestModel(rows) {
+  // Upstream-deprecated slugs and the big-pickle alias are poor choices for a
+  // knowledge corpus, but advisory only: skip them ONLY while some other live
+  // model remains — an all-warned pool still gets one.
+  const stable = rows.filter((r) => r.status !== 'deprecated' && !UNSTABLE_ALIASES.has(r.short))
+  const pool = stable.length ? stable : rows
+  // Pick on a KNOWN window only — see the two-source rule at the top.
+  if (!pool.length || !pool[0].context) return null
+  return pool[0]
+}
+
+/**
+ * List the live keyless pool, then resolve + apply the ACP model.
+ *
+ * `opencode models` fails falsely cold: it exits 0 with EMPTY stdout while its
+ * background server (opencode.db + WAL) is still coming up. An empty answer is
+ * INCONCLUSIVE, not a verdict — retry before concluding anything. Never fatal:
+ * scan/search/read/source are all offline and must keep working when the model
+ * is gone.
+ */
+function listKeylessModels(attempt = 1) {
   const ATTEMPTS = 3
   execFile('opencode', ['models'], { timeout: 15000, env: process.env }, (err, stdout) => {
     const live = (stdout || '').split('\n').map((l) => l.trim()).filter(Boolean)
 
     if (err || live.length === 0) {
       if (attempt < ATTEMPTS) {
-        setTimeout(() => verifyAcpModel(attempt + 1), 1500)
+        setTimeout(() => listKeylessModels(attempt + 1), 1500)
         return
       }
       console.error(
-        `[terrain] could not verify ACP model ${want}: ` +
-        `${err ? err.message : '`opencode models` returned nothing'} ` +
-        `(init/ask unverified — this says nothing about whether the model works)`
+        `[terrain] could not list keyless models (${err ? err.message : '`opencode models` returned nothing'}) — ` +
+        `keeping template-pinned ACP model ${acpModel()}`
       )
       return
     }
-
-    if (live.includes(want)) {
-      console.error(`[terrain] ACP model ${want} verified against ${live.length} keyless model(s)`)
-      return
-    }
-
-    console.error(
-      `[terrain] ERROR: ACP model ${want} is NOT available keylessly — init and ask WILL FAIL.\n` +
-      `           Retired upstream; nothing in this container changed. Live alternatives:\n` +
-      live.slice(0, 5).map((m) => `             ${m}`).join('\n') +
-      `\n           Fix: edit "model" in terrain/opencode.json, then make terrain-build && make terrain-up.\n` +
-      `           Confirm with: make free-models-check`
-    )
+    resolveAcpModel(live)
   })
+}
+
+async function resolveAcpModel(live) {
+  const fallback = readTemplateModel()
+
+  if (ACP_MODEL_OVERRIDE) {
+    if (live.includes(ACP_MODEL_OVERRIDE)) {
+      writeAcpConfig(ACP_MODEL_OVERRIDE)
+      console.error(`[terrain] ACP model ${ACP_MODEL_OVERRIDE} pinned via TERRAIN_ACP_MODEL, verified against ${live.length} keyless model(s)`)
+    } else {
+      console.error(
+        `[terrain] ERROR: TERRAIN_ACP_MODEL ${ACP_MODEL_OVERRIDE} is NOT available keylessly — init and ask WILL FAIL.\n` +
+        `           Live alternatives:\n` +
+        live.slice(0, 5).map((m) => `             ${m}`).join('\n') +
+        `\n           Falling back to the template pin (${fallback}). Unset TERRAIN_ACP_MODEL to re-enable boot-time selection.`
+      )
+    }
+    return
+  }
+
+  const limits = await readCatalog()
+  const pick = pickBestModel(rankModels(live, limits))
+  if (!pick) {
+    // No ranking info (models.dev unreachable or empty contexts). The
+    // template pin is the fallback — report whether it is still alive.
+    if (live.includes(fallback)) {
+      console.error(`[terrain] ACP model ${fallback} verified keyless — no catalog to rank by context window, keeping the template pin`)
+    } else {
+      console.error(
+        `[terrain] ERROR: template ACP model ${fallback} is NOT available keylessly and no context data arrived to rank with — init and ask WILL FAIL.\n` +
+        `           Live alternatives:\n` +
+        live.slice(0, 5).map((m) => `             ${m}`).join('\n') +
+        `\n           Set TERRAIN_ACP_MODEL to one of these, or fix network access to models.dev.`
+      )
+    }
+    return
+  }
+
+  if (pick.id === fallback) {
+    console.error(`[terrain] ACP model ${pick.id} verified keyless — already the largest keyless context window (${pick.context.toLocaleString()})`)
+    return
+  }
+  writeAcpConfig(pick.id)
+  console.error(
+    `[terrain] ACP model auto-selected: ${pick.id} (context ${pick.context.toLocaleString()}) — ` +
+    `template pin ${fallback} retired or smaller`
+  )
 }
 
 /** Actions exposed to agents. Anything not listed here is unreachable. */
@@ -381,9 +520,11 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.error(`[terrain] listening on ${PORT} · workspace=${WORKSPACE} · ref=${commitRef()}`)
-  linkAcpConfig()
-  console.error(`[terrain] LLM actions (init, ask): opencode acp · model=${acpModel()} · keyless Zen, NOT llm-gateway`)
-  verifyAcpModel()
+  // Seed the config from the template immediately; the resolved model lands in
+  // the background pass moments later and rewrites it.
+  writeAcpConfig()
+  console.error(`[terrain] LLM actions (init, ask): opencode acp · template fallback model=${readTemplateModel()} · best keyless model resolved at boot · NOT llm-gateway`)
+  listKeylessModels()
   // A leaked key is stripped before every spawn, so init/ask keep working — but
   // say so loudly rather than letting a stray credential sit in the env until
   // someone debugs a mysterious provider-billing line. The source is the bug.

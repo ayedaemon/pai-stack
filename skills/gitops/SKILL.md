@@ -10,7 +10,7 @@ description: Git safety and mechanics — branch topology, .worktrees/ sandboxin
 
 ## Invariants (always apply, upstream has none of these)
 1. **Topology**: `dev` (if present) is the integration branch, else `main`/`master`. `feature/*`, `fix/*` branch from it; `hotfix/*` branches from `main` and merges back to both.
-2. **Sandbox**: new work goes in `.worktrees/<task-slug>` (`git worktree add .worktrees/<slug> -b <type>/<name> <base>`); switch `EXECUTION_DIR` into it; propose `.gitignore`-ing `.worktrees/` if missing.
+2. **Sandbox**: new work goes in `.worktrees/<task-slug>` (`git worktree add .worktrees/<slug> -b <type>/<name> <base>`); run every subsequent command from inside it; propose `.gitignore`-ing `.worktrees/` if missing.
 3. **Confirmation gate**: NEVER run mutating git commands (`worktree add`, `commit`, `merge`, `push`, `rebase`) without proposing the exact command and waiting for explicit approval. Reads (`status`, `log -n`, `diff`, `branch -a`, plumbing) need no confirmation. Conventional Commits for messages.
 
 ## Worktree isolation
@@ -21,8 +21,8 @@ git worktree add .worktrees/<slug> -b <type>/<name> <base>
   feature branch with uncommitted work, stop and report rather than nesting.
 - **Clean-baseline gate**: never branch from a dirty tree. `git status --porcelain` must be
   empty, or the worktree inherits unrelated changes and the eventual merge is unreviewable.
-- After creating one, `EXECUTION_DIR` moves into it. Every subsequent command is prefixed
-  with `cd <EXECUTION_DIR> &&`.
+- After creating one, every subsequent command is prefixed with `cd .worktrees/<slug> &&`.
+  The worktree stays inside the attached workspace, so the boundary is unchanged.
 - Propose `.gitignore`-ing `.worktrees/` if it is not already ignored.
 
 ## Finishing a branch

@@ -245,7 +245,7 @@ dsh-password: ## Print the one-time login token URL
 dsh-config: ## Validate compose configuration with dsh profile
 	$(COMPOSE) $(PROFILE_DSH) config
 
-dsh-versions-check: ## Verify DSH pins/gates agree across .env.example, compose, Dockerfile, plugins
+dsh-versions-check: ## Verify DSH pins/gates agree across .env, .env.example, compose, Dockerfile, plugins
 	python3 scripts/check-dsh-versions.py
 
 # ── Terrain Profile (terrain) ──

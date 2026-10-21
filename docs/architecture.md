@@ -6,7 +6,7 @@ Two core services. Three optional profiles. One workspace mount.
 Host $WORKSPACE_DIR
   ├── <project-a>/
   │     ├── .project/
-  │     │     ├── research/  ← Research Brain vault (Markdown)
+  │     │     ├── research/  ← Research Brain wiki (Markdown)
   │     │     └── planning/  ← per-project planning artifacts
   │     └── ...
   ├── <project-b>/
@@ -249,7 +249,7 @@ No sidecar DB or embedding containers (~2.3 GB RAM saved).
 
 | Brain | Backing | Role |
 |---|---|---|
-| Research | `pai_notebook_ops` on `research/` | RFCs, papers, API docs, notes |
+| Research | `pai_notebook_ops` on `<workspace>/.project/research/` | RFCs, papers, API docs, notes |
 | Memory | Mnemosyne (SQLite + fastembed) | Decisions, fixes, preferences, triples |
 
 **Code intelligence is a temporary accelerator, not a dependency.** The default and
@@ -276,6 +276,9 @@ Cross-linking: `@symbol:path/to/file.ext:SymbolName` anchors in notes + Mnemosyn
 ## Philosophy
 
 - Zero contamination: research lives in `.project/research/`, planning in `.project/planning/`, never in git code dirs.
+- One boundary per session: every pai tool resolves its paths against the workspace attached
+  to the calling session (hermes: `agent.runtime_cwd`; dsh: `exec.agent.session.header.cwd`).
+  Agents never declare a project root, and no tool writes outside the attached workspace.
 - Single gateway: every model call routes through `llm-gateway:4000`.
 - Empirical over theoretical: ambiguous docs → micro-probe before trusting web claims.
 - Self-realizing agent: Hermes discovers tools, skills, and boundaries on Turn 1.
