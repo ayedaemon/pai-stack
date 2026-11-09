@@ -20,11 +20,12 @@
         apiKeyEnv: OPENAI_API_KEY
         models:
           - id: default   # full fallback chain — always works, even if stale
+          - id: vision    # vision fallback chain — dedicated multimodal image failover
+          - id: audio     # audio fallback chain — dedicated multimodal audio failover
           - id: kilo/cohere/north-mini-code:free
           - id: kilo/dots-studio/dots-3-note-preview:free
-          - id: kilo/liquid/lfm-2.5-2.6b:free
-          - id: kilo/minimax/minimax-m3.1-flash:free
-          - id: kilo/nvidia/nemotron-3-super-120b-a12b:free
+          - id: kilo/kilo-auto/free
+          - id: kilo/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
           - id: kilo/nvidia/nemotron-3-ultra-550b-a55b:free
           - id: kilo/nvidia/nemotron-3.5-lightning:free
           - id: kilo/nvidia/nemotron-3.5-super-vl:free
@@ -38,19 +39,17 @@
           - id: mistral/ministral-8b-2512
           - id: mistral/ministral-8b-latest
           - id: mistral/mistral-code-latest
+          - id: mistral/mistral-large-4
+          - id: mistral/mistral-large-4-0
           - id: mistral/voxtral-small-2507
           - id: mistral/voxtral-small-latest
           - id: openrouter/cohere/north-mini-code:free
           - id: openrouter/dots-studio/dots-3-note-preview:free
-          - id: openrouter/google/gemma-4-26b-a4b-it:free
-          - id: openrouter/liquid/lfm-2.5-2.6b:free
-          - id: openrouter/minimax/minimax-m3.1-flash:free
-          - id: openrouter/nvidia/nemotron-3-super-120b-a12b:free
+          - id: openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
           - id: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
           - id: openrouter/nvidia/nemotron-3.5-lightning:free
           - id: openrouter/nvidia/nemotron-3.5-super-vl:free
-          - id: openrouter/poolside/laguna-s-2.1:free
-          - id: spark-x2.5-4b-uncensored
+          - id: openrouter/recursive/flint-v1.0:free
 
 # ── Gateway-only overlays (static — same every run) ─────────────────────
 # DSH serves ONLY the stack gateway: the native DeepSeek chat provider is

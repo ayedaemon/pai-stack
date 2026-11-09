@@ -5,28 +5,25 @@
 
 services:
   # ──────────────────────────────────────────────────────────────
-  # Profile: gateway — LLM Gateway (LiteLLM proxy)
+  # Profile: gateway — Unified LLM Gateway (Bifrost high-performance Go proxy)
   # ──────────────────────────────────────────────────────────────
   llm-gateway:
-    # Pinned by digest (2026-09-27): main-latest is a moving target and a gateway
-    # behavior change here breaks every model route at once (see Sep-25 reasoning
-    # incident). This digest is the verified-good build. To upgrade: replace digest,
-    # rebuild, and re-run the pair-shape probe (reasoning_effort + forced tool call).
-    image: ghcr.io/berriai/litellm@sha256:a79320760af8df488074ab3fbc830883856c7f952976aad00f039d3a43ffe4b2
+    image: maximhq/bifrost:latest
     container_name: llm-gateway
     restart: unless-stopped
     profiles:
       - gateway
     ports:
-      # Loopback by default. The gateway holds every provider key
-      # in its config, so it should never be reachable off-host
-      # unless you deliberately widen it (LLM_GATEWAY_BIND_IP=0.0.0.0,
-      # legacy BIND_IP as fallback).
-      - "${LLM_GATEWAY_BIND_IP:-${BIND_IP:-127.0.0.1}}:4000:4000"
-    command: [ "--config", "/app/config.yaml", "--port", "4000" ]
+      # Bound to 0.0.0.0 by default on port 4000 (configurable via LLM_GATEWAY_BIND_IP)
+      - "${LLM_GATEWAY_BIND_IP:-${BIND_IP:-0.0.0.0}}:${LLM_GATEWAY_PORT:-4000}:4000"
     environment:
-      - PORT=4000
-      - STORE_MODEL_IN_DB=False
+      - APP_PORT=4000
+      - APP_HOST=0.0.0.0
+      - APP_DIR=/app/data
+      - BIFROST_PORT=4000
+      - BIFROST_ENCRYPTION_KEY=${BIFROST_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_STYLE=${LOG_STYLE:-json}
       - OPENAI_COMPATIBLE_BASE_URL=${OPENAI_COMPATIBLE_BASE_URL:-${PRIMARY_LLM_BASE_URL:-${LLM_BASE_URL:-${LLAMACPP_BASE_URL:-http://host.docker.internal:8080/v1}}}}
       - OPENAI_COMPATIBLE_MODEL=${OPENAI_COMPATIBLE_MODEL:-${PRIMARY_LLM_MODEL:-${LLM_MODEL:-${LLAMACPP_MODEL_NAME:-default}}}}
       - OPENAI_COMPATIBLE_API_KEY=${OPENAI_COMPATIBLE_API_KEY:-${PRIMARY_LLM_API_KEY:-${LLM_API_KEY:-${OPENAI_API_KEY:-not-needed}}}}
@@ -40,25 +37,22 @@ services:
       - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
       - OLLAMA_CLOUD_API_KEY=${OLLAMA_CLOUD_API_KEY:-}
       - AION_LABS_API_KEY=${AION_LABS_API_KEY:-}
-      - LITELLM_MASTER_KEY
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
-      - OTEL_EXPORTER=console
     volumes:
-      - ./llm-gateway/config.yaml:/app/config.yaml:ro
+      - ./llm-gateway/config.json:/app/data/config.json:ro
+      - llm_gateway_data:/app/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || wget -qO- http://localhost:4000/v1/models || exit 1"]
       interval: 30s
-      timeout: 15s
+      timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 15s
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       default:
         aliases:
           - litellm
+          - bifrost
 
   hermes:
     build:
@@ -94,6 +88,7 @@ services:
       - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_BASIC_AUTH_SECRET}
       - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-not-needed}
       - TERRAIN_URL=http://terrain:7878
+      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8888}
       - TERRAIN_TOKEN=${TERRAIN_TOKEN:-}
       - OD_API_TOKEN=${OD_API_TOKEN:-}
       - HERMES_API_TIMEOUT=1800
@@ -315,6 +310,7 @@ services:
       DEEPSEEK_BASE_URL: http://llm-gateway:4000/v1
       OPENAI_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-not-needed}
       OPENAI_BASE_URL: http://llm-gateway:4000/v1
+      SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8888}
       # Auth: @xgone/dsh-remote plugin pre-installed in image, seeded on first boot
       # Admin user + random 16-char password (printed once in logs via make dsh-password)
       DSH_SETUP_REMOTE: ${DSH_SETUP_REMOTE:-on}
@@ -438,68 +434,133 @@ services:
     build:
       context: ./opendesign
       args:
-        # Baked into /app/.od ownership (see Dockerfile): fresh named volumes
-        # inherit the image's ownership, so it must match the runtime `user:`.
         UID: ${UID:-1000}
         GID: ${GID:-1000}
-    image: ${OPEN_DESIGN_IMAGE:-pai-stack-open-design:latest}
     container_name: open-design
-    restart: unless-stopped
-    profiles:
-      - design
+    user: "${UID:-1000}:${GID:-1000}"
+    # Shares all host network interfaces directly (LAN, localhost, VPN/Tailscale)
+    network_mode: host
     environment:
-      NODE_ENV: production
-      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=192}
-      # Writable HOME for the bundled opencode's cache/sessions (ephemeral tmpfs).
-      # Daemon state is unaffected (OD_DATA_DIR -> /app/.od volume).
-      HOME: /tmp
-      OD_BIND_HOST: 0.0.0.0
-      OD_ALLOWED_ORIGINS: ${OPEN_DESIGN_ALLOWED_ORIGINS:-}
-      OD_PORT: 7456
-      OD_WEB_PORT: ${OPEN_DESIGN_PORT:-7456}
-      OD_API_TOKEN: ${OD_API_TOKEN:-}
-      OD_DISABLE_API_AUTH: ${OPEN_DESIGN_DISABLE_API_AUTH:-}
-      OD_CODEX_SANDBOX: ${OD_CODEX_SANDBOX:-}
-      OPENAI_API_KEY: ${LITELLM_MASTER_KEY:-not-needed}
-      OPENAI_BASE_URL: http://llm-gateway:4000/v1
-    ports:
-      # Host bind IP defaults to loopback. Set OPEN_DESIGN_BIND_IP=0.0.0.0 to
-      # reach the UI via LAN IP / DNS name (pair with OPEN_DESIGN_ALLOWED_ORIGINS).
-      - "${OPEN_DESIGN_BIND_IP:-127.0.0.1}:${OPEN_DESIGN_PORT:-7456}:7456"
+      - HOME=/tmp
+      - OD_DATA_DIR=/app/.od
+      - OD_HOST=0.0.0.0
+      - OD_PORT=${OD_PORT:-7456}
+      # Comma-separated list of LAN/VPN/domain URLs you will open in a browser:
+      - OD_ALLOWED_ORIGINS=${OD_ALLOWED_ORIGINS:-*}
+      # Auth Option 1: Require login on LAN (username: open-design, password: value below)
+      - OD_API_TOKEN=${OD_API_TOKEN:-}
+      # Auth Option 2: Set to 1 for passwordless access across your trusted home LAN
+      - OD_DISABLE_API_AUTH=${OD_DISABLE_API_AUTH:-1}
+    tmpfs:
+      - /tmp:exec,mode=1777
     volumes:
       - open_design_data:/app/.od
-      - type: bind
-        source: ${WORKSPACE_DIR:?Set WORKSPACE_DIR in .env (host path to mount at /opt/data/workspace)}
-        target: /opt/data/workspace
-        read_only: false
-        bind:
-          create_host_path: false
-    user: "${UID:-1000}:${GID:-1000}"
-    read_only: true
-    tmpfs:
-      - /tmp
+    restart: unless-stopped
+
+  # open-design:
+  #   build:
+  #     context: ./opendesign
+  #     args:
+  #       # Baked into /app/.od ownership (see Dockerfile): fresh named volumes
+  #       # inherit the image's ownership, so it must match the runtime `user:`.
+  #       UID: ${UID:-1000}
+  #       GID: ${GID:-1000}
+  #   image: ${OPEN_DESIGN_IMAGE:-pai-stack-open-design:latest}
+  #   container_name: open-design
+  #   restart: unless-stopped
+  #   profiles:
+  #     - design
+  #   environment:
+  #     NODE_ENV: production
+  #     NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=192}
+  #     # Writable HOME for the bundled opencode's cache/sessions (ephemeral tmpfs).
+  #     # Daemon state is unaffected (OD_DATA_DIR -> /app/.od volume).
+  #     HOME: /tmp
+  #     OD_BIND_HOST: 0.0.0.0
+  #     OD_ALLOWED_ORIGINS: ${OPEN_DESIGN_ALLOWED_ORIGINS:-}
+  #     OD_PORT: 7456
+  #     OD_WEB_PORT: ${OPEN_DESIGN_PORT:-7456}
+  #     OD_API_TOKEN: ${OD_API_TOKEN:-}
+  #     OD_DISABLE_API_AUTH: ${OPEN_DESIGN_DISABLE_API_AUTH:-1}
+  #     OD_CODEX_SANDBOX: ${OD_CODEX_SANDBOX:-}
+  #     OPENAI_API_KEY: ${LITELLM_MASTER_KEY:-not-needed}
+  #     OPENAI_BASE_URL: http://llm-gateway:4000/v1
+  #   ports:
+  #     # Host bind IP defaults to loopback. Set OPEN_DESIGN_BIND_IP=0.0.0.0 to
+  #     # reach the UI via LAN IP / DNS name (pair with OPEN_DESIGN_ALLOWED_ORIGINS).
+  #     - "${OPEN_DESIGN_BIND_IP:-127.0.0.1}:${OPEN_DESIGN_PORT:-7456}:7456"
+  #   volumes:
+  #     - open_design_data:/app/.od
+  #     - type: bind
+  #       source: ${WORKSPACE_DIR:?Set WORKSPACE_DIR in .env (host path to mount at /opt/data/workspace)}
+  #       target: /opt/data/workspace
+  #       read_only: false
+  #       bind:
+  #         create_host_path: false
+  #   user: "${UID:-1000}:${GID:-1000}"
+  #   read_only: true
+  #   tmpfs:
+  #     - /tmp
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   pids_limit: 256
+  #   healthcheck:
+  #     test:
+  #       [
+  #         "CMD",
+  #         "node",
+  #         "-e",
+  #         "fetch('http://127.0.0.1:7456/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+  #       ]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 20s
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+
+  # ──────────────────────────────────────────────────────────────
+  # Profile: searxng — Self-hosted metasearch engine
+  # ──────────────────────────────────────────────────────────────
+  searxng:
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-latest}
+    container_name: searxng
+    restart: unless-stopped
+    profiles:
+      - searxng
+    ports:
+      - "${SEARXNG_BIND_IP:-127.0.0.1}:${SEARXNG_PORT:-8888}:8080"
+    environment:
+      - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://localhost:${SEARXNG_PORT:-8888}/}
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-change-me-generate-with-openssl-rand-hex-32}
+      - FORCE_OWNERSHIP=true
+    volumes:
+      - searxng_data:/etc/searxng
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
     security_opt:
       - no-new-privileges:true
-    pids_limit: 256
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:7456/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 15s
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
 
 # ──────────────────────────────────────────────────────────────
 # Volumes (all services)
 # ──────────────────────────────────────────────────────────────
 volumes:
+  llm_gateway_data:
+  searxng_data:
   hermes-data:
   terrain_data:
   dsh_data:

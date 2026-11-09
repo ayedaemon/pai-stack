@@ -3,6 +3,8 @@
 
 .DEFAULT_GOAL := help
 
+.PHONY: searxng-up searxng-down searxng-logs searxng-config
+
 .PHONY: help check-workspace \
 	gateway-up gateway-down gateway-logs gateway-config gateway-build gateway-clean \
 	hermes-up hermes-down hermes-logs hermes-config hermes-build hermes-clean \
@@ -51,7 +53,8 @@ PROFILE_HERMES := --profile hermes
 PROFILE_TERRAIN := --profile terrain
 PROFILE_DSH := --profile dsh
 PROFILE_DESIGN := --profile design
-ALL_PROFILES := --profile gateway --profile hermes --profile terrain --profile dsh --profile design
+PROFILE_SEARXNG := --profile searxng
+ALL_PROFILES := --profile gateway --profile hermes --profile terrain --profile dsh --profile design --profile searxng
 
 COMPOSE_PROJECT_NAME ?= pai-stack
 export COMPOSE_PROJECT_NAME
@@ -104,19 +107,19 @@ check-workspace:
 		exit 1; \
 	fi
 
-# ── Gateway Profile (llm-gateway) ──
+# ── Gateway Profile (llm-gateway powered by Bifrost) ──
 
-gateway-up: check-workspace ## Start llm-gateway with build
-	$(COMPOSE) $(PROFILE_GATEWAY) up -d --build llm-gateway
+gateway-up: check-workspace ## Start llm-gateway
+	$(COMPOSE) $(PROFILE_GATEWAY) up -d llm-gateway
 
 gateway-down: ## Stop llm-gateway and remove orphans
 	$(COMPOSE) $(PROFILE_GATEWAY) down --remove-orphans
 
-gateway-build: ## Build llm-gateway image
-	$(COMPOSE) $(PROFILE_GATEWAY) build llm-gateway
+gateway-build: ## Pull llm-gateway image
+	$(COMPOSE) $(PROFILE_GATEWAY) pull llm-gateway
 
-gateway-clean: ## Stop llm-gateway, remove orphans (no volumes to wipe)
-	$(COMPOSE) $(PROFILE_GATEWAY) down --remove-orphans
+gateway-clean: ## Stop llm-gateway, remove orphans and volumes
+	$(COMPOSE) $(PROFILE_GATEWAY) down -v --remove-orphans
 
 gateway-logs: ## Tail llm-gateway logs
 	$(COMPOSE) $(PROFILE_GATEWAY) logs -f llm-gateway
@@ -299,6 +302,24 @@ free-models-check: ## Verify the model pinned in terrain/opencode.json is still 
 
 free-models-allowlist: ## Print the live keyless allowlist for hermes' opencode-delegate
 	@$(call require_container,terrain); docker exec terrain opencode models | python3 scripts/opencode-free-models.py allowlist
+
+# ── SearXNG Profile (searxng) ──
+
+searxng-up: check-workspace searxng-perms ## Start searxng
+	$(COMPOSE) $(PROFILE_SEARXNG) up -d searxng
+
+searxng-down: ## Stop searxng and remove orphans
+	$(COMPOSE) $(PROFILE_SEARXNG) down --remove-orphans
+
+searxng-logs: ## Tail searxng logs
+	$(COMPOSE) $(PROFILE_SEARXNG) logs -f searxng
+
+searxng-config: ## Validate compose configuration with searxng profile
+	$(COMPOSE) $(PROFILE_SEARXNG) config
+
+searxng-perms: ## Fix searxng volume ownership (UID 977)
+	docker volume create --label com.docker.compose.project=$(COMPOSE_PROJECT_NAME) --label com.docker.compose.volume=searxng_data $(COMPOSE_PROJECT_NAME)_searxng_data >/dev/null 2>&1 || true
+	docker run --rm -v $(COMPOSE_PROJECT_NAME)_searxng_data:/data alpine chown -R 977:977 /data
 
 # ── Models & Sync ──
 

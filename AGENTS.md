@@ -13,11 +13,12 @@ no sidecar containers needed for tools.
 
 | Service | Port | Role | Profile |
 |---|---|---|---|
-| **llm-gateway** | 4000 | Unified LLM Gateway: LiteLLM proxy (routes, fallbacks, provider credentials) | `gateway` |
+| **llm-gateway** | 4000 | Unified LLM Gateway: Bifrost high-performance Go proxy (routes, dynamic fallbacks, observability) | `gateway` |
 | **hermes** | 9119 / 8642 | AI agent gateway + web dashboard (native Mnemosyne memory, native `pai_*` tools, native skills) | `hermes` |
 | **dsh** | 9229 | DeepSeek Harness agent — second agent on the same workspace | `dsh` |
 | **open-design** | 7456 | Design generation / mockup bridge | `design` |
 | **terrain** | 7878 | Code intelligence — the single index owner (see below) | `terrain` |
+| **searxng** | 8888 | Self-hosted metasearch engine | `searxng` |
 
 All services are optional profiles. Run any combination:
 ```bash
@@ -71,7 +72,7 @@ terrain ──→ opencode acp (ACP)  ask/init — always on, no feature flag
             OpenAI model and both ask/init die. See docs/terrain.md.
 ```
 
-All model inference routes through `llm-gateway:4000` (LiteLLM), except the two
+All model inference routes through `llm-gateway:4000` (Bifrost), except the two
 keyless-Zen cases noted under *LLM routing posture* below.
 
 **Each service runs independently via its profile.** No service is required to run.
@@ -80,7 +81,7 @@ Start only what you need: `make gateway-up hermes-up`, `make gateway-up dsh-up`,
 
 ### LLM routing posture (gateway-only)
 - Hermes declares exactly one provider (`gateway`); model selection, fallbacks, and
-  provider credentials live in `llm-gateway/config.yaml` (+ `scripts/sync-models.py`
+  provider credentials live in `llm-gateway/config.json` (+ `scripts/sync-models.py`
   templates). Never add direct provider keys, auxiliary providers, or Hermes-level
   fallbacks — Models.dev catalog reads are metadata-only and fine.
 - Known exceptions: `opencode-delegate` calls Zen free models directly (keyless,
@@ -90,10 +91,8 @@ Start only what you need: `make gateway-up hermes-up`, `make gateway-up dsh-up`,
 - Secrets caveat: provider keys are absent from the hermes container *environment*,
   but `.env` lives inside the mounted workspace — file-capable tools can still read
   it. `*.env` reads are hard-denied for delegates; treat Hermes-side reads as auditable.
-- Gateway image is digest-pinned (see `docker-compose.yaml`); routes use mistral/
-  provider mapping with per-model `drop_params` so reasoning params are stripped
-  pre-flight (our LiteLLM synthesizes a conflicting nested object otherwise — Sep-25
-  incident). Verify any routing change with a pair-shape probe before committing.
+- Gateway runs Bifrost Go proxy with CEL routing rules, unauthenticated inference, and
+  structured JSON logs recorded to SQLite (`/app/data/logs.db`) and stdout. Web UI available on `:4000`.
 Mnemosyne runs embedded inside Hermes using local ONNX fastembed and SQLite (`hermes-data` volume).
 
 ## How Hermes Uses Each Service

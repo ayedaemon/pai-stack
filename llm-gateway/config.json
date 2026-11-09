@@ -1,0 +1,226 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "source_of_truth": "config.json",
+  "encryption_key": "env.BIFROST_ENCRYPTION_KEY",
+  "client": {
+    "drop_excess_requests": false,
+    "enable_logging": true,
+    "enforce_auth_on_inference": false
+  },
+  "aliases": {
+    "default": {
+      "type": "static",
+      "target": {
+        "provider": "mistral",
+        "model": "voxtral-small-latest"
+      }
+    },
+    "vision": {
+      "type": "static",
+      "target": {
+        "provider": "openrouter",
+        "model": "nvidia/nemotron-3.5-super-vl:free"
+      }
+    },
+    "audio": {
+      "type": "static",
+      "target": {
+        "provider": "mistral",
+        "model": "voxtral-small-latest"
+      }
+    }
+  },
+  "config_store": {
+    "enabled": true,
+    "type": "sqlite",
+    "config": {
+      "path": "/app/data/config.db"
+    }
+  },
+  "providers": {
+    "kilo": {
+      "keys": [
+        {
+          "name": "kilo-key",
+          "value": "env.KILO_GATEWAY_API_KEY",
+          "models": [
+            "cohere/north-mini-code:free",
+            "dots-studio/dots-3-note-preview:free",
+            "kilo-auto/free",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "nvidia/nemotron-3.5-super-vl:free",
+            "reflection/beam-free"
+          ],
+          "weight": 1.0,
+          "enabled": true
+        }
+      ],
+      "network_config": {
+        "default_request_timeout_in_seconds": 120,
+        "max_retries": 2,
+        "base_url": "https://api.kilo.ai/api/gateway"
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "is_key_less": false,
+        "allowed_requests": {
+          "list_models": true,
+          "chat_completion": true,
+          "chat_completion_stream": true
+        }
+      }
+    },
+    "openrouter": {
+      "keys": [
+        {
+          "name": "openrouter-key",
+          "value": "env.OPENROUTER_API_KEY",
+          "models": [
+            "cohere/north-mini-code:free",
+            "dots-studio/dots-3-note-preview:free",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "nvidia/nemotron-3.5-super-vl:free",
+            "recursive/flint-v1.0:free"
+          ],
+          "weight": 1.0,
+          "enabled": true
+        }
+      ],
+      "network_config": {
+        "default_request_timeout_in_seconds": 120,
+        "max_retries": 2
+      }
+    },
+    "mistral": {
+      "keys": [
+        {
+          "name": "mistral-key",
+          "value": "env.MISTRAL_API_KEY",
+          "models": [
+            "codestral-2508",
+            "codestral-latest",
+            "ministral-14b-2512",
+            "ministral-14b-latest",
+            "ministral-3b-2512",
+            "ministral-3b-latest",
+            "ministral-8b-2512",
+            "ministral-8b-latest",
+            "mistral-code-latest",
+            "mistral-large-4",
+            "mistral-large-4-0",
+            "voxtral-small-2507",
+            "voxtral-small-latest"
+          ],
+          "weight": 1.0,
+          "enabled": true
+        }
+      ],
+      "network_config": {
+        "default_request_timeout_in_seconds": 1800,
+        "max_retries": 2
+      }
+    }
+  },
+  "governance": {
+    "virtual_keys": [
+      {
+        "name": "default-key",
+        "value": "sk-bf-default",
+        "description": "Default virtual key for pai-stack",
+        "is_active": true
+      }
+    ],
+    "routing_rules": [
+      {
+        "id": "default-model-rule",
+        "name": "default-model-rule",
+        "description": "Route model=default to latency rank 1 default model with dedicated fallback chain",
+        "cel_expression": "model == 'default'",
+        "scope": "global",
+        "priority": 1,
+        "targets": [
+          {
+            "provider": "mistral",
+            "model": "voxtral-small-latest",
+            "weight": 1
+          }
+        ],
+        "fallbacks": [
+          "mistral/codestral-latest",
+          "openrouter/nvidia/nemotron-3.5-super-vl:free",
+          "mistral/voxtral-small-2507",
+          "mistral/codestral-2508",
+          "mistral/ministral-3b-latest",
+          "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "openrouter/nvidia/nemotron-3.5-lightning:free",
+          "mistral/ministral-3b-2512",
+          "mistral/ministral-8b-latest",
+          "kilo/nvidia/nemotron-3.5-lightning:free",
+          "kilo/cohere/north-mini-code:free",
+          "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+          "kilo/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "mistral/ministral-8b-2512",
+          "kilo/reflection/beam-free",
+          "kilo/nvidia/nemotron-3.5-super-vl:free",
+          "kilo/kilo-auto/free",
+          "mistral/mistral-code-latest",
+          "mistral/ministral-14b-2512",
+          "openrouter/dots-studio/dots-3-note-preview:free",
+          "openrouter/recursive/flint-v1.0:free",
+          "mistral/mistral-large-4",
+          "openrouter/cohere/north-mini-code:free",
+          "mistral/ministral-14b-latest",
+          "mistral/mistral-large-4-0",
+          "kilo/dots-studio/dots-3-note-preview:free",
+          "kilo/nvidia/nemotron-3-ultra-550b-a55b:free"
+        ]
+      },
+      {
+        "id": "vision-model-rule",
+        "name": "vision-model-rule",
+        "description": "Route model=vision to latency rank 1 vision model with dedicated fallback chain",
+        "cel_expression": "model == 'vision'",
+        "scope": "global",
+        "priority": 2,
+        "targets": [
+          {
+            "provider": "openrouter",
+            "model": "nvidia/nemotron-3.5-super-vl:free",
+            "weight": 1
+          }
+        ],
+        "fallbacks": [
+          "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "kilo/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "kilo/nvidia/nemotron-3.5-super-vl:free",
+          "openrouter/dots-studio/dots-3-note-preview:free",
+          "kilo/dots-studio/dots-3-note-preview:free"
+        ]
+      },
+      {
+        "id": "audio-model-rule",
+        "name": "audio-model-rule",
+        "description": "Route model=audio to latency rank 1 audio model with dedicated fallback chain",
+        "cel_expression": "model == 'audio'",
+        "scope": "global",
+        "priority": 3,
+        "targets": [
+          {
+            "provider": "mistral",
+            "model": "voxtral-small-latest",
+            "weight": 1
+          }
+        ],
+        "fallbacks": [
+          "mistral/voxtral-small-2507",
+          "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "kilo/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+        ]
+      }
+    ]
+  }
+}

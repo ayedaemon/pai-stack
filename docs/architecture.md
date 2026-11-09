@@ -18,7 +18,7 @@ Host $WORKSPACE_DIR
         │
         │  /opt/data/workspace (rw) ──→ hermes
         │
-hermes ──→ llm-gateway:4000   (ALL model inference)
+hermes ──→ llm-gateway:4000   (Bifrost Go gateway: ALL model inference)
 hermes ──→ in-process: pai_* tools, skills, Mnemosyne (SQLite + ONNX)
 open-design (profile: design) ──→ shares $WORKSPACE_DIR at /opt/data/workspace
 dsh (profile: dsh) ──→ shares $WORKSPACE_DIR at /opt/data/workspace, models via llm-gateway:4000
@@ -35,7 +35,7 @@ terrain ──→ opencode acp ──→ OpenCode Zen free models (keyless; NO l
 flowchart LR
     WS["host $WORKSPACE_DIR<br/>projects/<name>/.project/{research,planning}/"]
     H["hermes<br/>:9119 / :8642"]
-    G["llm-gateway<br/>:4000"]
+    G["llm-gateway<br/>:4000<br/>Bifrost Go Gateway"]
     OD["open-design (opt-in)<br/>:7456"]
     DSH["dsh (opt-in)<br/>:9229"]
     TR["terrain (opt-in)<br/>:7878<br/>index owner"]
@@ -73,7 +73,7 @@ boot, session, request — and one rule that explains the rest:
 | Lifetime | Process |
 |---|---|
 | boot → exec | `hermes-entrypoint.sh` → `gateway run`; `dsh-entrypoint` → `setpriv --reuid=1000` re-exec → `dsh web` + socat |
-| session-long | hermes, dsh, LiteLLM proxy, `node server.mjs` — **none of these hold an index** |
+| session-long | hermes, dsh, Bifrost gateway, `node server.mjs` — **none of these hold an index** |
 | request-scoped | `terrain argv` — one process per tool call, killed at the 10-minute cap |
 | spawned lineage | `opencode acp` (terrain), `opencode --standalone` (hermes delegate) |
 
@@ -90,7 +90,7 @@ flowchart LR
     end
 
     subgraph GWC["llm-gateway container :4000"]
-        GW["LiteLLM proxy<br/>session-long<br/>ALL sanctioned inference"]
+        GW["Bifrost proxy<br/>session-long<br/>ALL sanctioned inference"]
     end
 
     subgraph TRC["terrain container :7878 (opt-in)"]
@@ -268,7 +268,7 @@ Cross-linking: `@symbol:path/to/file.ext:SymbolName` anchors in notes + Mnemosyn
 
 ## LLM posture: gateway-only
 
-- Hermes declares one provider (`gateway` → `llm-gateway:4000`). Model choice, fallbacks, credentials live in `llm-gateway/config.yaml` + `scripts/sync-models.py`.
+- Hermes declares one provider (`gateway` → `llm-gateway:4000`). Model choice, fallbacks, credentials live in `llm-gateway/config.json` + `scripts/sync-models.py`.
 - Never add direct provider keys or Hermes-level fallbacks. Models.dev reads are metadata-only and fine.
 - Exceptions: `opencode-delegate` calls Zen free models directly (keyless, see [delegation.md](delegation.md)); Langfuse receives traces (the audit trail).
 - Secrets caveat: keys are absent from the hermes container env, but `.env` sits inside the mounted workspace — file-capable tools can read it. `*.env` reads are hard-denied for delegates.

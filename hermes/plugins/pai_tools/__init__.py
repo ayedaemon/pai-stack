@@ -24,6 +24,7 @@ _TOOLS = (
     ("pai_notebook_ops", "pai_tools.notebook_ops", "📓"),
     ("pai_adr_ops", "pai_tools.adr_ops", "🏛"),
     ("pai_ops_design_ops", "pai_tools.ops_design_ops", "🎨"),
+    ("pai_web_ops", "pai_tools.web_ops", "🌐"),
 )
 
 

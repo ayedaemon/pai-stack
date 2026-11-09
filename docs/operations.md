@@ -4,7 +4,7 @@
 
 | Command | Action |
 |---|---|
-| `make gateway-up` / `make gateway-down` / `make gateway-logs` / `make gateway-config` / `make gateway-build` / `make gateway-clean` | LLM Gateway (LiteLLM proxy) |
+| `make gateway-up` / `make gateway-down` / `make gateway-logs` / `make gateway-config` / `make gateway-build` / `make gateway-clean` | LLM Gateway (Bifrost Go proxy on :4000) |
 | `make hermes-up` / `make hermes-down` / `make hermes-logs` / `make hermes-config` / `make hermes-build` / `make hermes-clean` / `make hermes-perms` | Hermes Agent Gateway + Dashboard |
 | `make all-up` / `make all-down` / `make all-clean` | Start / stop everything (gateway + hermes + design + dsh + terrain); `all-clean` wipes **all** volumes |
 | `make design-up` / `make design-down` / `make design-logs` / `make design-config` / `make design-build` / `make design-perms` / `make design-import d=/opt/data/workspace/<dir> [n=<name>]` | OpenDesign ([opendesign.md](opendesign.md)) |
@@ -81,7 +81,7 @@ Template with generation hints: [.env.example](../.env.example)
 | `hermes/plugins/pai_terrain_ops/` | Code-intel tool → `terrain:7878/call` (image-baked; see *Image drift*) |
 | `skills/` | `SKILL.md` files, mounted read-only into Hermes (and into DSH at `/data/dsh/.agents/skills`) |
 | `skills/agents/SKILL.md` | Ground rules — on-demand copy of `AGENTS.md` |
-| `llm-gateway/config.yaml` + `scripts/sync-models.py` | Routes + model sync |
+| `llm-gateway/config.json` + `scripts/sync-models.py` | Routes + model sync |
 | `opendesign/Dockerfile` | Local open-design build |
 | `dsh/Dockerfile` | Local dsh build (bundled mnemon CLI) |
 | `terrain/` | Terrain multi-stage image + HTTP shim |
@@ -89,7 +89,7 @@ Template with generation hints: [.env.example](../.env.example)
 ## Current Stack State (2026-10-11)
 
 ### Active Services
-- **llm-gateway** (port 4000) — LiteLLM proxy with cloud fallbacks
+- **llm-gateway** (port 4000) — Bifrost Go gateway with dynamic CEL fallbacks and web dashboard
 - **hermes** (ports 9119/8642) — Agent gateway + dashboard, Mnemosyne memory
 - **dsh** (port 9229) — DeepSeek Harness agent with full toolchain
 - **terrain** (port 7878) — Code intelligence service (optional)
